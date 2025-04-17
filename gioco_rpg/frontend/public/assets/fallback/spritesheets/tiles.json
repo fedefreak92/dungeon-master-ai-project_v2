@@ -1,0 +1,89 @@
+{
+  "meta": {
+    "app": "Generatore Spritesheet Fallback",
+    "version": "1.0",
+    "image": "tiles.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 96,
+      "h": 96
+    },
+    "scale": "1"
+  },
+  "frames": {
+    "floor.png": {
+      "frame": { "x": 0, "y": 0, "w": 32, "h": 32 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 32, "h": 32 },
+      "sourceSize": { "w": 32, "h": 32 }
+    },
+    "wall.png": {
+      "frame": { "x": 32, "y": 0, "w": 32, "h": 32 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 32, "h": 32 },
+      "sourceSize": { "w": 32, "h": 32 }
+    },
+    "door.png": {
+      "frame": { "x": 64, "y": 0, "w": 32, "h": 32 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 32, "h": 32 },
+      "sourceSize": { "w": 32, "h": 32 }
+    },
+    "grass.png": {
+      "frame": { "x": 0, "y": 32, "w": 32, "h": 32 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 32, "h": 32 },
+      "sourceSize": { "w": 32, "h": 32 }
+    },
+    "water.png": {
+      "frame": { "x": 32, "y": 32, "w": 32, "h": 32 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 32, "h": 32 },
+      "sourceSize": { "w": 32, "h": 32 }
+    },
+    "road.png": {
+      "frame": { "x": 64, "y": 32, "w": 32, "h": 32 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 32, "h": 32 },
+      "sourceSize": { "w": 32, "h": 32 }
+    },
+    "lava.png": {
+      "frame": { "x": 0, "y": 64, "w": 32, "h": 32 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 32, "h": 32 },
+      "sourceSize": { "w": 32, "h": 32 }
+    },
+    "bridge.png": {
+      "frame": { "x": 32, "y": 64, "w": 32, "h": 32 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 32, "h": 32 },
+      "sourceSize": { "w": 32, "h": 32 }
+    },
+    "stairs.png": {
+      "frame": { "x": 64, "y": 64, "w": 32, "h": 32 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 32, "h": 32 },
+      "sourceSize": { "w": 32, "h": 32 }
+    }
+  },
+  "animations": {
+    "floor": ["floor.png"],
+    "wall": ["wall.png"],
+    "door": ["door.png"],
+    "grass": ["grass.png"],
+    "water": ["water.png"],
+    "road": ["road.png"],
+    "lava": ["lava.png"],
+    "bridge": ["bridge.png"],
+    "stairs": ["stairs.png"]
+  }
+} 

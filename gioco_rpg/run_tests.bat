@@ -1,0 +1,6 @@
+@echo off
+echo Esecuzione dei test del dialogo...
+python -m unittest test/unitari/test_dialogo.py
+echo.
+echo Esecuzione dei test del dialogo socket...
+python -m unittest test/server/websocket/test_dialogo_socket.py 

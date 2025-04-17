@@ -1,0 +1,57 @@
+{
+  "meta": {
+    "app": "Generatore Spritesheet Fallback",
+    "version": "1.0",
+    "image": "entities.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 160,
+      "h": 48
+    },
+    "scale": "1"
+  },
+  "frames": {
+    "player.png": {
+      "frame": { "x": 0, "y": 0, "w": 32, "h": 48 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 32, "h": 48 },
+      "sourceSize": { "w": 32, "h": 48 }
+    },
+    "npc.png": {
+      "frame": { "x": 32, "y": 0, "w": 32, "h": 48 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 32, "h": 48 },
+      "sourceSize": { "w": 32, "h": 48 }
+    },
+    "enemy.png": {
+      "frame": { "x": 64, "y": 0, "w": 32, "h": 48 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 32, "h": 48 },
+      "sourceSize": { "w": 32, "h": 48 }
+    },
+    "vendor.png": {
+      "frame": { "x": 96, "y": 0, "w": 32, "h": 48 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 32, "h": 48 },
+      "sourceSize": { "w": 32, "h": 48 }
+    },
+    "guard.png": {
+      "frame": { "x": 128, "y": 0, "w": 32, "h": 48 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 32, "h": 48 },
+      "sourceSize": { "w": 32, "h": 48 }
+    }
+  },
+  "animations": {
+    "player": ["player.png"],
+    "npc": ["npc.png"],
+    "enemy": ["enemy.png"],
+    "vendor": ["vendor.png"],
+    "guard": ["guard.png"]
+  }
+} 

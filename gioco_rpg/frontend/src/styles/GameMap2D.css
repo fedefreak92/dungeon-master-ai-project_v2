@@ -1,0 +1,212 @@
+.game-map-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.pixi-container {
+  width: 100%;
+  height: 100%;
+  transition: opacity 0.3s ease;
+}
+
+/* Stili per il caricamento */
+.map-loading {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+  background-color: rgba(0, 0, 0, 0.7);
+  padding: 2rem;
+  border-radius: 8px;
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+}
+
+.map-loading .loading-spinner {
+  width: 50px;
+  height: 50px;
+  border: 4px solid rgba(142, 120, 81, 0.3);
+  border-radius: 50%;
+  border-top-color: #ffb938;
+  animation: spin 1s linear infinite;
+  margin-bottom: 1rem;
+}
+
+.map-loading .loading-text {
+  color: #ffb938;
+  font-family: 'Cinzel', serif;
+  font-size: 1rem;
+}
+
+/* Stili per errori */
+.map-error {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.8);
+  padding: 2rem;
+  border-radius: 8px;
+  border-left: 4px solid #ff3333;
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+  z-index: 10;
+  max-width: 80%;
+}
+
+.map-error h3 {
+  color: #ff6666;
+  margin-bottom: 1rem;
+  font-size: 1.5rem;
+}
+
+.map-error p {
+  color: #e0e0e0;
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+
+.map-error button {
+  background-color: #8e7851;
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  font-weight: bold;
+}
+
+.map-error button:hover {
+  background-color: #a08b62;
+}
+
+/* Pannello informazioni entità */
+.entity-info-panel {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  background-color: rgba(20, 20, 25, 0.9);
+  border: 1px solid #8e7851;
+  border-radius: 4px;
+  padding: 1rem;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+  z-index: 5;
+  min-width: 200px;
+  max-width: 300px;
+  animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.entity-info-panel h3 {
+  color: #ffb938;
+  margin-bottom: 0.5rem;
+  font-size: 1.2rem;
+  border-bottom: 1px solid #444;
+  padding-bottom: 0.5rem;
+}
+
+.entity-info-panel p {
+  margin-bottom: 0.5rem;
+  color: #d0d0d0;
+  font-size: 0.9rem;
+}
+
+.entity-info-panel button {
+  background-color: transparent;
+  border: 1px solid #8e7851;
+  color: #8e7851;
+  padding: 0.5rem;
+  width: 100%;
+  border-radius: 4px;
+  margin-top: 0.5rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.entity-info-panel button:hover {
+  background-color: rgba(142, 120, 81, 0.1);
+}
+
+/* Controlli della mappa */
+.map-controls {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  z-index: 5;
+}
+
+.map-control-button {
+  background-color: rgba(20, 20, 25, 0.8);
+  border: 1px solid #8e7851;
+  color: #e0e0e0;
+  border-radius: 4px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.map-control-button:hover {
+  background-color: rgba(142, 120, 81, 0.3);
+}
+
+/* Tooltip per i tile e entità */
+.tile-tooltip {
+  position: absolute;
+  background-color: rgba(20, 20, 25, 0.9);
+  border: 1px solid #8e7851;
+  border-radius: 4px;
+  padding: 0.5rem;
+  font-size: 0.8rem;
+  color: #d0d0d0;
+  z-index: 10;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+/* Animazioni varie */
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+}
+
+.pulse-animation {
+  animation: pulse 1.5s infinite;
+} 
