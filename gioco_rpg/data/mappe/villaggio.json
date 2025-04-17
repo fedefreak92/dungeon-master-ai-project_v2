@@ -1,0 +1,70 @@
+{
+  "nome": "villaggio",
+  "larghezza": 20,
+  "altezza": 15,
+  "tipo": "esterno",
+  "descrizione": "Un piccolo villaggio con alcune case e negozi.",
+  "griglia": [
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+    [1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 1],
+    [1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1],
+    [1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1],
+    [1, 0, 1, 1, 2, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1],
+    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 1, 0, 0, 1],
+    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+    [1, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+    [1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+    [1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+    [1, 0, 0, 1, 1, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+  ],
+  "oggetti": {
+    "(10, 8)": {
+      "nome": "Pozzo",
+      "tipo": "oggetto_interattivo",
+      "descrizione": "Un pozzo di pietra al centro del villaggio.",
+      "stato": "normale",
+      "token": "P",
+      "descrizioni_stati": {
+        "normale": "Un pozzo di pietra al centro del villaggio."
+      },
+      "stati_possibili": {},
+      "sprite": "chest"
+    }
+  },
+  "npg": {
+    "(14, 3)": {
+      "nome": "Mercante",
+      "descrizione": "Un mercante che vende varie merci.",
+      "stato": "neutrale",
+      "token": "M",
+      "dialogo": [
+        "Benvenuto nel mio negozio! Ho molti oggetti in vendita.",
+        "Interessato a pozioni, armi o armature?",
+        "Torna presto, il mio inventario cambia spesso!"
+      ],
+      "sprite": "npc_merchant"
+    },
+    "(18, 8)": {
+      "nome": "Guardia",
+      "descrizione": "Una guardia che pattuglia il villaggio.",
+      "stato": "neutrale",
+      "token": "G",
+      "dialogo": [
+        "Tutto tranquillo nel villaggio oggi.",
+        "Fai attenzione se vai fuori, ci sono mostri nella foresta.",
+        "Segnala qualsiasi comportamento sospetto."
+      ],
+      "sprite": "player"
+    }
+  },
+  "porte": {
+    "(4, 5)": ["taverna", 12, 5],
+    "(15, 6)": ["negozio", 2, 5],
+    "(5, 13)": ["fabbro", 5, 2]
+  },
+  "pos_iniziale_giocatore": [10, 8]
+} 

@@ -1,0 +1,13 @@
+{
+  "tiles": {
+    "floor": "placeholder.png",
+    "wall": "placeholder.png",
+    "door": "placeholder.png",
+    "grass": "placeholder.png",
+    "water": "placeholder.png",
+    "road": "placeholder.png",
+    "lava": "placeholder.png",
+    "stairs": "placeholder.png",
+    "bridge": "placeholder.png"
+  }
+} 
