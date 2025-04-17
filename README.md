@@ -260,3 +260,5 @@ Sentiti libero di aprire issues, fork o contattarmi direttamente.
 ## 📜 Licenza
 
 Questo progetto è distribuito con licenza MIT. Vedi il file `LICENSE` per ulteriori dettagli.
+
+
