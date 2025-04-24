@@ -1,0 +1,246 @@
+/* Stile per il componente MapDebugTool */
+.map-debug-tool {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  width: 400px;
+  max-height: 90vh;
+  background-color: rgba(0, 0, 0, 0.85);
+  color: #eee;
+  border: 1px solid #555;
+  border-radius: 5px;
+  z-index: 1000;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 14px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 0 15px rgba(0, 0, 0, 0.5);
+}
+
+.map-debug-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background-color: #333;
+  border-bottom: 1px solid #555;
+}
+
+.map-debug-header h2 {
+  margin: 0;
+  font-size: 16px;
+  color: #ffcc00;
+}
+
+.close-button {
+  background: none;
+  border: none;
+  color: #ccc;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.close-button:hover {
+  background-color: #555;
+  color: #fff;
+}
+
+.map-debug-content {
+  padding: 12px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.map-selector {
+  display: flex;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.map-selector label {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  margin-right: 10px;
+}
+
+.map-selector select {
+  margin-top: 5px;
+  padding: 5px;
+  background-color: #333;
+  border: 1px solid #555;
+  border-radius: 3px;
+  color: #fff;
+  width: 100%;
+}
+
+.reload-button {
+  padding: 5px 10px;
+  background-color: #444;
+  border: 1px solid #555;
+  border-radius: 3px;
+  color: #fff;
+  cursor: pointer;
+  height: 30px;
+  margin-top: 20px;
+}
+
+.reload-button:hover:not(:disabled) {
+  background-color: #555;
+}
+
+.reload-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.error-message {
+  background-color: rgba(255, 0, 0, 0.2);
+  color: #ff6666;
+  padding: 10px;
+  border-radius: 3px;
+  margin-bottom: 15px;
+  border-left: 3px solid #ff6666;
+}
+
+.map-debug-actions {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.map-debug-actions button {
+  flex: 1;
+  padding: 8px;
+  border: none;
+  border-radius: 3px;
+  color: white;
+  cursor: pointer;
+}
+
+.map-debug-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.check-button {
+  background-color: #0066cc;
+}
+
+.check-button:hover:not(:disabled) {
+  background-color: #0055aa;
+}
+
+.fix-button {
+  background-color: #009933;
+}
+
+.fix-button:hover:not(:disabled) {
+  background-color: #007722;
+}
+
+.map-info {
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  padding: 10px;
+  margin-bottom: 15px;
+}
+
+.map-info h3 {
+  margin-top: 0;
+  margin-bottom: 10px;
+  font-size: 14px;
+  color: #ffcc00;
+}
+
+.map-properties {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+}
+
+.property {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+}
+
+.property span:first-child {
+  color: #aaa;
+}
+
+.debug-logs {
+  max-height: 200px;
+  overflow-y: auto;
+  margin-top: 15px;
+}
+
+.debug-logs h3 {
+  margin-top: 0;
+  margin-bottom: 10px;
+  font-size: 14px;
+  color: #ffcc00;
+}
+
+.debug-logs ul {
+  list-style-type: none;
+  padding: 0;
+  margin: 0;
+  font-size: 12px;
+}
+
+.debug-logs li {
+  padding: 3px 0;
+  border-bottom: 1px dotted #444;
+  display: flex;
+  align-items: flex-start;
+}
+
+.log-time {
+  color: #888;
+  margin-right: 5px;
+  white-space: nowrap;
+}
+
+.log-message {
+  flex: 1;
+  word-break: break-word;
+}
+
+.error-log {
+  color: #ff6666;
+}
+
+.error-log .log-time {
+  color: #aa5555;
+}
+
+/* Scrollbar personalizzata */
+.debug-logs::-webkit-scrollbar,
+.map-debug-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.debug-logs::-webkit-scrollbar-track,
+.map-debug-content::-webkit-scrollbar-track {
+  background: #333;
+}
+
+.debug-logs::-webkit-scrollbar-thumb,
+.map-debug-content::-webkit-scrollbar-thumb {
+  background: #555;
+  border-radius: 4px;
+}
+
+.debug-logs::-webkit-scrollbar-thumb:hover,
+.map-debug-content::-webkit-scrollbar-thumb:hover {
+  background: #666;
+} 

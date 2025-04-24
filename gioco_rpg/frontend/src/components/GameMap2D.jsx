@@ -3,6 +3,7 @@ import * as PIXI from 'pixi.js';
 import { Viewport } from 'pixi-viewport';
 import axios from 'axios';
 import io from 'socket.io-client';
+import diagnosticService from '../services/DiagnosticService';
 import '../styles/GameMap2D.css';
 
 const API_URL = 'http://localhost:5000';
@@ -88,6 +89,34 @@ const GameMap2D = ({ sessionId }) => {
     app.stage.addChild(viewport);
     viewportRef.current = viewport;
     
+    // Invia dati viewport al servizio diagnostica
+    const viewportInfo = {
+      width: app.view.width,
+      height: app.view.height,
+      scale: viewport.scale.x,
+      center_x: viewport.center.x,
+      center_y: viewport.center.y
+    };
+    diagnosticService.updateViewport(viewportInfo);
+    
+    // Aggiungi listener per aggiornamenti viewport
+    viewport.on('zoomed', () => {
+      if (viewport && diagnosticService) {
+        diagnosticService.updateViewport({
+          scale: viewport.scale.x
+        });
+      }
+    });
+    
+    viewport.on('moved', () => {
+      if (viewport && diagnosticService) {
+        diagnosticService.updateViewport({
+          center_x: viewport.center.x,
+          center_y: viewport.center.y
+        });
+      }
+    });
+    
     // Gestisci il ridimensionamento della finestra
     const handleResize = () => {
       if (pixiContainerRef.current) {
@@ -100,6 +129,12 @@ const GameMap2D = ({ sessionId }) => {
           pixiContainerRef.current.clientWidth,
           pixiContainerRef.current.clientHeight
         );
+        
+        // Aggiorna dimensioni viewport nel servizio diagnostica
+        diagnosticService.updateViewport({
+          width: app.view.width,
+          height: app.view.height
+        });
       }
     };
     
@@ -206,10 +241,23 @@ const GameMap2D = ({ sessionId }) => {
         entities: entityTextures
       };
       
+      // Registra texture nel servizio diagnostica
+      for (const key in tileTextures) {
+        diagnosticService.registerTexture(tileTextures[key]);
+      }
+      
+      for (const key in entityTextures) {
+        diagnosticService.registerTexture(entityTextures[key]);
+      }
+      
       return true;
     } catch (error) {
       console.error('Errore nel caricamento delle texture:', error);
       setError('Impossibile caricare le risorse grafiche: ' + error.message);
+      
+      // Invia diagnostica errore
+      diagnosticService.logRenderingError(`Errore caricamento texture: ${error.message}`);
+      
       return false;
     }
   };
@@ -516,37 +564,129 @@ const GameMap2D = ({ sessionId }) => {
     highlightLayer.addChild(highlight);
   };
   
+  // Funzione per eseguire test di rendering
+  const runRenderTest = async () => {
+    if (!appRef.current || !viewportRef.current) return;
+    
+    try {
+      // Richiedi dati di test
+      const testData = await diagnosticService.requestRenderTest();
+      
+      if (testData.error) {
+        console.error('Errore test rendering:', testData.error);
+        return;
+      }
+      
+      // Render la mappa di test
+      if (testData.map) {
+        console.log('Rendering mappa di test');
+        renderMap(testData.map);
+      }
+      
+      // Render entità di test
+      if (testData.entities && testData.entities.entities) {
+        console.log('Rendering entità di test');
+        updateEntities(testData.entities.entities);
+      }
+    } catch (error) {
+      console.error('Errore nel test di rendering:', error);
+    }
+  };
+  
+  // Aggiungi pulsante di diagnostica sotto la mappa
+  const DiagnosticPanel = () => {
+    const [isVisible, setIsVisible] = useState(false);
+    const [report, setReport] = useState(null);
+    
+    const runDiagnostics = async () => {
+      const results = await diagnosticService.runDiagnostics();
+      setReport(results);
+    };
+    
+    if (!isVisible) {
+      return (
+        <button 
+          className="diagnostic-button"
+          onClick={() => setIsVisible(true)}
+          style={{
+            position: 'absolute',
+            bottom: '10px',
+            right: '10px',
+            zIndex: 1000
+          }}
+        >
+          Diagnostica
+        </button>
+      );
+    }
+    
+    return (
+      <div 
+        className="diagnostic-panel"
+        style={{
+          position: 'absolute',
+          bottom: '10px',
+          right: '10px',
+          backgroundColor: 'rgba(0,0,0,0.8)',
+          color: 'white',
+          padding: '10px',
+          borderRadius: '5px',
+          zIndex: 1000,
+          maxWidth: '300px',
+          maxHeight: '300px',
+          overflow: 'auto'
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+          <h4 style={{ margin: 0 }}>Diagnostica</h4>
+          <button onClick={() => setIsVisible(false)}>X</button>
+        </div>
+        
+        <div className="diagnostic-actions">
+          <button onClick={runDiagnostics}>Esegui Diagnostica</button>
+          <button onClick={runRenderTest}>Test Rendering</button>
+        </div>
+        
+        {report && (
+          <div className="diagnostic-report">
+            <h5>Connessione Socket</h5>
+            <p>Stato: {report.socket.connected ? 'Connesso' : 'Disconnesso'}</p>
+            <p>Latenza: {report.socket.latency || 'N/A'} ms</p>
+            <p>Pacchetti inviati: {report.socket.sent}</p>
+            <p>Pacchetti ricevuti: {report.socket.received}</p>
+            
+            <h5>Rendering</h5>
+            <p>Viewport: {report.viewport.width}x{report.viewport.height}</p>
+            <p>Scala: {report.viewport.scale}</p>
+            <p>Texture: {report.textures.loaded}/{report.textures.count} caricate</p>
+          </div>
+        )}
+      </div>
+    );
+  };
+  
   return (
     <div className="game-map-container">
+      <div
+        ref={pixiContainerRef}
+        className="pixi-container"
+        style={{ width: '100%', height: '100%' }}
+      />
+      
       {loading && (
-        <div className="map-loading">
-          <div className="loading-spinner"></div>
-          <div className="loading-text">Caricamento mappa...</div>
+        <div className="loading-overlay">
+          <p>Caricamento mappa...</p>
         </div>
       )}
       
       {error && (
-        <div className="map-error">
-          <h3>Errore!</h3>
-          <p>{error}</p>
-          <button onClick={() => window.location.reload()}>Riprova</button>
+        <div className="error-overlay">
+          <p>Errore: {error}</p>
         </div>
       )}
       
-      <div 
-        ref={pixiContainerRef} 
-        className="pixi-container"
-        style={{ opacity: loading ? 0.3 : 1 }}
-      ></div>
-      
-      {selectedEntity && (
-        <div className="entity-info-panel">
-          <h3>{selectedEntity.nome}</h3>
-          <p>Tipo: {selectedEntity.tipo}</p>
-          <p>Posizione: ({selectedEntity.x}, {selectedEntity.y})</p>
-          <button onClick={() => setSelectedEntity(null)}>Chiudi</button>
-        </div>
-      )}
+      {/* Pannello diagnostica in sviluppo */}
+      {process.env.NODE_ENV !== 'production' && <DiagnosticPanel />}
     </div>
   );
 };

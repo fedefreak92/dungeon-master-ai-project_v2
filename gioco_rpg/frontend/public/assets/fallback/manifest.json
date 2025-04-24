@@ -1,0 +1,56 @@
+{
+  "version": "1.0.0",
+  "last_updated": 1744918027.954494,
+  "sprites": {
+    "player": {
+      "id": "player",
+      "name": "Player",
+      "file": "player.png",
+      "path": "fallback/player.png",
+      "type": "sprite",
+      "dimensions": {
+        "width": 32,
+        "height": 32
+      },
+      "offset": {
+        "x": 0,
+        "y": 0
+      },
+      "tags": []
+    }
+  },
+  "tiles": {
+    "floor": {
+      "id": "floor",
+      "name": "Floor",
+      "file": "player.png",
+      "path": "fallback/player.png",
+      "type": "tile",
+      "dimensions": {
+        "width": 32,
+        "height": 32
+      },
+      "properties": {
+        "walkable": true,
+        "transparent": true
+      },
+      "tags": []
+    }
+  },
+  "animations": {},
+  "tilesets": {},
+  "ui_elements": {
+    "button": {
+      "id": "button",
+      "name": "Button",
+      "file": "player.png",
+      "path": "fallback/player.png",
+      "type": "ui",
+      "dimensions": {
+        "width": 32,
+        "height": 32
+      },
+      "tags": []
+    }
+  }
+} 

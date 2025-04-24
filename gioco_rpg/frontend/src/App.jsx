@@ -1,9 +1,11 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { GameProvider, useGame } from './contexts/GameContext';
 import StartScreen from './components/StartScreen';
 import MapSelectState from './game/states/MapSelectState';
 import GameMapScreen from './game/screens/GameMapScreen';
 import { sessionApi, saveApi, classesApi, playerApi } from './api/gameApi';
+import { GameStateProvider } from './hooks/useGameState';
+import MapDebugTool from './components/game/MapDebugTool';
 import './App.css';
 
 // Componente interno che utilizza il contesto di gioco
@@ -15,6 +17,23 @@ function GameContent() {
     loading, 
     error 
   } = state;
+  
+  // Stato per il debug tool
+  const [showDebugTool, setShowDebugTool] = useState(false);
+  
+  // Attiva il debug tool con combinazione di tasti (Ctrl + Alt + D)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.ctrlKey && e.altKey && e.key === 'd') {
+        setShowDebugTool(prev => !prev);
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
   
   // Carica le classi disponibili all'avvio
   useEffect(() => {
@@ -175,18 +194,15 @@ function GameContent() {
   };
   
   // Rendering condizionale in base allo stato del gioco
-  switch (gameState) {
-    case 'init':
-    case 'start-screen':
-      return (
+  return (
+    <>
+      {/* Rendering dello stato di gioco */}
+      {gameState === 'init' || gameState === 'start-screen' ? (
         <StartScreen 
           onStartNewGame={handleStartNewGame} 
           onLoadGame={handleLoadGame}
         />
-      );
-      
-    case 'map-select':
-      return (
+      ) : gameState === 'map-select' ? (
         <div className="map-select-wrapper">
           <MapSelectState />
           {loading && <div className="global-loading-overlay">Comunicazione con il server in corso...</div>}
@@ -200,31 +216,52 @@ function GameContent() {
             </div>
           )}
         </div>
-      );
-      
-    case 'map':
-      return <GameMapScreen />;
-      
-    default:
-      return (
+      ) : gameState === 'map' ? (
+        <GameMapScreen
+          onSaveGame={handleSaveGame}
+          onBackToMainMenu={handleBackToMainMenu}
+        />
+      ) : (
         <div className="unknown-state">
-          <h2>Stato sconosciuto: {gameState}</h2>
-          <button onClick={() => dispatch({ type: 'SET_GAME_STATE', payload: 'start-screen' })}>
-            Torna al menu principale
-          </button>
+          <h2>Stato non riconosciuto: {gameState}</h2>
+          <button onClick={handleBackToMainMenu}>Torna al menu principale</button>
         </div>
-      );
-  }
+      )}
+      
+      {/* Strumento di debug (attivabile con Ctrl+Alt+D) */}
+      {showDebugTool && sessionId && (
+        <MapDebugTool 
+          sessionId={sessionId} 
+          onClose={() => setShowDebugTool(false)} 
+        />
+      )}
+      
+      {/* Pulsante di debug visibile solo in modalità sviluppo */}
+      {process.env.NODE_ENV === 'development' && !showDebugTool && (
+        <button 
+          className="debug-tool-button" 
+          onClick={() => setShowDebugTool(true)}
+          title="Apri il debug tool (Ctrl+Alt+D)"
+        >
+          🧰
+        </button>
+      )}
+    </>
+  );
 }
 
-// Componente principale dell'applicazione
+/**
+ * Componente principale dell'applicazione
+ */
 function App() {
   return (
-    <GameProvider>
-      <div className="app-container">
-        <GameContent />
-      </div>
-    </GameProvider>
+    <GameStateProvider>
+      <GameProvider>
+        <div className="app-container">
+          <GameContent />
+        </div>
+      </GameProvider>
+    </GameStateProvider>
   );
 }
 

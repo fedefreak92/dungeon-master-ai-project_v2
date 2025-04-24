@@ -1,6 +1,36 @@
 import axios from 'axios';
 
-const API_URL = 'http://localhost:5000';
+// Usa percorsi relativi invece di URL assoluto
+const API_URL = '';
+
+/**
+ * Funzione di utilità per gestire i tentativi multipli
+ * @param {Function} fn - Funzione da eseguire con retry
+ * @param {number} maxRetries - Numero massimo di tentativi
+ * @param {number} delay - Ritardo tra i tentativi in ms
+ * @returns {Promise<any>} - Risultato della funzione
+ */
+const withRetry = async (fn, maxRetries = 3, delay = 1000) => {
+  let lastError;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`Tentativo ${attempt}/${maxRetries}`);
+      return await fn();
+    } catch (error) {
+      console.warn(`Tentativo ${attempt} fallito:`, error.message);
+      lastError = error;
+      
+      if (attempt < maxRetries) {
+        // Attendi prima del prossimo tentativo (ritardo esponenziale)
+        await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, attempt - 1)));
+      }
+    }
+  }
+  
+  // Se arriviamo qui, tutti i tentativi sono falliti
+  throw lastError;
+};
 
 /**
  * API per la gestione della sessione di gioco
@@ -13,23 +43,29 @@ export const sessionApi = {
    * @returns {Promise<Object>} - Risposta dal server
    */
   startNewGame: async (playerName, playerClass) => {
-    try {
-      const response = await axios.post(`${API_URL}/game/session/inizia`, {
-        nome_personaggio: playerName,
-        classe: playerClass,
-        modalita_grafica: true // Abilita la modalità grafica
-      });
-      
-      // Verifica sia success che successo per retrocompatibilità
-      if (response.data && (response.data.success || response.data.successo)) {
-        return response.data;
-      } else {
-        throw new Error(response.data?.error || response.data?.errore || 'Risposta del server non valida');
+    return withRetry(async () => {
+      try {
+        console.log(`Avvio nuova partita: nome=${playerName}, classe=${playerClass}`);
+        const response = await axios.post(`${API_URL}/game/session/inizia`, {
+          nome_personaggio: playerName,
+          classe: playerClass,
+          modalita_grafica: true, // Abilita la modalità grafica
+          force_check_mappe: true // Forza il controllo delle mappe
+        });
+        
+        // Verifica sia success che successo per retrocompatibilità
+        if (response.data && (response.data.success || response.data.successo)) {
+          console.log('Sessione iniziata con successo:', response.data);
+          return response.data;
+        } else {
+          console.error('Errore nella risposta del server:', response.data);
+          throw new Error(response.data?.error || response.data?.errore || 'Risposta del server non valida');
+        }
+      } catch (error) {
+        console.error('Errore nell\'inizializzazione del gioco:', error);
+        throw error;
       }
-    } catch (error) {
-      console.error('Errore nell\'inizializzazione del gioco:', error);
-      throw error;
-    }
+    }, 3, 1500); // 3 tentativi con 1.5 secondi di ritardo iniziale
   },
   
   /**

@@ -186,6 +186,24 @@
   box-shadow: 0 0 0 2px rgba(255, 185, 56, 0.25);
 }
 
+.form-group select {
+  width: 100%;
+  padding: 0.75rem;
+  font-size: 1rem;
+  background-color: #333;
+  color: white;
+  border: 1px solid #8e7851;
+  border-radius: 4px;
+  outline: none;
+  appearance: auto;
+}
+
+.form-group select option {
+  background-color: #333;
+  color: white;
+  padding: 10px;
+}
+
 .class-description {
   font-style: italic;
   color: #aaaaaa;

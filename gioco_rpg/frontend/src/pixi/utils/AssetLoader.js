@@ -135,30 +135,6 @@ export default class AssetLoader {
    * @returns {Promise<Object>} - Mappa delle texture caricate
    */
   static async loadMapTextures() {
-    // Tenta di usare prima la spritesheet
-    if (SpriteSheetManager.isSpriteSheetLoaded('tiles')) {
-      const spritesheet = SpriteSheetManager.spriteSheets['tiles'];
-      
-      // Trasforma la spritesheet in un oggetto di texture
-      const tileTypes = [
-        'floor', 'wall', 'door', 'grass', 'water',
-        'road', 'lava', 'bridge', 'stairs'
-      ];
-      
-      const texturesFromSheet = {};
-      tileTypes.forEach(type => {
-        // Cerca sia con estensione che senza
-        const texture = 
-          spritesheet.textures[`${type}.png`] || 
-          spritesheet.textures[type] || 
-          PIXI.Texture.WHITE;
-        
-        texturesFromSheet[type] = texture;
-      });
-      
-      return texturesFromSheet;
-    }
-    
     // Se le texture sono già in cache, le restituiamo subito
     if (Object.keys(textureCache.tiles).length > 0) {
       return textureCache.tiles;
@@ -173,54 +149,17 @@ export default class AssetLoader {
       
       const textures = {};
       
-      // Verifica prima la disponibilità del server
-      const serverAvailable = await this.checkServerAvailability();
-      console.log(`Server disponibile: ${serverAvailable}`);
+      // Carica una sola volta il player
+      const playerUrl = `/assets/fallback/player.png`;
+      const playerTexture = await this.loadTexture(playerUrl);
       
-      // Carica le texture in sequenza invece che in parallelo
+      // Assegna la stessa texture a tutti i tipi di tile
       for (const type of tileTypes) {
-        try {
-          // Cache locale per evitare ricaricamenti
-          if (textureCache.tiles[type] && textureCache.tiles[type] !== PIXI.Texture.WHITE) {
-            textures[type] = textureCache.tiles[type];
-            continue;
-          }
-          
-          let texture;
-          const url = `${API_URL}/assets/tiles/${type}.png`;
-          
-          if (serverAvailable) {
-            texture = await this.loadTextureWithFallback(url, true, 1);
-          } else {
-            // Se il server non è disponibile, prova a caricare dalla directory locale
-            const localUrl = `/assets/fallback/tiles/${type}.png`;
-            texture = await this.loadTextureWithFallback(localUrl, false, 0);
-          }
-          
-          // Memorizza la texture anche se è un fallback
-          textures[type] = texture;
-        } catch (err) {
-          console.warn(`Errore nel caricamento della texture '${type}', uso fallback`);
-          textures[type] = PIXI.Texture.WHITE;
-        }
+        textures[type] = playerTexture;
+        textureCache.tiles[type] = playerTexture;
       }
       
-      // Verifica quante texture sono state caricate con successo
-      const successCount = Object.values(textures).filter(
-        texture => texture && texture !== PIXI.Texture.WHITE
-      ).length;
-      
-      console.log(`Caricate ${successCount}/${tileTypes.length} texture per la mappa`);
-      
-      // Memorizza in cache solo se almeno alcune texture sono state caricate con successo
-      if (successCount > 0) {
-        // Memorizza solo le texture valide
-        for (const type of tileTypes) {
-          if (textures[type] && textures[type] !== PIXI.Texture.WHITE) {
-            textureCache.tiles[type] = textures[type];
-          }
-        }
-      }
+      console.log(`Caricata texture player per tutti i ${tileTypes.length} tipi di tile`);
       
       return textures;
     } catch (err) {
@@ -346,27 +285,31 @@ export default class AssetLoader {
       
       const textures = {};
       
-      // Carica le texture in parallelo
-      await Promise.all(
-        objectTypes.map(async (type) => {
-          const url = `${API_URL}/assets/objects/${type}.png`;
-          try {
-            textures[type] = await this.loadTexture(url);
-          } catch (err) {
-            console.warn(`Impossibile caricare la texture per l'oggetto ${type}, uso fallback`);
-            // Usa una texture di fallback per gli oggetti mancanti
-            textures[type] = PIXI.Texture.WHITE;
-          }
-        })
-      );
+      // Carica una sola volta il player
+      const playerUrl = `/assets/fallback/player.png`;
+      const playerTexture = await this.loadTexture(playerUrl);
       
-      // Memorizza in cache
-      textureCache.objects = textures;
+      // Assegna la stessa texture a tutti gli oggetti
+      for (const type of objectTypes) {
+        textures[type] = playerTexture;
+        textureCache.objects[type] = playerTexture;
+      }
+      
+      console.log(`Caricata texture player per tutti i ${objectTypes.length} tipi di oggetti`);
       
       return textures;
     } catch (err) {
       console.error('Errore nel caricamento delle texture degli oggetti:', err);
-      throw err;
+      
+      // Fallback con texture bianca
+      const objectTypes = ['chest', 'furniture', 'door', 'potion', 'weapon'];
+      const textures = {};
+      
+      for (const type of objectTypes) {
+        textures[type] = PIXI.Texture.WHITE;
+      }
+      
+      return textures;
     }
   }
   
@@ -386,27 +329,31 @@ export default class AssetLoader {
       
       const textures = {};
       
-      // Carica le texture in parallelo
-      await Promise.all(
-        uiElements.map(async (type) => {
-          const url = `${API_URL}/assets/ui/${type}.png`;
-          try {
-            textures[type] = await this.loadTexture(url);
-          } catch (err) {
-            console.warn(`Impossibile caricare la texture per l'UI ${type}, uso fallback`);
-            // Usa una texture di fallback per gli elementi UI mancanti
-            textures[type] = PIXI.Texture.WHITE;
-          }
-        })
-      );
+      // Carica una sola volta il player
+      const playerUrl = `/assets/fallback/player.png`;
+      const playerTexture = await this.loadTexture(playerUrl);
       
-      // Memorizza in cache
-      textureCache.ui = textures;
+      // Assegna la stessa texture a tutti gli elementi UI
+      for (const type of uiElements) {
+        textures[type] = playerTexture;
+        textureCache.ui[type] = playerTexture;
+      }
+      
+      console.log(`Caricata texture player per tutti i ${uiElements.length} elementi UI`);
       
       return textures;
     } catch (err) {
       console.error('Errore nel caricamento delle texture dell\'UI:', err);
-      throw err;
+      
+      // Fallback con texture bianca
+      const uiElements = ['button', 'panel', 'frame', 'icon'];
+      const textures = {};
+      
+      for (const type of uiElements) {
+        textures[type] = PIXI.Texture.WHITE;
+      }
+      
+      return textures;
     }
   }
   
@@ -615,33 +562,20 @@ export default class AssetLoader {
         }
       } catch (err) {
         // Ignora l'errore e passa al fallback
-        console.warn(`Errore nel caricamento della texture: ${url}, uso fallback`);
+        console.warn(`Errore nel caricamento della texture: ${url}, uso fallback player.png`);
       }
       
       // Se arriviamo qui, la texture originale non è stata caricata
       if (useLocalFallback) {
-        // Estrai il nome del file dall'URL
-        const parts = url.split('/');
-        const filename = parts[parts.length - 1];
-        const type = parts[parts.length - 2] || 'tiles';
-        
-        // Controlla e usa prima la texture colorata di placeholder
-        const fallbackUrl = `/assets/fallback/${type}/${filename}`;
+        // SEMPLIFICAZIONE: usa sempre player.png come texture di fallback
+        const fallbackUrl = `/assets/fallback/player.png`;
         try {
           const fallbackTexture = await this.loadTexture(fallbackUrl);
           if (fallbackTexture && fallbackTexture !== PIXI.Texture.WHITE) {
             return fallbackTexture;
           }
         } catch (err) {
-          // Crea una texture generica colorata in base al tipo
-          try {
-            const genericTexture = this.createGenericTexture(type, filename);
-            if (genericTexture) {
-              return genericTexture;
-            }
-          } catch (genErr) {
-            console.warn(`Impossibile creare texture generica per ${type}/${filename}`);
-          }
+          console.warn(`Impossibile caricare anche il fallback player.png, uso texture bianca`);
         }
       }
       
@@ -772,26 +706,47 @@ export default class AssetLoader {
   }
 
   /**
-   * Precarica le texture delle entità all'avvio dell'applicazione
-   * @returns {Promise<boolean>} - true se completato con successo
+   * Precarica le texture delle entità per il gioco
+   * @returns {Promise<Object>} - Mappa delle texture caricate
    */
   static async preloadEntityTextures() {
+    // Definisci i tipi di entità supportati
+    const entityTypes = [
+      'player', 'npc', 'enemy', 'vendor', 'guard'
+    ];
+    
+    // Oggetto per memorizzare le texture
+    const textures = {};
+    
     try {
-      console.log("Precaricamento texture entità...");
+      // Carica una sola volta il player
+      const playerUrl = `/assets/fallback/player.png`;
+      const playerTexture = await this.loadTexture(playerUrl);
       
-      // Precarica le texture delle entità
-      const entityTextures = await this.loadEntityTextures();
+      // Assegna la stessa texture a tutti i tipi di entità
+      for (const type of entityTypes) {
+        textures[type] = playerTexture;
+      }
       
-      // Verifica quante texture sono state caricate con successo
-      const successCount = Object.values(entityTextures).filter(
-        texture => texture && texture !== PIXI.Texture.WHITE
-      ).length;
+      // Aggiorna la cache
+      for (const type of entityTypes) {
+        textureCache.entities[type] = playerTexture;
+      }
       
-      console.log(`Precaricate ${successCount} texture di entità`);
-      return successCount > 0;
+      console.log(`Caricata texture player per tutte le ${entityTypes.length} entità`);
+      
+      return textures;
     } catch (err) {
-      console.error("Errore nel precaricamento delle texture delle entità:", err);
-      return false;
+      console.error('Errore nel precaricamento delle texture delle entità:', err);
+      
+      // In caso di errore, usa un fallback
+      const fallbackTexture = PIXI.Texture.WHITE;
+      
+      for (const type of entityTypes) {
+        textures[type] = fallbackTexture;
+      }
+      
+      return textures;
     }
   }
 } 

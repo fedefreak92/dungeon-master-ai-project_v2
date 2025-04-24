@@ -14,7 +14,6 @@ const StartScreen = ({ onStartNewGame, onLoadGame }) => {
   const [saveLoading, setSaveLoading] = useState(false);
   const [saveError, setSaveError] = useState(null);
   const [selectedSaveGame, setSelectedSaveGame] = useState(null);
-  const [showNewGameForm, setShowNewGameForm] = useState(false);
   const [currentScreen, setCurrentScreen] = useState('welcome'); // 'welcome', 'newGame', 'loadGame'
   
   // Stato per il form nuovo gioco
@@ -51,8 +50,6 @@ const StartScreen = ({ onStartNewGame, onLoadGame }) => {
   // Gestisce il click sul pulsante "Nuovo"
   const handleNewGameClick = () => {
     setCurrentScreen('newGame');
-    setShowNewGameForm(true);
-    setSelectedSaveGame(null);
   };
 
   // Gestisce il click sul pulsante "Carica"
@@ -143,10 +140,11 @@ const StartScreen = ({ onStartNewGame, onLoadGame }) => {
                     id="playerClass"
                     value={playerClass}
                     onChange={(e) => setPlayerClass(e.target.value)}
+                    style={{ color: "white", backgroundColor: "#333", borderColor: "#8e7851" }}
                   >
                     {availableClasses.map(cls => (
-                      <option key={cls.id} value={cls.id}>
-                        {cls.nome}
+                      <option key={cls.id} value={cls.id} style={{ backgroundColor: "#333", color: "white" }}>
+                        {cls.nome || cls.id}
                       </option>
                     ))}
                   </select>

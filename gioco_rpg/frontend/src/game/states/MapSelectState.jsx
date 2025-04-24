@@ -58,19 +58,36 @@ const MapSelectState = () => {
   
   // Gestisce la selezione di una mappa
   const handleMapSelect = async (mapId) => {
-    if (!sessionId) return;
+    if (!sessionId) {
+      console.error("ID Sessione mancante, impossibile cambiare mappa");
+      setError("Sessione non disponibile");
+      return;
+    }
     
     try {
       setLoading(true);
+      setError(null);
+      
+      console.log(`Avvio cambio mappa: mapId=${mapId}, sessionId=${sessionId}`);
       
       const result = await mapApi.changeMap(sessionId, mapId);
+      
+      console.log("Risposta cambio mappa completa:", result);
       
       if (result.success) {
         // Aggiorna lo stato globale con la nuova mappa
         dispatch({ type: 'SET_MAP', payload: mapId });
+        console.log("SET_MAP dispatch completato, cambio stato a 'map'");
         
-        // Cambia stato del gioco a 'map'
-        dispatch({ type: 'SET_GAME_STATE', payload: 'map' });
+        // Cambio stato con breve ritardo per assicurare che il dispatch precedente sia completato
+        setTimeout(() => {
+          dispatch({ type: 'SET_GAME_STATE', payload: 'map' });
+          console.log("SET_GAME_STATE completato");
+        }, 100);
+      } else {
+        console.error("Risposta cambio mappa con success=false:", result);
+        setError('Errore nel cambio mappa: risposta success=false');
+        setLoading(false);
       }
     } catch (err) {
       console.error('Errore nel cambio mappa:', err);
