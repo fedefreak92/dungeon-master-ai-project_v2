@@ -1,0 +1,154 @@
+2025-04-20 04:58:28,212 - __main__ - INFO - Test del sistema di serializzazione...
+2025-04-20 04:58:28,238 - gioco_rpg.util.serialization_tester - INFO - Avvio test di serializzazione...
+2025-04-20 04:58:28,238 - gioco_rpg.util.serialization_tester - INFO - Entità 1 serializzata:
+2025-04-20 04:58:28,238 - gioco_rpg.util.serialization_tester - INFO - {
+  "_class": "TestEntity",
+  "name": "Test Entity 1",
+  "value": 100,
+  "children": []
+}
+2025-04-20 04:58:28,239 - gioco_rpg.util.serialization_tester - INFO - Entità 2 serializzata:
+2025-04-20 04:58:28,239 - gioco_rpg.util.serialization_tester - INFO - {
+  "_class": "TestEntity",
+  "name": "Test Entity 2",
+  "value": 200,
+  "children": [
+    {
+      "_class": "ChildEntity",
+      "id": "child1",
+      "description": "First child",
+      "parent": {
+        "_ref_id": 1805120059536,
+        "_class": "TestEntity"
+      }
+    },
+    {
+      "_class": "ChildEntity",
+      "id": "child2",
+      "description": "Second child",
+      "parent": {
+        "_ref_id": 1805120059536,
+        "_class": "TestEntity"
+      }
+    }
+  ]
+}
+2025-04-20 04:58:28,239 - gioco_rpg.util.serialization_tester - INFO - Entità 3 serializzata:
+2025-04-20 04:58:28,240 - gioco_rpg.util.serialization_tester - INFO - {
+  "_class": "TestEntity",
+  "name": "Test Entity 3",
+  "value": 300,
+  "children": [],
+  "data": {
+    "list": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "dict": {
+      "a": 1,
+      "b": 2
+    },
+    "nested": {
+      "x": [
+        {
+          "y": 10
+        }
+      ]
+    }
+  },
+  "tuple_data": [
+    1,
+    2,
+    3
+  ]
+}
+2025-04-20 04:58:28,240 - gioco_rpg.util.serialization_tester - INFO - Entità 4 serializzata:
+2025-04-20 04:58:28,240 - gioco_rpg.util.serialization_tester - INFO - {
+  "_class": "TestEntity",
+  "name": "Test Entity 4",
+  "value": 400,
+  "children": [],
+  "reference": {
+    "_class": "TestEntity",
+    "name": "Test Entity 1",
+    "value": 100,
+    "children": []
+  },
+  "references": [
+    {
+      "_class": "TestEntity",
+      "name": "Test Entity 2",
+      "value": 200,
+      "children": [
+        {
+          "_class": "ChildEntity",
+          "id": "child1",
+          "description": "First child",
+          "parent": {
+            "_ref_id": 1805120059536,
+            "_class": "TestEntity"
+          }
+        },
+        {
+          "_class": "ChildEntity",
+          "id": "child2",
+          "description": "Second child",
+          "parent": {
+            "_ref_id": 1805120059536,
+            "_class": "TestEntity"
+          }
+        }
+      ]
+    },
+    {
+      "_class": "TestEntity",
+      "name": "Test Entity 3",
+      "value": 300,
+      "children": [],
+      "data": {
+        "list": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "dict": {
+          "a": 1,
+          "b": 2
+        },
+        "nested": {
+          "x": [
+            {
+              "y": 10
+            }
+          ]
+        }
+      },
+      "tuple_data": [
+        1,
+        2,
+        3
+      ]
+    }
+  ]
+}
+2025-04-20 04:58:28,241 - gioco_rpg.util.serialization_tester - INFO - Serializzate 4 entità
+2025-04-20 04:58:28,241 - gioco_rpg.util.serialization_tester - INFO - Entità 1 deserializzata con successo
+2025-04-20 04:58:28,241 - gioco_rpg.util.serializable - WARNING - Riferimento a oggetto non trovato: 1805120059536
+2025-04-20 04:58:28,242 - gioco_rpg.util.serializable - WARNING - Riferimento a oggetto non trovato: 1805120059536
+2025-04-20 04:58:28,242 - gioco_rpg.util.serialization_tester - INFO - Entità 2 deserializzata con successo
+2025-04-20 04:58:28,242 - gioco_rpg.util.serialization_tester - INFO - Entità 3 deserializzata con successo
+2025-04-20 04:58:28,242 - gioco_rpg.util.serializable - WARNING - Riferimento a oggetto non trovato: 1805120059536
+2025-04-20 04:58:28,242 - gioco_rpg.util.serializable - WARNING - Riferimento a oggetto non trovato: 1805120059536
+2025-04-20 04:58:28,242 - gioco_rpg.util.serialization_tester - INFO - Entità 4 deserializzata con successo
+2025-04-20 04:58:28,243 - gioco_rpg.util.serialization_tester - INFO - Deserializzate 4 entità
+2025-04-20 04:58:28,243 - gioco_rpg.util.serialization_tester - INFO - I dati principali dell'entità 1 sono stati preservati
+2025-04-20 04:58:28,243 - gioco_rpg.util.serialization_tester - INFO - I dati principali dell'entità 2 sono stati preservati
+2025-04-20 04:58:28,243 - gioco_rpg.util.serialization_tester - INFO - I dati principali dell'entità 3 sono stati preservati
+2025-04-20 04:58:28,243 - gioco_rpg.util.serialization_tester - INFO - I dati principali dell'entità 4 sono stati preservati
+2025-04-20 04:58:28,244 - gioco_rpg.util.serialization_tester - WARNING - I riferimenti ciclici potrebbero non essere stati preservati
+2025-04-20 04:58:28,244 - gioco_rpg.util.serialization_tester - INFO - Test di serializzazione completato
+2025-04-20 04:58:28,244 - __main__ - INFO - Test di serializzazione completati con successo
+2025-04-20 04:58:28,244 - __main__ - INFO - Operazioni completate con successo

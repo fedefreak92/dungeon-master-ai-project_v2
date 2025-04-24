@@ -261,4 +261,61 @@ Sentiti libero di aprire issues, fork o contattarmi direttamente.
 
 Questo progetto è distribuito con licenza MIT. Vedi il file `LICENSE` per ulteriori dettagli.
 
+# Implementazione MessagePack per Gioco RPG
+
+Questo documento descrive l'implementazione di MessagePack come formato di serializzazione per il gioco RPG.
+
+## Cos'è MessagePack
+
+MessagePack è un formato di serializzazione binario che permette scambi di dati tra diversi linguaggi di programmazione. È simile a JSON ma con una rappresentazione più compatta e prestazioni migliori sia in termini di velocità di serializzazione/deserializzazione che di dimensione dei dati.
+
+## Vantaggi di MessagePack
+
+- **Prestazioni**: Fino a 5 volte più veloce di JSON per la serializzazione/deserializzazione
+- **Dimensione**: Occupa circa il 30-50% in meno rispetto a JSON
+- **Compatibilità**: Supporta gli stessi tipi di dati di JSON
+- **Facilità di utilizzo**: API simile a JSON, facilmente adottabile
+
+## Implementazione nel Gioco RPG
+
+MessagePack è stato implementato in diversi componenti del sistema:
+
+1. **Classe `OggettoInterattivo`**:
+   - Aggiunto metodo `to_msgpack()` per serializzare oggetti in formato MessagePack
+   - Aggiunto metodo statico `from_msgpack()` per deserializzare oggetti
+
+2. **Classe `World`**:
+   - Aggiunto metodo `serialize_msgpack()` per serializzare il mondo di gioco
+   - Aggiunto metodo statico `deserialize_msgpack()` per deserializzare il mondo
+
+3. **Funzioni di gestione sessione**:
+   - Modificata `salva_sessione()` per salvare utilizzando MessagePack
+   - Modificata `carica_sessione()` per caricare utilizzando MessagePack con fallback su JSON
+
+## Come funziona
+
+Il sistema tenta sempre prima di utilizzare MessagePack per la serializzazione e deserializzazione. In caso di errori, il sistema esegue un fallback su JSON per garantire la robustezza.
+
+I file serializzati con MessagePack hanno l'estensione `.msgpack` e vengono salvati nella stessa directory dei file JSON, ma occupano meno spazio e sono più veloci da leggere/scrivere.
+
+## Dipendenze
+
+Per utilizzare MessagePack è necessaria la libreria Python `msgpack`. È stata aggiunta a `requirements.txt`:
+
+```
+msgpack==1.0.5
+```
+
+## Impatto sulle prestazioni
+
+L'utilizzo di MessagePack migliora significativamente le prestazioni del gioco:
+
+- Riduce il tempo di salvataggio e caricamento delle sessioni
+- Risolve i problemi di serializzazione per oggetti complessi
+- Diminuisce l'utilizzo della memoria e dello spazio su disco
+
+## Compatibilità
+
+L'implementazione è retrocompatibile con il formato JSON precedente. Il sistema verificherà prima la presenza di file MessagePack e, se non presenti, tenterà di caricare i file JSON.
+
 
