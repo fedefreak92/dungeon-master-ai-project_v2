@@ -88,18 +88,30 @@ class MenuInventarioHandler:
         if choice == "Usa oggetto":
             self.inventario_state.fase = "usa_oggetto"
             self.inventario_state.ui_aggiornata = False
+            # Emetti evento di cambio menu
+            if hasattr(self.inventario_state, 'emit_event'):
+                self.inventario_state.emit_event("MENU_CHANGED", menu="usa_oggetto")
             return True
         elif choice == "Equipaggia oggetto":
             self.inventario_state.fase = "equipaggia_oggetto"
             self.inventario_state.ui_aggiornata = False
+            # Emetti evento di cambio menu
+            if hasattr(self.inventario_state, 'emit_event'):
+                self.inventario_state.emit_event("MENU_CHANGED", menu="equipaggia_oggetto")
             return True
         elif choice == "Rimuovi equipaggiamento":
             self.inventario_state.fase = "rimuovi_equipaggiamento"
             self.inventario_state.ui_aggiornata = False
+            # Emetti evento di cambio menu
+            if hasattr(self.inventario_state, 'emit_event'):
+                self.inventario_state.emit_event("MENU_CHANGED", menu="rimuovi_equipaggiamento")
             return True
         elif choice == "Esamina oggetto":
             self.inventario_state.fase = "esamina_oggetto"
             self.inventario_state.ui_aggiornata = False
+            # Emetti evento di cambio menu
+            if hasattr(self.inventario_state, 'emit_event'):
+                self.inventario_state.emit_event("MENU_CHANGED", menu="esamina_oggetto")
             return True
         elif choice == "Torna indietro":
             self.torna_indietro(game_ctx)
@@ -121,11 +133,20 @@ class MenuInventarioHandler:
         if choice == "Annulla":
             self.inventario_state.fase = "menu_principale"
             self.inventario_state.ui_aggiornata = False
+            # Emetti evento di cambio menu
+            if hasattr(self.inventario_state, 'emit_event'):
+                self.inventario_state.emit_event("MENU_CHANGED", menu="menu_principale")
             return True
         else:
             for i, item in enumerate(game_ctx.giocatore.inventario):
                 nome_item = item.nome if hasattr(item, 'nome') else str(item)
                 if nome_item == choice:
+                    # Emetti evento di uso oggetto
+                    if hasattr(self.inventario_state, 'emit_event'):
+                        self.inventario_state.emit_event("PLAYER_USE_ITEM", 
+                                                       item_id=item.id if hasattr(item, 'id') else None,
+                                                       item_name=nome_item)
+                    # Per retrocompatibilità chiamiamo anche il metodo diretto
                     self.inventario_state.gestore_oggetti.usa_oggetto_selezionato(game_ctx, item)
                     return True
         
@@ -145,6 +166,9 @@ class MenuInventarioHandler:
         if choice == "Annulla":
             self.inventario_state.fase = "menu_principale"
             self.inventario_state.ui_aggiornata = False
+            # Emetti evento di cambio menu
+            if hasattr(self.inventario_state, 'emit_event'):
+                self.inventario_state.emit_event("MENU_CHANGED", menu="menu_principale")
             return True
         else:
             # Estrai il nome dell'oggetto dalla scelta (rimuovi la parte del tipo tra parentesi)
@@ -152,6 +176,12 @@ class MenuInventarioHandler:
             equipaggiabili = self.inventario_state.gestore_oggetti.get_oggetti_equipaggiabili(game_ctx)
             for item in equipaggiabili:
                 if item.nome == nome_oggetto:
+                    # Emetti evento di equipaggiamento oggetto
+                    if hasattr(self.inventario_state, 'emit_event'):
+                        self.inventario_state.emit_event("EQUIP_ITEM", 
+                                                       item_id=item.id if hasattr(item, 'id') else None,
+                                                       item_name=item.nome)
+                    # Per retrocompatibilità chiamiamo anche il metodo diretto
                     self.inventario_state.gestore_oggetti.equipaggia_oggetto_selezionato(game_ctx, item)
                     return True
         
@@ -171,12 +201,22 @@ class MenuInventarioHandler:
         if choice == "Annulla":
             self.inventario_state.fase = "menu_principale"
             self.inventario_state.ui_aggiornata = False
+            # Emetti evento di cambio menu
+            if hasattr(self.inventario_state, 'emit_event'):
+                self.inventario_state.emit_event("MENU_CHANGED", menu="menu_principale")
             return True
         else:
             opzioni_rimozione = self.inventario_state.gestore_oggetti.get_opzioni_rimozione(game_ctx)
             for tipo, item in opzioni_rimozione:
                 opzione_testo = f"{tipo.capitalize()}: {item.nome}"
                 if opzione_testo == choice:
+                    # Emetti evento di rimozione equipaggiamento
+                    if hasattr(self.inventario_state, 'emit_event'):
+                        self.inventario_state.emit_event("UNEQUIP_ITEM", 
+                                                       item_id=item.id if hasattr(item, 'id') else None,
+                                                       item_name=item.nome,
+                                                       slot_type=tipo)
+                    # Per retrocompatibilità chiamiamo anche il metodo diretto
                     self.inventario_state.gestore_oggetti.rimuovi_equipaggiamento_selezionato(game_ctx, item)
                     return True
         
@@ -196,11 +236,20 @@ class MenuInventarioHandler:
         if choice == "Annulla":
             self.inventario_state.fase = "menu_principale"
             self.inventario_state.ui_aggiornata = False
+            # Emetti evento di cambio menu
+            if hasattr(self.inventario_state, 'emit_event'):
+                self.inventario_state.emit_event("MENU_CHANGED", menu="menu_principale")
             return True
         else:
             for item in game_ctx.giocatore.inventario:
                 nome_item = item.nome if hasattr(item, 'nome') else str(item)
                 if nome_item == choice:
+                    # Emetti evento di esame oggetto
+                    if hasattr(self.inventario_state, 'emit_event'):
+                        self.inventario_state.emit_event("EXAMINE_ITEM", 
+                                                       item_id=item.id if hasattr(item, 'id') else None,
+                                                       item_name=nome_item)
+                    # Per retrocompatibilità chiamiamo anche il metodo diretto
                     self.inventario_state.gestore_oggetti.esamina_oggetto_selezionato(game_ctx, item)
                     return True
         
@@ -222,6 +271,15 @@ class MenuInventarioHandler:
         # Transizione
         gioco.io.mostra_transizione("fade", 0.3)
         
+        # Emetti evento prima di tornare indietro
+        if hasattr(self.inventario_state, 'emit_event'):
+            self.inventario_state.emit_event("UI_INVENTORY_TOGGLE")
+        
         # Torna allo stato precedente
         if gioco.stato_corrente() == self.inventario_state:
-            gioco.pop_stato() 
+            if hasattr(self.inventario_state, 'pop_state'):
+                # Usa il metodo basato su eventi se disponibile
+                self.inventario_state.pop_state()
+            else:
+                # Retrocompatibilità con il vecchio sistema
+                gioco.pop_stato() 

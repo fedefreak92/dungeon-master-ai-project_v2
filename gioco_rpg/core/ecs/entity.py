@@ -1,5 +1,84 @@
 import uuid
-from typing import Dict, Set, Any, Optional, List
+from typing import Dict, Set, Any, Optional, List, Callable, Type, TypeVar
+import logging
+import json
+
+# Configura il logger
+logger = logging.getLogger(__name__)
+
+class Component:
+    """
+    Classe base per i componenti delle entità.
+    
+    I componenti sono gli elementi costruttivi delle entità in un sistema ECS
+    e contengono i dati effettivi dell'entità.
+    """
+    
+    def __init__(self, entity: Optional['Entity'] = None, **kwargs):
+        """
+        Inizializza un nuovo componente.
+        
+        Args:
+            entity: Entità a cui questo componente appartiene
+            **kwargs: Dati aggiuntivi per il componente
+        """
+        self.entity = entity
+        self._data = kwargs
+        
+    def __getattr__(self, name: str) -> Any:
+        """
+        Accede dinamicamente ai dati del componente.
+        
+        Args:
+            name: Nome dell'attributo
+            
+        Returns:
+            Il valore dell'attributo
+            
+        Raises:
+            AttributeError: Se l'attributo non esiste
+        """
+        if name in self._data:
+            return self._data[name]
+        raise AttributeError(f"'{self.__class__.__name__}' non ha l'attributo '{name}'")
+        
+    def __setattr__(self, name: str, value: Any) -> None:
+        """
+        Imposta dinamicamente i dati del componente.
+        
+        Args:
+            name: Nome dell'attributo
+            value: Valore da impostare
+        """
+        if name in ('entity', '_data'):
+            super().__setattr__(name, value)
+        else:
+            self._data[name] = value
+            
+    def serialize(self) -> Dict[str, Any]:
+        """
+        Serializza il componente in un dizionario.
+        
+        Returns:
+            Dict: Dati serializzati del componente
+        """
+        return self._data
+        
+    @classmethod
+    def deserialize(cls, data: Dict[str, Any], entity: Optional['Entity'] = None) -> 'Component':
+        """
+        Crea un componente da dati serializzati.
+        
+        Args:
+            data: Dati serializzati
+            entity: Entità a cui collegare il componente
+            
+        Returns:
+            Component: Nuovo componente
+        """
+        return cls(entity=entity, **data)
+
+T = TypeVar('T', bound=Component)
 
 class Entity:
     """
@@ -7,7 +86,7 @@ class Entity:
     Un'entità è essenzialmente un contenitore di componenti con un identificatore unico.
     """
     
-    def __init__(self, id: str = None, name: str = None):
+    def __init__(self, id: Optional[str] = None, name: Optional[str] = None):
         """
         Inizializza una nuova entità
         
@@ -17,13 +96,13 @@ class Entity:
         """
         self.id = id or str(uuid.uuid4())
         self.name = name or f"Entity-{self.id[:8]}"
-        self.components: Dict[str, Any] = {}  # Componenti indicizzati per tipo
+        self.components: Dict[str, Component] = {}  # Componenti indicizzati per tipo
         self.tags: Set[str] = set()  # Tag associati all'entità
         self.active = True  # Indica se l'entità è attiva
         self.marked_for_removal = False  # Indica se l'entità è marcata per la rimozione
         self.abilita: Dict[str, int] = {}  # Abilità dell'entità e relativi valori
         
-    def add_component(self, component_type: str, component: Any) -> 'Entity':
+    def add_component(self, component_type: str, component: Component) -> 'Entity':
         """
         Aggiunge un componente all'entità
         
@@ -34,10 +113,12 @@ class Entity:
         Returns:
             Entity: L'entità stessa (per permettere chiamate a catena)
         """
+        # Collega questo componente all'entità
+        component.entity = self
         self.components[component_type] = component
         return self
         
-    def remove_component(self, component_type: str) -> bool:
+    def remove_component(self, component_type: str) -> Optional[Component]:
         """
         Rimuove un componente dall'entità
         
@@ -45,14 +126,15 @@ class Entity:
             component_type: Tipo di componente da rimuovere
             
         Returns:
-            bool: True se il componente è stato rimosso, False se non esisteva
+            Component: Il componente rimosso o None se non trovato
         """
         if component_type in self.components:
-            del self.components[component_type]
-            return True
-        return False
+            component = self.components.pop(component_type)
+            component.entity = None
+            return component
+        return None
         
-    def get_component(self, component_type: str) -> Optional[Any]:
+    def get_component(self, component_type: str) -> Optional[Component]:
         """
         Recupera un componente dell'entità
         
@@ -60,7 +142,7 @@ class Entity:
             component_type: Tipo di componente da recuperare
             
         Returns:
-            Optional[Any]: Il componente richiesto, o None se non esiste
+            Component: Il componente richiesto o None se non esiste
         """
         return self.components.get(component_type)
         
@@ -194,12 +276,12 @@ class Entity:
         """
         return self.marked_for_removal
         
-    def get_all_components(self) -> List[Any]:
+    def get_all_components(self) -> List[Component]:
         """
         Recupera tutti i componenti dell'entità
         
         Returns:
-            List[Any]: Lista di tutti i componenti
+            List[Component]: Lista di tutti i componenti
         """
         return list(self.components.values())
 
@@ -279,7 +361,7 @@ class Entity:
             return True
         return False
         
-    def to_dict(self) -> Dict[str, Any]:
+    def serialize(self) -> Dict[str, Any]:
         """
         Serializza l'entità in un dizionario
         
@@ -289,11 +371,11 @@ class Entity:
         # Serializza componenti
         components_data = {}
         for comp_type, component in self.components.items():
-            if hasattr(component, "to_dict") and callable(getattr(component, "to_dict")):
-                components_data[comp_type] = component.to_dict()
-            else:
-                # Fallback per componenti senza metodo to_dict
-                components_data[comp_type] = {"_type": comp_type}
+            try:
+                components_data[comp_type] = component.serialize()
+            except Exception as e:
+                logger.error(f"Errore nella serializzazione del componente {comp_type}: {e}")
+                # Salta questo componente
                 
         return {
             "id": self.id,
@@ -305,10 +387,23 @@ class Entity:
             "abilita": self.abilita.copy()
         }
         
-    serialize = to_dict  # Alias per compatibilità
+    def serialize_msgpack(self) -> bytes:
+        """
+        Serializza l'entità in formato MessagePack
+        
+        Returns:
+            bytes: Dati serializzati dell'entità in formato MessagePack
+        """
+        try:
+            import msgpack
+            return msgpack.packb(self.serialize(), use_bin_type=True)
+        except Exception as e:
+            logger.error(f"Errore nella serializzazione MessagePack dell'entità {self.id}: {e}")
+            # Fallback a dizionario serializzato in JSON e poi convertito in bytes
+            return json.dumps(self.serialize()).encode()
         
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'Entity':
+    def deserialize(cls, data: Dict[str, Any]) -> 'Entity':
         """
         Crea un'entità da un dizionario serializzato
         
@@ -335,7 +430,30 @@ class Entity:
         
         return entity
         
-    deserialize = from_dict  # Alias per compatibilità
+    @classmethod
+    def deserialize_msgpack(cls, data_bytes: bytes) -> 'Entity':
+        """
+        Crea un'entità da dati serializzati in formato MessagePack
+        
+        Args:
+            data_bytes: Dati serializzati in formato MessagePack
+            
+        Returns:
+            Entity: Nuova entità
+        """
+        try:
+            import msgpack
+            data = msgpack.unpackb(data_bytes, raw=False)
+            return cls.deserialize(data)
+        except Exception as e:
+            logger.error(f"Errore nella deserializzazione MessagePack: {e}")
+            try:
+                # Tenta di interpretare i dati come JSON
+                data = json.loads(data_bytes.decode())
+                return cls.deserialize(data)
+            except Exception as e2:
+                logger.error(f"Errore anche con fallback JSON: {e2}")
+                return cls()  # Ritorna un'entità vuota in caso di errore
         
     def __str__(self) -> str:
         """

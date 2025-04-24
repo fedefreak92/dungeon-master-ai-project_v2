@@ -1,6 +1,7 @@
 """
 Modulo per la gestione degli effetti durante il dialogo
 """
+import core.events as Events
 
 def gestisci_effetto(self, effetto, gioco):
     """
@@ -28,11 +29,24 @@ def gestisci_effetto(self, effetto, gioco):
             _applica_effetto_rimuovi_item(self, effetto, gioco)
         elif tipo == "scambio":
             _applica_effetto_scambio(self, effetto, gioco)
+            
+    # Emetti evento per notificare che un effetto è stato applicato
+    self.emit_event(Events.INVENTORY_ITEM_USED, 
+                   effect_type=effetto if isinstance(effetto, str) else effetto.get("tipo", ""),
+                   source_entity=self.npg.id if hasattr(self.npg, "id") else None,
+                   target_entity=gioco.giocatore.id)
 
 def _applica_effetto_riposo(self, gioco):
     """Applica l'effetto di riposo"""
-    gioco.giocatore.cura(5, gioco)
-    gioco.io.mostra_messaggio("\n*Hai riposato e recuperato 5 HP*")
+    hp_recuperati = 5
+    gioco.giocatore.cura(hp_recuperati, gioco)
+    gioco.io.mostra_messaggio(f"\n*Hai riposato e recuperato {hp_recuperati} HP*")
+    
+    # Emetti evento di cura
+    self.emit_event(Events.DAMAGE_TAKEN, 
+                   entity_id=gioco.giocatore.id, 
+                   amount=-hp_recuperati,  # Negativo indica guarigione
+                   type="healing")
     
     # Effetto visivo di guarigione migliorato
     gioco.io.mostra_animazione({
@@ -57,7 +71,7 @@ def _applica_effetto_riposo(self, gioco):
     gioco.io.mostra_ui_elemento({
         "type": "floating_text",
         "id": "hp_recuperati",
-        "text": "+5 HP",
+        "text": f"+{hp_recuperati} HP",
         "x": 400,
         "y": 250,
         "color": "#44FF44",
@@ -73,8 +87,15 @@ def _applica_effetto_riposo(self, gioco):
 
 def _applica_effetto_cura_leggera(self, gioco):
     """Applica l'effetto di cura leggera"""
-    gioco.giocatore.cura(3, gioco)
-    gioco.io.mostra_messaggio("\n*L'unguento di Violetta ti cura per 3 HP*")
+    hp_recuperati = 3
+    gioco.giocatore.cura(hp_recuperati, gioco)
+    gioco.io.mostra_messaggio(f"\n*L'unguento di {self.npg.nome} ti cura per {hp_recuperati} HP*")
+    
+    # Emetti evento di cura
+    self.emit_event(Events.DAMAGE_TAKEN, 
+                   entity_id=gioco.giocatore.id, 
+                   amount=-hp_recuperati,  # Negativo indica guarigione
+                   type="minor_healing")
     
     # Effetto visivo di guarigione migliorato
     gioco.io.mostra_animazione({
@@ -99,7 +120,7 @@ def _applica_effetto_cura_leggera(self, gioco):
     gioco.io.mostra_ui_elemento({
         "type": "floating_text",
         "id": "hp_recuperati",
-        "text": "+3 HP",
+        "text": f"+{hp_recuperati} HP",
         "x": 400,
         "y": 250,
         "color": "#88FF88",
@@ -118,6 +139,14 @@ def _applica_effetto_consegna_oro(self, effetto, gioco):
     quantita = effetto.get("quantita", 10)
     self.npg.trasferisci_oro(gioco.giocatore, quantita, gioco)
     gioco.io.mostra_messaggio(f"\n*{self.npg.nome} ti ha dato {quantita} monete d'oro*")
+    
+    # Emetti evento di trasferimento oro
+    self.emit_event(Events.INVENTORY_ITEM_ADDED, 
+                   item_type="oro",
+                   item_id="oro",
+                   quantity=quantita,
+                   from_entity=self.npg.id if hasattr(self.npg, "id") else None,
+                   to_entity=gioco.giocatore.id)
     
     # Effetto sonoro
     gioco.io.play_sound({
@@ -142,6 +171,17 @@ def _applica_effetto_aggiungi_item(self, effetto, gioco):
         gioco.giocatore.aggiungi_item(oggetto)
         gioco.io.mostra_messaggio(f"\n*Hai ricevuto {oggetto} da {self.npg.nome}*")
         
+        # Emetti evento di aggiunta item
+        oggetto_id = oggetto.id if hasattr(oggetto, "id") else str(oggetto)
+        oggetto_tipo = oggetto.tipo if hasattr(oggetto, "tipo") else "generico"
+        
+        self.emit_event(Events.INVENTORY_ITEM_ADDED, 
+                       item_type=oggetto_tipo,
+                       item_id=oggetto_id,
+                       quantity=1,
+                       from_entity=self.npg.id if hasattr(self.npg, "id") else None,
+                       to_entity=gioco.giocatore.id)
+        
         # Effetto sonoro
         gioco.io.play_sound({
             "sound_id": "item_get",
@@ -164,6 +204,17 @@ def _applica_effetto_rimuovi_item(self, effetto, gioco):
     if oggetto and gioco.giocatore.rimuovi_item(oggetto):
         self.npg.aggiungi_item(oggetto)
         gioco.io.mostra_messaggio(f"\n*Hai dato {oggetto} a {self.npg.nome}*")
+        
+        # Emetti evento di rimozione item
+        oggetto_id = oggetto.id if hasattr(oggetto, "id") else str(oggetto)
+        oggetto_tipo = oggetto.tipo if hasattr(oggetto, "tipo") else "generico"
+        
+        self.emit_event(Events.INVENTORY_ITEM_REMOVED, 
+                       item_type=oggetto_tipo,
+                       item_id=oggetto_id,
+                       quantity=1,
+                       from_entity=gioco.giocatore.id,
+                       to_entity=self.npg.id if hasattr(self.npg, "id") else None)
         
         # Effetto sonoro
         gioco.io.play_sound({
@@ -190,6 +241,27 @@ def _applica_effetto_scambio(self, effetto, gioco):
         gioco.giocatore.aggiungi_item(oggetto_trovato)
         gioco.io.mostra_messaggio(f"\n*Hai acquistato {oggetto_nome} da {self.npg.nome} per {costo} monete d'oro*")
         
+        # Emetti evento di acquisto
+        oggetto_id = oggetto_trovato.id if hasattr(oggetto_trovato, "id") else oggetto_nome
+        oggetto_tipo = oggetto_trovato.tipo if hasattr(oggetto_trovato, "tipo") else "generico"
+        
+        # Rimozione oro (oggetto acquistato)
+        self.emit_event(Events.INVENTORY_ITEM_REMOVED, 
+                       item_type="oro",
+                       item_id="oro",
+                       quantity=costo,
+                       from_entity=gioco.giocatore.id,
+                       to_entity=self.npg.id if hasattr(self.npg, "id") else None)
+                       
+        # Aggiunta oggetto
+        self.emit_event(Events.INVENTORY_ITEM_ADDED, 
+                       item_type=oggetto_tipo,
+                       item_id=oggetto_id,
+                       quantity=1,
+                       from_entity=self.npg.id if hasattr(self.npg, "id") else None,
+                       to_entity=gioco.giocatore.id,
+                       cost=costo)
+        
         # Effetti speciali per l'acquisto
         gioco.io.play_sound({
             "sound_id": "purchase",
@@ -208,6 +280,13 @@ def _applica_effetto_scambio(self, effetto, gioco):
     else:
         if gioco.giocatore.oro < costo:
             gioco.io.mostra_messaggio(f"\n*Non hai abbastanza oro per acquistare {oggetto_nome}*")
+            
+            # Evento transazione fallita
+            self.emit_event(Events.INVENTORY_ITEM_USED, 
+                           effect_type="purchase_failed",
+                           item_name=oggetto_nome,
+                           required_gold=costo,
+                           available_gold=gioco.giocatore.oro)
             
             # Effetto sonoro per acquisto fallito
             gioco.io.play_sound({

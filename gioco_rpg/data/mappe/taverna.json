@@ -5,19 +5,179 @@
   "tipo": "interno",
   "descrizione": "Una taverna accogliente con un camino e molti avventori.",
   "griglia": [
-    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-    [1, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 1],
-    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+    [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1
+    ],
+    [
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1
+    ],
+    [
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1
+    ],
+    [
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1
+    ],
+    [
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1
+    ],
+    [
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1
+    ],
+    [
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1
+    ],
+    [
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ]
   ],
   "oggetti": {
-    "(3, 2)": {
+    "[3, 2]": {
       "nome": "Baule",
       "tipo": "oggetto_interattivo",
       "descrizione": "Un baule di legno con rinforzi in metallo.",
@@ -28,8 +188,12 @@
         "aperto": "Un baule di legno con rinforzi in metallo, è aperto."
       },
       "stati_possibili": {
-        "chiuso": ["aperto"],
-        "aperto": ["chiuso"]
+        "chiuso": [
+          "aperto"
+        ],
+        "aperto": [
+          "chiuso"
+        ]
       },
       "abilita_richieste": {
         "forza": "aperto"
@@ -56,7 +220,7 @@
       ],
       "sprite": "chest"
     },
-    "(12, 5)": {
+    "[12, 5]": {
       "nome": "Porta",
       "tipo": "porta",
       "descrizione": "Una porta che conduce all'esterno.",
@@ -67,14 +231,18 @@
         "aperta": "Una porta in legno che conduce all'esterno, è aperta."
       },
       "stati_possibili": {
-        "chiusa": ["aperta"],
-        "aperta": ["chiusa"]
+        "chiusa": [
+          "aperta"
+        ],
+        "aperta": [
+          "chiusa"
+        ]
       },
       "sprite": "door"
     }
   },
   "npg": {
-    "(8, 4)": {
+    "[8, 4]": {
       "nome": "Oste",
       "descrizione": "Un uomo corpulento con un grembiule macchiato.",
       "stato": "neutrale",
@@ -86,7 +254,7 @@
       ],
       "sprite": "npc_merchant"
     },
-    "(4, 7)": {
+    "[4, 7]": {
       "nome": "Avventuriero",
       "descrizione": "Un avventuriero solitario con cicatrici sul volto.",
       "stato": "neutrale",
@@ -100,7 +268,14 @@
     }
   },
   "porte": {
-    "(12, 5)": ["villaggio", 1, 5]
+    "[12, 5]": [
+      "villaggio",
+      1,
+      5
+    ]
   },
-  "pos_iniziale_giocatore": [7, 5]
-} 
+  "pos_iniziale_giocatore": [
+    7,
+    5
+  ]
+}

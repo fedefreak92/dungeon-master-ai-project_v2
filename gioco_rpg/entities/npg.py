@@ -2,6 +2,10 @@ from entities.giocatore import Giocatore
 from items.oggetto import Oggetto
 from entities.entita import Entita, ABILITA_ASSOCIATE
 from util.data_manager import get_data_manager
+import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 class NPG(Entita):
     def __init__(self, nome, token=None):
@@ -13,7 +17,13 @@ class NPG(Entita):
         token = token or self.npc_data.get("token", "N")
         
         # Chiamiamo il costruttore della classe base
-        super().__init__(nome, hp=10, hp_max=10, forza_base=13, difesa=1, token=token)
+        super().__init__(nome, token=token)
+        
+        # Impostiamo i parametri che prima erano nell'init di Entita
+        self.hp = 10
+        self.hp_max = 10
+        self.forza_base = 13
+        self.difesa = 1
         
         # Attributi specifici per NPG
         self.stato_corrente = "default"
@@ -24,6 +34,22 @@ class NPG(Entita):
         self._inizializza_attributi()
         
         # Conversazioni non più caricate qui, ma dinamicamente quando necessario
+        
+    def get(self, key, default=None):
+        """
+        Implementa il metodo get() per permettere all'oggetto NPG di comportarsi come un dizionario.
+        Questo è necessario per la compatibilità con il sistema di salvataggio.
+        
+        Args:
+            key (str): La chiave da cercare
+            default: Il valore di default da restituire se la chiave non esiste
+            
+        Returns:
+            Il valore associato alla chiave o il valore di default
+        """
+        if hasattr(self, key):
+            return getattr(self, key)
+        return default
         
     def _inizializza_attributi(self):
         """Inizializza attributi specifici per ogni NPG dai dati esterni"""
@@ -198,6 +224,21 @@ class NPG(Entita):
         })
         
         return data
+    
+    def to_msgpack(self):
+        """
+        Converte l'NPG in formato MessagePack.
+        
+        Returns:
+            bytes: Dati serializzati in formato MessagePack
+        """
+        try:
+            import msgpack
+            return msgpack.packb(self.to_dict(), use_bin_type=True)
+        except Exception as e:
+            logger.error(f"Errore nella serializzazione MessagePack dell'NPG {self.id}: {e}")
+            # Fallback a dizionario serializzato in JSON e poi convertito in bytes
+            return json.dumps(self.to_dict()).encode()
         
     @classmethod
     def from_dict(cls, data):
@@ -251,3 +292,28 @@ class NPG(Entita):
         npg.professione = data.get("professione", "")
         
         return npg
+    
+    @classmethod
+    def from_msgpack(cls, data_bytes):
+        """
+        Crea un'istanza di NPG da dati in formato MessagePack.
+        
+        Args:
+            data_bytes (bytes): Dati serializzati in formato MessagePack
+            
+        Returns:
+            NPG: Nuova istanza di NPG
+        """
+        try:
+            import msgpack
+            dati = msgpack.unpackb(data_bytes, raw=False)
+            return cls.from_dict(dati)
+        except Exception as e:
+            logger.error(f"Errore nella deserializzazione MessagePack dell'NPG: {e}")
+            try:
+                # Tenta di interpretare i dati come JSON
+                dati = json.loads(data_bytes.decode())
+                return cls.from_dict(dati)
+            except Exception as e2:
+                logger.error(f"Errore anche con fallback JSON: {e2}")
+                return cls("NPC Errore")  # Ritorna un NPC base in caso di errore

@@ -3,457 +3,667 @@ import os
 import uuid
 from items.oggetto import Oggetto
 from entities.entita import Entita, ABILITA_ASSOCIATE
+from util.dado import Dado
+import random
+import logging
+from typing import Dict, List, Optional, Any
+
+logger = logging.getLogger(__name__)
+
+# Dadi per tirare le statistiche
+d6 = Dado(6)
 
 class Giocatore(Entita):
-    def __init__(self, nome, classe):
-        # Genera un ID unico necessario per il sistema ECS
-        self.id = str(uuid.uuid4())
+    def __init__(self, nome, classe, razza="umano", livello=1, hp=None, token="@", id=None):
+        """
+        Inizializza un nuovo giocatore.
         
-        # Inizializziamo valori specifici per il giocatore
+        Args:
+            nome (str): Nome del giocatore
+            classe (str): Classe del giocatore (guerriero, mago, etc.)
+            razza (str, optional): Razza del giocatore. Defaults to "umano".
+            livello (int, optional): Livello iniziale. Defaults to 1.
+            hp (int, optional): Punti vita. Se None, vengono calcolati in base alla classe.
+            token (str, optional): Token per rappresentazione ASCII. Defaults to "@".
+            id (str, optional): ID univoco. Se None, viene generato.
+        """
+        super().__init__(nome=nome, id=id, token=token)
+        
         self.classe = classe
+        self.razza = razza
+        self.livello = livello
         
-        # Carichiamo i dati delle classi dal JSON
-        self.dati_classi = self._carica_dati_classi()
+        # Imposta statistiche base in base alla classe
+        self._init_stats_by_class(classe)
         
-        # Otteniamo le statistiche base per la classe selezionata
-        stats_base = self._ottieni_statistiche_classe(classe)
+        # Punti vita basati sulla costituzione
+        if hp is None:
+            # Estrai il nome della classe corretto per il calcolo degli HP
+            classe_nome = classe.get('id', classe) if isinstance(classe, dict) else classe
+            classe_nome = str(classe_nome).lower()
+            
+            base_hp = {"guerriero": 10, "mago": 6, "ladro": 8}.get(classe_nome, 8)
+            self.hp_max = base_hp + self.modificatore_costituzione
+            self.hp = self.hp_max
+        else:
+            self.hp = hp
+            self.hp_max = hp
         
-        # Chiamiamo il costruttore della classe base con valori dalla classe scelta
-        super().__init__(nome, 
-                         hp=stats_base.get("hp_base", 20), 
-                         hp_max=stats_base.get("hp_base", 20), 
-                         forza_base=stats_base.get("forza", 12), 
-                         difesa=2, 
-                         destrezza_base=stats_base.get("destrezza", 10), 
-                         costituzione_base=stats_base.get("costituzione", 12), 
-                         intelligenza_base=stats_base.get("intelligenza", 10), 
-                         saggezza_base=stats_base.get("saggezza", 10), 
-                         carisma_base=stats_base.get("carisma", 10), 
-                         token="P",
-                         id=self.id)
+        # Inventario e denaro
+        self.inventario = []
+        self.oro = 10
         
-        # Impostiamo altri valori diversi dai predefiniti di Entita
-        self.oro = 100
-        self.mana = stats_base.get("mana_base", 0)
-        self.mana_max = stats_base.get("mana_base", 0)
+        # Equipaggiamento
+        self.arma = None
+        self.armatura = None
+        self.accessori = []
         
-        # Inizializza attributi per le missioni
-        self.progresso_missioni = {}
-        self.missioni_attive = []
+        # Esperienza
+        self.esperienza = 0
+        self.esperienza_prossimo_livello = self._calcola_exp_livello(livello + 1)
+        
+        # Abilità speciali per classe
+        self.abilita_speciali = self._init_abilita_speciali()
+        
+        # Missioni
+        self.missioni = []
         self.missioni_completate = []
         
-        # Inizializza i tag necessari per il sistema ECS
-        self.tags = set(['player'])
+        # Dialogo
+        self.dialogo_corrente = None
         
-        # Inizializza competenze in abilità specifiche per classe
-        self._inizializza_competenze()
+        # Stato di gioco
+        self.nome_mappa_corrente = "taverna"  # Mappa di partenza
         
-        # Attributi specifici per classe che non sono in Entita
-        self._inizializza_per_classe()
-        self._crea_inventario_base()
+    def imposta_classe(self, classe):
+        """
+        Imposta o cambia la classe del giocatore e aggiorna le statistiche.
         
-        # Aggiungiamo attributo name per compatibilità con ECS
-        self.name = nome
-    
-    def _carica_dati_classi(self):
-        """Carica i dati delle classi dal file JSON"""
-        percorso_file = os.path.join("data", "classes", "classes.json")
-        try:
-            with open(percorso_file, "r", encoding="utf-8") as file:
-                return json.load(file)
-        except (FileNotFoundError, json.JSONDecodeError):
-            # In caso di errore, restituiamo un dizionario vuoto
-            return {}
-    
-    def _ottieni_statistiche_classe(self, classe):
-        """Ottiene le statistiche base per la classe specificata"""
-        # Se classe è un dizionario con una chiave 'id', usa quell'id
-        classe_id = classe.get('id') if isinstance(classe, dict) else classe
-        
-        if classe_id in self.dati_classi:
-            return self.dati_classi[classe_id].get("statistiche_base", {})
-        return {}
-    
-    def _inizializza_competenze(self):
-        """Inizializza le competenze in abilità in base alla classe"""
-        # Se classe è un dizionario con una chiave 'id', usa quell'id
-        classe_id = self.classe.get('id') if isinstance(self.classe, dict) else self.classe
-        
-        # Verifichiamo se la classe esiste nei dati delle classi
-        if classe_id in self.dati_classi:
-            # In futuro si potrebbe estendere per leggere le competenze dal JSON
-            pass
-        
-        # Manteniamo le competenze codificate esistenti per compatibilità
-        if classe_id == "guerriero":
-            self.abilita_competenze["atletica"] = True
-            self.abilita_competenze["intimidire"] = True
-        elif classe_id == "mago":
-            self.abilita_competenze["arcano"] = True
-            self.abilita_competenze["storia"] = True
-        elif classe_id == "ladro":
-            self.abilita_competenze["furtività"] = True
-            self.abilita_competenze["acrobazia"] = True
-        elif classe_id == "chierico":
-            self.abilita_competenze["saggezza"] = True
-            self.abilita_competenze["cura"] = True      
-        # Per tutte le altre classi, nessuna competenza specifica
-    
-    def _inizializza_per_classe(self):
-        """Imposta attributi specifici in base alla classe del personaggio"""
-        # Se classe è un dizionario con una chiave 'id', usa quell'id
-        classe_id = self.classe.get('id') if isinstance(self.classe, dict) else self.classe
-        
-        # Se la classe esiste nei dati delle classi
-        if classe_id in self.dati_classi:
-            dati_classe = self.dati_classi[classe_id]
-            stats_base = dati_classe.get("statistiche_base", {})
+        Args:
+            classe (str o dict): La nuova classe del giocatore
             
-            # Aggiorniamo le statistiche base con quelle dal JSON
-            self.hp = dati_classe.get("hp_base", self.hp)
-            self.hp_max = dati_classe.get("hp_base", self.hp_max)
-            
-            # Ricalcola i modificatori
-            self.modificatore_forza = self.calcola_modificatore(self.forza_base)
-            self.modificatore_destrezza = self.calcola_modificatore(self.destrezza_base)
-            self.modificatore_costituzione = self.calcola_modificatore(self.costituzione_base)
-            self.modificatore_intelligenza = self.calcola_modificatore(self.intelligenza_base)
-            self.modificatore_saggezza = self.calcola_modificatore(self.saggezza_base)
-            self.modificatore_carisma = self.calcola_modificatore(self.carisma_base)
-            
-            # Attributo specifico del ladro
-            if classe_id == "ladro":
-                self.fortuna = 5
-        else:
-            # Gestione delle classi attualmente codificate per compatibilità
-            if classe_id == "guerriero":
-                self.hp += 5
-                self.hp_max += 5
-                self.forza_base += 4
-                self.modificatore_forza = self.calcola_modificatore(self.forza_base)
-            elif classe_id == "mago":
-                self.forza_base -= 2
-                self.intelligenza_base = 16
-                self.modificatore_forza = self.calcola_modificatore(self.forza_base)
-                self.modificatore_intelligenza = self.calcola_modificatore(self.intelligenza_base)
-            elif classe_id == "ladro":
-                self.destrezza_base = 16
-                self.modificatore_destrezza = self.calcola_modificatore(self.destrezza_base)
-                self.fortuna = 5
-            elif classe_id == "chierico":
-                self.saggezza_base = 16
-                self.modificatore_saggezza = self.calcola_modificatore(self.saggezza_base)
-    
-    def _crea_inventario_base(self):
-        """Crea un inventario base in base alla classe del personaggio"""
-        # Oggetti comuni per tutti
-        pozione = Oggetto("Pozione di cura", "cura", {"cura": 10}, 5, "Ripristina 10 punti vita")
-        chiave = Oggetto("Chiave comune", "chiave", {}, 1, "Una chiave semplice che potrebbe aprire porte o forzieri")
+        Returns:
+            bool: True se la classe è stata impostata con successo
+        """
+        # Salva la vecchia classe per log
+        vecchia_classe = self.classe
         
-        # Armi base per tutte le classi
-        arma_base = None
-        armatura_base = None
+        # Aggiorna l'attributo classe
+        self.classe = classe
         
-        # Se classe è un dizionario con una chiave 'id', usa quell'id
-        classe_id = self.classe.get('id') if isinstance(self.classe, dict) else self.classe
+        # Reinizializza le statistiche in base alla nuova classe
+        self._init_stats_by_class(classe)
         
-        # Se la classe esiste nei dati delle classi, usa l'equipaggiamento definito in JSON
-        if classe_id in self.dati_classi:
-            equipaggiamento = self.dati_classi[classe_id].get("equipaggiamento_iniziale", [])
-            
-            # Crea oggetti in base all'equipaggiamento definito nel JSON
-            if equipaggiamento and len(equipaggiamento) >= 3:
-                arma_nome = equipaggiamento[0]
-                armatura_nome = equipaggiamento[2] if len(equipaggiamento) > 2 else "Abiti semplici"
-                
-                if "spada" in arma_nome.lower() or "mazza" in arma_nome.lower():
-                    arma_base = Oggetto(arma_nome, "arma", {"forza": 3}, 15, f"Un {arma_nome.lower()} robusto")
-                elif "bastone" in arma_nome.lower():
-                    arma_base = Oggetto(arma_nome, "arma", {"forza": 1, "intelligenza": 2}, 20, f"Un {arma_nome.lower()} che amplifica i poteri magici")
-                elif "pugnale" in arma_nome.lower():
-                    arma_base = Oggetto(arma_nome, "arma", {"forza": 2, "destrezza": 1}, 12, f"Un {arma_nome.lower()} affilato e maneggevole")
-                else:
-                    arma_base = Oggetto(arma_nome, "arma", {"forza": 2}, 10, f"Un {arma_nome.lower()}")
-                
-                if "maglia" in armatura_nome.lower() or "pesante" in armatura_nome.lower():
-                    armatura_base = Oggetto(armatura_nome, "armatura", {"difesa": 3}, 25, f"Una {armatura_nome.lower()} che offre buona protezione")
-                elif "veste" in armatura_nome.lower() or "mago" in armatura_nome.lower():
-                    armatura_base = Oggetto(armatura_nome, "armatura", {"difesa": 1, "intelligenza": 1}, 15, f"Una {armatura_nome.lower()} leggera con proprietà magiche")
-                elif "cuoio" in armatura_nome.lower() or "leggera" in armatura_nome.lower():
-                    armatura_base = Oggetto(armatura_nome, "armatura", {"difesa": 2, "destrezza": 1}, 18, f"Un'armatura leggera che non limita i movimenti")
-                else:
-                    armatura_base = Oggetto(armatura_nome, "armatura", {"difesa": 1}, 10, f"Un {armatura_nome.lower()}")
+        # Aggiorna le abilità speciali
+        self.abilita_speciali = self._init_abilita_speciali()
+        
+        # Log del cambio classe
+        classe_nome = classe.get('id', str(classe)) if isinstance(classe, dict) else str(classe)
+        vecchia_classe_nome = vecchia_classe.get('id', str(vecchia_classe)) if isinstance(vecchia_classe, dict) else str(vecchia_classe)
+        logger.info(f"Classe del giocatore {self.nome} cambiata da {vecchia_classe_nome} a {classe_nome}")
+        
+        return True
+        
+    def _init_stats_by_class(self, classe):
+        """
+        Inizializza le statistiche base in base alla classe.
+        
+        Args:
+            classe (str o dict): Classe del giocatore
+        """
+        # Valori predefiniti
+        self.forza_base = 10
+        self.destrezza_base = 10
+        self.costituzione_base = 10
+        self.intelligenza_base = 10
+        self.saggezza_base = 10
+        self.carisma_base = 10
+        
+        # Estrai il nome della classe in caso sia un dizionario
+        if isinstance(classe, dict):
+            classe_id = classe.get('id')
+            if classe_id:
+                classe_nome = str(classe_id).lower()
             else:
-                # Equipaggiamento predefinito se non definito nel JSON
-                arma_base = Oggetto("Bastone da viaggio", "arma", {"forza": 1}, 5, "Un semplice bastone di legno")
-                armatura_base = Oggetto("Abiti robusti", "armatura", {"difesa": 1}, 5, "Vestiti rinforzati che offrono minima protezione")
+                classe_nome = "guerriero"  # Valore predefinito in caso di assenza
+                logger.warning(f"Il dizionario classe non contiene un campo 'id', usato valore predefinito: {classe_nome}")
         else:
-            # Usa il codice esistente per le classi predefinite
-            if classe_id == "guerriero":
-                arma_base = Oggetto("Spada corta", "arma", {"forza": 3}, 15, "Una spada corta ma robusta")
-                armatura_base = Oggetto("Cotta di maglia", "armatura", {"difesa": 3}, 25, "Una cotta di maglia che offre buona protezione")
-                
-            elif classe_id == "mago":
-                arma_base = Oggetto("Bastone arcano", "arma", {"forza": 1, "intelligenza": 2}, 20, "Un bastone che amplifica i poteri magici")
-                armatura_base = Oggetto("Veste da mago", "armatura", {"difesa": 1, "intelligenza": 1}, 15, "Una veste leggera con proprietà magiche")
-                
-            elif classe_id == "ladro":
-                arma_base = Oggetto("Pugnale", "arma", {"forza": 2, "destrezza": 1}, 12, "Un pugnale affilato e maneggevole")
-                armatura_base = Oggetto("Armatura di cuoio", "armatura", {"difesa": 2, "destrezza": 1}, 18, "Un'armatura leggera che non limita i movimenti")
-            elif classe_id ==  "chierico":
-                arma_base = Oggetto("Bastone da viaggio", "arma", {"forza": 1}, 5, "Un semplice bastone di legno")
-                armatura_base = Oggetto("Abiti robusti", "armatura", {"difesa": 1}, 5, "Vestiti rinforzati che offrono minima protezione")
-            else:
-                arma_base = Oggetto("Bastone da viaggio", "arma", {"forza": 1}, 5, "Un semplice bastone di legno")
-                armatura_base = Oggetto("Abiti robusti", "armatura", {"difesa": 1}, 5, "Vestiti rinforzati che offrono minima protezione")
+            classe_nome = str(classe).lower()
         
-        # Aggiunta degli oggetti all'inventario
-        self.inventario.append(pozione)
-        self.inventario.append(chiave)
-        self.inventario.append(arma_base)
-        self.inventario.append(armatura_base)
+        # Modifiche in base alla classe
+        if classe_nome == "guerriero":
+            self.forza_base = 14
+            self.costituzione_base = 13
+            self.abilita_competenze = {
+                "atletica": True,
+                "intimidire": True,
+                "percezione": True
+            }
+            
+        elif classe_nome == "mago":
+            self.intelligenza_base = 14
+            self.saggezza_base = 12
+            self.abilita_competenze = {
+                "arcano": True,
+                "storia": True,
+                "investigazione": True
+            }
+            
+        elif classe_nome == "ladro":
+            self.destrezza_base = 14
+            self.carisma_base = 12
+            self.abilita_competenze = {
+                "acrobazia": True,
+                "furtività": True,
+                "raggirare": True
+            }
+            
+        # Ricalcola i modificatori
+        self.modificatore_forza = self.calcola_modificatore(self.forza_base)
+        self.modificatore_destrezza = self.calcola_modificatore(self.destrezza_base)
+        self.modificatore_costituzione = self.calcola_modificatore(self.costituzione_base)
+        self.modificatore_intelligenza = self.calcola_modificatore(self.intelligenza_base)
+        self.modificatore_saggezza = self.calcola_modificatore(self.saggezza_base)
+        self.modificatore_carisma = self.calcola_modificatore(self.carisma_base)
         
-        # Equipaggia automaticamente arma e armatura base
-        arma_base.equipaggia(self)
-        armatura_base.equipaggia(self)
-        
-        # Aggiungi un accessorio base in base alla classe
-        if classe_id == "guerriero":
-            amuleto = Oggetto("Amuleto della forza", "accessorio", {"forza": 1}, 10, "Un amuleto che aumenta la forza")
-            self.inventario.append(amuleto)
-            amuleto.equipaggia(self)
-        elif classe_id == "mago":
-            anello = Oggetto("Anello della mente", "accessorio", {"intelligenza": 1}, 10, "Un anello che migliora la concentrazione")
-            self.inventario.append(anello)
-            anello.equipaggia(self)
-        elif classe_id == "ladro":
-            guanti = Oggetto("Guanti del ladro", "accessorio", {"destrezza": 1}, 10, "Guanti che migliorano la manualità")
-            self.inventario.append(guanti)
-            guanti.equipaggia(self)
-        elif classe_id == "chierico":
-            simbolo = Oggetto("Simbolo sacro", "accessorio", {"saggezza": 1}, 10, "Un simbolo sacro che aumenta la saggezza")
-            self.inventario.append(simbolo)
-            simbolo.equipaggia(self)
-
-    def attacca(self, nemico, gioco=None):
-        """Attacca un nemico utilizzando il metodo unificato"""
-        # Usa il metodo della classe base per gestire l'attacco
-        return super().attacca(nemico, gioco)
-    
-    def _sali_livello(self, gioco=None):
-        """Override del metodo della classe base per un messaggio personalizzato"""
-        # Chiamiamo prima il metodo della classe base
-        super()._sali_livello(gioco)
-        # Poi aggiungiamo il nostro messaggio personalizzato
-        
-        # Aggiungi il messaggio usando l'interfaccia I/O del gioco
-        if gioco:
-            gioco.io.mostra_messaggio("Sei diventato più forte!")
-
-    def muovi(self, dx, dy, gestore_mappe):
+    def _init_abilita_speciali(self):
         """
-        Tenta di muovere il giocatore nella direzione specificata
+        Inizializza le abilità speciali in base alla classe.
+        
+        Returns:
+            dict: Dizionario delle abilità speciali
+        """
+        abilita = {}
+        
+        # Estrai il nome della classe in caso sia un dizionario
+        if isinstance(self.classe, dict):
+            classe_nome = self.classe.get('id', 'guerriero').lower()
+        else:
+            classe_nome = str(self.classe).lower()
+        
+        if classe_nome == "guerriero":
+            abilita["secondo_fiato"] = {
+                "nome": "Secondo Fiato",
+                "descrizione": "Recupera 1d10 + livello HP come azione bonus.",
+                "utilizzi": 1,
+                "utilizzi_max": 1,
+                "ripristino": "riposo_breve"
+            }
+            
+        elif classe_nome == "mago":
+            abilita["dardo_incantato"] = {
+                "nome": "Dardo Incantato",
+                "descrizione": "Lancia un dardo magico che infligge 1d4+1 danni.",
+                "utilizzi": 3,
+                "utilizzi_max": 3,
+                "ripristino": "riposo_lungo"
+            }
+            
+        elif classe_nome == "ladro":
+            abilita["attacco_furtivo"] = {
+                "nome": "Attacco Furtivo",
+                "descrizione": "Infligge 1d6 danni extra quando hai vantaggio.",
+                "utilizzi": float('inf'),
+                "utilizzi_max": float('inf'),
+                "ripristino": None
+            }
+            
+        return abilita
+        
+    def _calcola_exp_livello(self, livello):
+        """
+        Calcola l'esperienza necessaria per il livello specificato.
         
         Args:
-            dx (int): Spostamento sull'asse X
-            dy (int): Spostamento sull'asse Y
-            gestore_mappe: Gestore delle mappe di gioco
+            livello (int): Livello per cui calcolare l'esperienza
             
         Returns:
-            bool: True se il movimento è avvenuto, False altrimenti
+            int: Esperienza necessaria
         """
-        if not gestore_mappe or not self.mappa_corrente:
-            return False
+        # Formula semplificata per l'XP necessario
+        return (livello * livello * 100)
         
-        return gestore_mappe.muovi_giocatore(self, dx, dy)
-    
-    def interagisci_con_oggetto_adiacente(self, gestore_mappe, gioco=None):
+    def guadagna_esperienza(self, exp):
         """
-        Interagisce con l'oggetto adiacente al giocatore, se presente
+        Aggiunge esperienza al giocatore e gestisce l'avanzamento di livello.
         
         Args:
-            gestore_mappe: Gestore delle mappe di gioco
-            gioco: Riferimento all'oggetto gioco principale
+            exp (int): Quantità di esperienza da aggiungere
             
         Returns:
-            bool: True se è avvenuta un'interazione, False altrimenti
+            bool: True se il giocatore è salito di livello
         """
-        if not gestore_mappe or not self.mappa_corrente:
-            return False
+        self.esperienza += exp
         
-        mappa = gestore_mappe.ottieni_mappa(self.mappa_corrente)
-        if not mappa:
-            return False
-        
-        # Controlla in tutte le direzioni adiacenti
-        for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
-            x, y = self.x + dx, self.y + dy
-            oggetto = mappa.ottieni_oggetto_a(x, y)
-            if oggetto:
-                if gioco and gioco.io:
-                    gioco.io.mostra_messaggio(f"Interagisci con {oggetto.nome}")
-                oggetto.interagisci(self)
-                return True
+        if self.esperienza >= self.esperienza_prossimo_livello:
+            return self.aumenta_livello()
             
-        if gioco and gioco.io:
-            gioco.io.mostra_messaggio("Non ci sono oggetti con cui interagire nelle vicinanze.")
         return False
-    
-    def interagisci_con_npg_adiacente(self, gestore_mappe, gioco=None):
+        
+    def aumenta_livello(self):
         """
-        Interagisce con l'NPG adiacente al giocatore, se presente
+        Aumenta di livello il giocatore.
+        
+        Returns:
+            bool: True se l'aumento è avvenuto con successo
+        """
+        self.livello += 1
+        
+        # Calcola i nuovi HP
+        # Estrai il nome della classe in caso sia un dizionario
+        if isinstance(self.classe, dict):
+            classe_nome = self.classe.get('id', 'guerriero').lower()
+        else:
+            classe_nome = str(self.classe).lower()
+            
+        dadi_vita = {"guerriero": 10, "mago": 6, "ladro": 8}.get(classe_nome, 8)
+        guadagno_hp = max(1, Dado(dadi_vita).tira() + self.modificatore_costituzione)
+        self.hp_max += guadagno_hp
+        self.hp += guadagno_hp
+        
+        # Aggiorna il bonus di competenza ogni 4 livelli
+        self.bonus_competenza = 2 + ((self.livello - 1) // 4)
+        
+        # Aggiorna la soglia per il prossimo livello
+        self.esperienza_prossimo_livello = self._calcola_exp_livello(self.livello + 1)
+        
+        return True
+        
+    def aggiungi_item(self, item):
+        """
+        Aggiunge un oggetto all'inventario.
         
         Args:
-            gestore_mappe: Gestore delle mappe di gioco
-            gioco: Riferimento all'oggetto gioco principale (opzionale se memorizzato)
+            item: Oggetto da aggiungere
+        """
+        if isinstance(item, list):
+            for i in item:
+                self.inventario.append(i)
+        else:
+            self.inventario.append(item)
+            
+    def rimuovi_item(self, item_nome):
+        """
+        Rimuove un oggetto dall'inventario.
+        
+        Args:
+            item_nome (str): Nome dell'oggetto da rimuovere
             
         Returns:
-            bool: True se è avvenuta un'interazione, False altrimenti
+            bool: True se l'oggetto è stato rimosso, False altrimenti
         """
-        # Usa il contesto di gioco memorizzato se non viene fornito
-        game_ctx = gioco if gioco else getattr(self, 'gioco', None)
-        
-        if not gestore_mappe or not self.mappa_corrente:
-            return False
-        
-        mappa = gestore_mappe.ottieni_mappa(self.mappa_corrente)
-        if not mappa:
-            return False
-        
-        # Controlla in tutte le direzioni adiacenti
-        for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
-            x, y = self.x + dx, self.y + dy
-            npg = mappa.ottieni_npg_a(x, y)
-            if npg:
-                if game_ctx and game_ctx.io:
-                    game_ctx.io.mostra_messaggio(f"Parli con {npg.nome}")
-                from states.dialogo import DialogoState
-                game_ctx.push_stato(DialogoState(npg))
+        for i, item in enumerate(self.inventario):
+            nome_item = item.nome if hasattr(item, 'nome') else item
+            if nome_item == item_nome:
+                self.inventario.pop(i)
                 return True
-            
-        if game_ctx and game_ctx.io:
-            game_ctx.io.mostra_messaggio("Non ci sono personaggi con cui parlare nelle vicinanze.")
         return False
-    
-    def ottieni_oggetti_vicini(self, gestore_mappe, raggio=1):
+        
+    def equipaggia_arma(self, arma):
         """
-        Restituisce gli oggetti vicini al giocatore
+        Equipaggia un'arma.
         
         Args:
-            gestore_mappe: Gestore delle mappe di gioco
-            raggio (int): Raggio di ricerca
-            
-        Returns:
-            dict: Dizionario di oggetti vicini
+            arma: Arma da equipaggiare
         """
-        if not gestore_mappe or not self.mappa_corrente:
-            return {}
+        self.arma = arma
         
-        mappa = gestore_mappe.ottieni_mappa(self.mappa_corrente)
-        if not mappa:
-            return {}
-        
-        return mappa.ottieni_oggetti_vicini(self.x, self.y, raggio)
-    
-    def ottieni_npg_vicini(self, gestore_mappe, raggio=1):
+    def equipaggia_armatura(self, armatura):
         """
-        Restituisce gli NPG vicini al giocatore
+        Equipaggia un'armatura.
         
         Args:
-            gestore_mappe: Gestore delle mappe di gioco
-            raggio (int): Raggio di ricerca
+            armatura: Armatura da equipaggiare
+        """
+        self.armatura = armatura
+        
+    def riposa(self, tipo_riposo="breve"):
+        """
+        Fa riposare il giocatore.
+        
+        Args:
+            tipo_riposo (str): "breve" o "lungo"
             
         Returns:
-            dict: Dizionario di NPG vicini
+            int: Quantità di HP recuperati
         """
-        if not gestore_mappe or not self.mappa_corrente:
-            return {}
+        hp_recuperati = 0
         
-        mappa = gestore_mappe.ottieni_mappa(self.mappa_corrente)
-        if not mappa:
-            return {}
+        if tipo_riposo == "breve":
+            # Riposo breve: recupera 1d8 + modificatore costituzione
+            recupero = Dado(8).tira() + self.modificatore_costituzione
+            hp_recuperati = min(recupero, self.hp_max - self.hp)
+            self.hp += hp_recuperati
+            
+            # Ripristina abilità
+            for nome_abilita, abilita in self.abilita_speciali.items():
+                if abilita["ripristino"] == "riposo_breve":
+                    abilita["utilizzi"] = abilita["utilizzi_max"]
+            
+        elif tipo_riposo == "lungo":
+            # Riposo lungo: recupera tutti gli HP
+            hp_recuperati = self.hp_max - self.hp
+            self.hp = self.hp_max
+            
+            # Ripristina tutte le abilità
+            for nome_abilita, abilita in self.abilita_speciali.items():
+                if abilita["ripristino"] in ["riposo_breve", "riposo_lungo"]:
+                    abilita["utilizzi"] = abilita["utilizzi_max"]
         
-        return mappa.ottieni_npg_vicini(self.x, self.y, raggio)
-
-    def serialize(self):
+        return hp_recuperati
+        
+    def subisci_danno(self, danno):
         """
-        Serializza il giocatore per la memorizzazione persistente.
-        Si basa sul metodo to_dict.
+        Fa subire danno al giocatore.
+        
+        Args:
+            danno (int): Quantità di danno da infliggere
+            
+        Returns:
+            int: Danno effettivamente inflitto
+        """
+        danno_effettivo = max(0, danno)
+        self.hp -= danno_effettivo
+        
+        # Gestisci la morte
+        if self.hp <= 0:
+            self.hp = 0
+            self.stato = "inconscio"
+            
+        return danno_effettivo
+        
+    def get_danno_arma(self):
+        """
+        Calcola il danno dell'arma corrente.
         
         Returns:
-            dict: Rappresentazione serializzata del giocatore
+            int: Danno base dell'arma
         """
-        return self.to_dict()
+        if not self.arma:
+            return 1  # Danno a mani nude
+            
+        # Implementazione di base
+        if hasattr(self.arma, 'danno'):
+            return self.arma.danno
+            
+        # Danni predefiniti se l'arma non ha l'attributo danno
+        armi_base = {
+            "spada": 6,
+            "pugnale": 4,
+            "ascia": 8,
+            "bastone": 4,
+            "arco": 6
+        }
         
-    def to_dict(self, already_serialized=None):
+        if isinstance(self.arma, str):
+            for tipo_arma, danno in armi_base.items():
+                if tipo_arma in self.arma.lower():
+                    return danno
+                    
+        return 4  # Danno predefinito
+        
+    def get_classe_armatura(self):
+        """
+        Calcola la classe armatura (CA) del giocatore.
+        
+        Returns:
+            int: Classe armatura
+        """
+        ca_base = 10 + self.modificatore_destrezza
+        
+        if self.armatura:
+            if hasattr(self.armatura, 'ca'):
+                return self.armatura.ca
+                
+            # Calcolo predefinito
+            armature_base = {
+                "cuoio": 11,
+                "cotta": 13,
+                "piastre": 16,
+                "scudo": 2  # Bonus
+            }
+            
+            if isinstance(self.armatura, str):
+                for tipo_armatura, ca in armature_base.items():
+                    if tipo_armatura in self.armatura.lower():
+                        # Se è uno scudo, aggiungi il bonus alla CA base
+                        if tipo_armatura == "scudo":
+                            return ca_base + ca
+                        # Altrimenti, sostituisci la CA base con quella dell'armatura + mod destrezza
+                        else:
+                            return ca + min(2, self.modificatore_destrezza)
+                            
+        return ca_base
+        
+    def usa_abilita_speciale(self, nome_abilita):
+        """
+        Usa un'abilità speciale.
+        
+        Args:
+            nome_abilita (str): Nome dell'abilità da usare
+            
+        Returns:
+            dict: Risultato dell'abilità o None se non disponibile
+        """
+        if nome_abilita not in self.abilita_speciali:
+            return None
+            
+        abilita = self.abilita_speciali[nome_abilita]
+        
+        if abilita["utilizzi"] <= 0:
+            return {"successo": False, "messaggio": f"{abilita['nome']} non ha utilizzi rimanenti."}
+            
+        # Decrementa gli utilizzi
+        abilita["utilizzi"] -= 1
+        
+        # Logica specifica per ogni abilità
+        if nome_abilita == "secondo_fiato":
+            recupero = Dado(10).tira() + self.livello
+            hp_recuperati = min(recupero, self.hp_max - self.hp)
+            self.hp += hp_recuperati
+            return {
+                "successo": True,
+                "messaggio": f"Recuperi {hp_recuperati} punti ferita.",
+                "hp_recuperati": hp_recuperati
+            }
+            
+        elif nome_abilita == "dardo_incantato":
+            danno = Dado(4).tira() + 1
+            return {
+                "successo": True,
+                "messaggio": f"Il dardo magico infligge {danno} danni.",
+                "danno": danno
+            }
+            
+        elif nome_abilita == "attacco_furtivo":
+            danno = Dado(6).tira()
+            return {
+                "successo": True,
+                "messaggio": f"Colpisci un punto debole per {danno} danni extra.",
+                "danno": danno
+            }
+            
+        return {"successo": True, "messaggio": f"Hai usato {abilita['nome']}."}
+        
+    def get_tiro_salvezza(self, caratteristica):
+        """
+        Esegue un tiro salvezza per una caratteristica.
+        
+        Args:
+            caratteristica (str): Caratteristica per cui fare il tiro
+            
+        Returns:
+            dict: Risultato del tiro salvezza
+        """
+        # Ottieni il modificatore
+        mod = getattr(self, f"modificatore_{caratteristica.lower()}", 0)
+        
+        # Aggiungi bonus di competenza se competente
+        if caratteristica.lower() in ["forza", "costituzione"] and self.classe.lower() == "guerriero":
+            mod += self.bonus_competenza
+        elif caratteristica.lower() in ["intelligenza", "saggezza"] and self.classe.lower() == "mago":
+            mod += self.bonus_competenza
+        elif caratteristica.lower() in ["destrezza", "carisma"] and self.classe.lower() == "ladro":
+            mod += self.bonus_competenza
+            
+        # Tira il dado
+        tiro = Dado(20).tira()
+        risultato = tiro + mod
+        
+        return {
+            "tiro": tiro,
+            "modificatore": mod,
+            "risultato": risultato,
+            "critico": tiro == 20,
+            "fallimento_critico": tiro == 1
+        }
+        
+    def get_tiro_abilita(self, abilita):
+        """
+        Esegue un tiro per un'abilità.
+        
+        Args:
+            abilita (str): Abilità per cui fare il tiro
+            
+        Returns:
+            dict: Risultato del tiro abilità
+        """
+        # Mappa delle abilità alle caratteristiche
+        mappa_abilita_caratteristiche = {
+            "acrobazia": "destrezza",
+            "addestrare_animali": "saggezza",
+            "arcano": "intelligenza",
+            "atletica": "forza",
+            "furtività": "destrezza",
+            "indagare": "intelligenza",
+            "inganno": "carisma",
+            "intimidire": "carisma",
+            "medicina": "saggezza",
+            "natura": "intelligenza",
+            "percezione": "saggezza",
+            "persuasione": "carisma",
+            "rapidità_di_mano": "destrezza",
+            "religione": "intelligenza",
+            "sopravvivenza": "saggezza",
+            "storia": "intelligenza"
+        }
+        
+        # Trova la caratteristica associata
+        caratteristica = mappa_abilita_caratteristiche.get(abilita.lower(), "destrezza")
+        
+        # Ottieni il modificatore
+        mod = getattr(self, f"modificatore_{caratteristica}", 0)
+        
+        # Aggiungi bonus di competenza se competente
+        competente = self.abilita_competenze.get(abilita.lower(), False)
+        bonus_comp = self.bonus_competenza if competente else 0
+        
+        # Tira il dado
+        tiro = Dado(20).tira()
+        risultato = tiro + mod + bonus_comp
+        
+        return {
+            "tiro": tiro,
+            "modificatore": mod,
+            "bonus_competenza": bonus_comp,
+            "competente": competente,
+            "risultato": risultato,
+            "critico": tiro == 20,
+            "fallimento_critico": tiro == 1
+        }
+        
+    def to_dict(self):
         """
         Converte il giocatore in un dizionario per la serializzazione.
         
-        Args:
-            already_serialized (set, optional): Set di ID di oggetti già serializzati
-            
         Returns:
-            dict: Rappresentazione del giocatore in formato dizionario
+            dict: Dizionario rappresentante lo stato del giocatore
         """
-        # Ottieni il dizionario base dalla classe genitore
-        data = super().to_dict(already_serialized)
-        
-        # Gestisci il caso in cui self.classe sia un dizionario
-        classe_serializzata = self.classe
-        if isinstance(self.classe, dict):
-            # Se è un dizionario, estrai l'id
-            classe_serializzata = self.classe.get('id', 'guerriero')
+        # Ottieni il dizionario base dall'entità
+        dati = super().to_dict()
         
         # Aggiungi attributi specifici del giocatore
-        data.update({
-            "classe": classe_serializzata,
-            "progresso_missioni": self.progresso_missioni,
-            "missioni_attive": self.missioni_attive,
+        dati.update({
+            "classe": self.classe,
+            "razza": self.razza,
+            "livello": self.livello,
+            "hp": self.hp,
+            "hp_max": self.hp_max,
+            "esperienza": self.esperienza,
+            "esperienza_prossimo_livello": self.esperienza_prossimo_livello,
+            "abilita_speciali": self.abilita_speciali,
+            "missioni": self.missioni,
             "missioni_completate": self.missioni_completate,
-            "posizione": [self.x, self.y],  # Per compatibilità
-            "mana": getattr(self, "mana", 0),
-            "mana_max": getattr(self, "mana_max", 0)
+            "dialogo_corrente": self.dialogo_corrente,
+            "nome_mappa_corrente": self.nome_mappa_corrente
         })
         
-        return data
-        
-    @classmethod
-    def from_dict(cls, data):
+        return dati
+    
+    def to_msgpack(self):
         """
-        Crea un'istanza di Giocatore da un dizionario.
+        Converte il giocatore in formato MessagePack.
+        
+        Returns:
+            bytes: Dati serializzati in formato MessagePack
+        """
+        try:
+            import msgpack
+            return msgpack.packb(self.to_dict(), use_bin_type=True)
+        except Exception as e:
+            logger.error(f"Errore nella serializzazione MessagePack del giocatore {self.id}: {e}")
+            # Fallback a dizionario serializzato in JSON e poi convertito in bytes
+            return json.dumps(self.to_dict()).encode()
+    
+    @classmethod
+    def from_dict(cls, dati):
+        """
+        Crea un'istanza del giocatore da un dizionario.
         
         Args:
-            data (dict): Dizionario con i dati del giocatore
+            dati (dict): Dizionario con i dati del giocatore
             
         Returns:
-            Giocatore: Nuova istanza di Giocatore
+            Giocatore: Istanza del giocatore
         """
-        # Estrai i dati specifici della sottoclasse
-        nome = data.get("nome", "Sconosciuto")
-        classe = data.get("classe", "guerriero")
+        # Crea l'istanza base
+        giocatore = cls(
+            nome=dati.get("nome", "Avventuriero"),
+            classe=dati.get("classe", "guerriero"),
+            razza=dati.get("razza", "umano"),
+            livello=dati.get("livello", 1),
+            hp=dati.get("hp"),
+            token=dati.get("token", "@"),
+            id=dati.get("id")
+        )
         
-        # Crea l'istanza con i parametri base
-        giocatore = cls(nome, classe)
+        # Aggiorna gli attributi specifici
+        giocatore.hp = dati.get("hp", giocatore.hp)
+        giocatore.hp_max = dati.get("hp_max", giocatore.hp_max)
+        giocatore.esperienza = dati.get("esperienza", 0)
+        giocatore.esperienza_prossimo_livello = dati.get("esperienza_prossimo_livello", giocatore._calcola_exp_livello(giocatore.livello + 1))
+        giocatore.abilita_speciali = dati.get("abilita_speciali", giocatore.abilita_speciali)
+        giocatore.missioni = dati.get("missioni", [])
+        giocatore.missioni_completate = dati.get("missioni_completate", [])
+        giocatore.dialogo_corrente = dati.get("dialogo_corrente")
+        giocatore.nome_mappa_corrente = dati.get("nome_mappa_corrente", "taverna")
         
-        # Assicurati che l'id sia preservato se presente nel dizionario
-        if "id" in data:
-            giocatore.id = data["id"]
+        # Imposta inventario e equipaggiamento
+        giocatore.inventario = dati.get("inventario", [])
+        giocatore.oro = dati.get("oro", 10)
+        giocatore.arma = dati.get("arma")
+        giocatore.armatura = dati.get("armatura")
+        giocatore.accessori = dati.get("accessori", [])
         
-        # Imposta gli attributi base usando la classe base
-        # Ignoriamo l'inizializzazione che fa Entita.from_dict
-        # perché il costruttore di Giocatore ha una logica specifica
+        # Imposta caratteristiche
+        giocatore.forza_base = dati.get("forza_base", giocatore.forza_base)
+        giocatore.destrezza_base = dati.get("destrezza_base", giocatore.destrezza_base)
+        giocatore.costituzione_base = dati.get("costituzione_base", giocatore.costituzione_base)
+        giocatore.intelligenza_base = dati.get("intelligenza_base", giocatore.intelligenza_base)
+        giocatore.saggezza_base = dati.get("saggezza_base", giocatore.saggezza_base)
+        giocatore.carisma_base = dati.get("carisma_base", giocatore.carisma_base)
         
-        # Imposta gli attributi base
-        giocatore.hp = data.get("hp", giocatore.hp)
-        giocatore.hp_max = data.get("hp_max", giocatore.hp_max)
-        giocatore.forza_base = data.get("forza_base", giocatore.forza_base)
-        giocatore.destrezza_base = data.get("destrezza_base", giocatore.destrezza_base)
-        giocatore.costituzione_base = data.get("costituzione_base", giocatore.costituzione_base)
-        giocatore.intelligenza_base = data.get("intelligenza_base", giocatore.intelligenza_base)
-        giocatore.saggezza_base = data.get("saggezza_base", giocatore.saggezza_base)
-        giocatore.carisma_base = data.get("carisma_base", giocatore.carisma_base)
-        
-        # Imposta i modificatori
+        # Ricalcola i modificatori
         giocatore.modificatore_forza = giocatore.calcola_modificatore(giocatore.forza_base)
         giocatore.modificatore_destrezza = giocatore.calcola_modificatore(giocatore.destrezza_base)
         giocatore.modificatore_costituzione = giocatore.calcola_modificatore(giocatore.costituzione_base)
@@ -461,69 +671,35 @@ class Giocatore(Entita):
         giocatore.modificatore_saggezza = giocatore.calcola_modificatore(giocatore.saggezza_base)
         giocatore.modificatore_carisma = giocatore.calcola_modificatore(giocatore.carisma_base)
         
-        # Imposta posizione
-        if "posizione" in data and isinstance(data["posizione"], list) and len(data["posizione"]) >= 2:
-            giocatore.x, giocatore.y = data["posizione"]
-        else:
-            giocatore.x = data.get("x", 0)
-            giocatore.y = data.get("y", 0)
-            
-        giocatore.mappa_corrente = data.get("mappa_corrente")
-        
-        # Ripristina altri attributi
-        giocatore.abilita_competenze = data.get("abilita_competenze", {})
-        giocatore.bonus_competenza = data.get("bonus_competenza", 2)
-        giocatore.difesa = data.get("difesa", 0)
-        giocatore.oro = data.get("oro", 0)
-        giocatore.esperienza = data.get("esperienza", 0)
-        giocatore.livello = data.get("livello", 1)
-        
-        # Gestisci missioni
-        giocatore.progresso_missioni = data.get("progresso_missioni", {})
-        giocatore.missioni_attive = data.get("missioni_attive", [])
-        giocatore.missioni_completate = data.get("missioni_completate", [])
-        
-        # Caricamento dell'inventario e dell'equipaggiamento richiede oggetti
-        # Questo è fatto esternamente o in modo più complesso
-        from items.oggetto import Oggetto
-        
-        # Gestisci inventario
-        inventario_raw = data.get("inventario", [])
-        inventario = []
-        
-        for item in inventario_raw:
-            if isinstance(item, dict):
-                inventario.append(Oggetto.from_dict(item))
-            elif isinstance(item, str):
-                # Crea un oggetto generico se solo il nome è disponibile
-                inventario.append(Oggetto(item, "comune"))
-                
-        giocatore.inventario = inventario
-        
-        # Ripristina arma
-        arma_data = data.get("arma")
-        if isinstance(arma_data, dict):
-            giocatore.arma = Oggetto.from_dict(arma_data)
-        elif isinstance(arma_data, str):
-            giocatore.arma = Oggetto(arma_data, "arma")
-        
-        # Ripristina armatura
-        armatura_data = data.get("armatura")
-        if isinstance(armatura_data, dict):
-            giocatore.armatura = Oggetto.from_dict(armatura_data)
-        elif isinstance(armatura_data, str):
-            giocatore.armatura = Oggetto(armatura_data, "armatura")
-            
-        # Ripristina accessori
-        accessori_data = data.get("accessori", [])
-        accessori = []
-        
-        for acc in accessori_data:
-            if isinstance(acc, dict):
-                accessori.append(Oggetto.from_dict(acc))
-            elif isinstance(acc, str):
-                accessori.append(Oggetto(acc, "accessorio"))
-                
-        giocatore.accessori = accessori
+        # Imposta abilità
+        giocatore.abilita_competenze = dati.get("abilita_competenze", {})
         
         return giocatore
+    
+    @classmethod
+    def from_msgpack(cls, data_bytes):
+        """
+        Crea un'istanza del giocatore da dati in formato MessagePack.
+        
+        Args:
+            data_bytes (bytes): Dati serializzati in formato MessagePack
+            
+        Returns:
+            Giocatore: Istanza del giocatore
+        """
+        try:
+            import msgpack
+            dati = msgpack.unpackb(data_bytes, raw=False)
+            return cls.from_dict(dati)
+        except Exception as e:
+            logger.error(f"Errore nella deserializzazione MessagePack del giocatore: {e}")
+            try:
+                # Tenta di interpretare i dati come JSON
+                dati = json.loads(data_bytes.decode())
+                return cls.from_dict(dati)
+            except Exception as e2:
+                logger.error(f"Errore anche con fallback JSON: {e2}")
+                return cls("Giocatore Errore", "guerriero")  # Ritorna un giocatore base in caso di errore
+    
+    def __str__(self):
+        return f"{self.nome} ({self.razza} {self.classe} liv. {self.livello}) HP: {self.hp}/{self.hp_max}"

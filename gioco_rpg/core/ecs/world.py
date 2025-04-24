@@ -41,6 +41,56 @@ class World:
         """
         return self.get_player_entity()
         
+    @giocatore.setter
+    def giocatore(self, value):
+        """
+        Imposta l'entità giocatore
+        
+        Args:
+            value: L'entità giocatore da impostare
+        """
+        # Rimuove il tag player da tutte le entità che lo hanno
+        player_entities = self.find_entities_by_tag("player")
+        for entity in player_entities:
+            entity.remove_tag("player")
+            
+        # Verifica se l'oggetto è un'entità ECS o un oggetto Giocatore
+        if hasattr(value, "add_tag") and callable(getattr(value, "add_tag")):
+            # È un'entità ECS
+            
+            # Assicura che l'entità sia aggiunta al mondo
+            if value.id not in self.entities:
+                self.add_entity(value)
+                
+            # Aggiunge il tag player alla nuova entità giocatore
+            value.add_tag("player")
+            logger.info(f"Impostata entità giocatore ECS: {value.name} (ID: {value.id})")
+        else:
+            # È un oggetto Giocatore legacy
+            # Creiamo un'entità ECS wrapper per il giocatore legacy
+            from .entity import Entity
+            
+            # Usa i dati del giocatore per creare un'entità ECS
+            player_entity = Entity(id=value.id, name=value.nome)
+            
+            # Aggiorna l'attributo tags se esiste nel Giocatore
+            if hasattr(value, "tags"):
+                player_entity.tags = value.tags.copy() if hasattr(value.tags, "copy") else set(value.tags)
+            
+            # Assicurati che abbia il tag player
+            player_entity.add_tag("player")
+            
+            # Aggiungi l'entità al mondo ECS
+            self.add_entity(player_entity)
+            
+            # Memorizza un riferimento al giocatore legacy nell'entità ECS
+            setattr(player_entity, "_legacy_player", value)
+            
+            # Aggiunge un attributo alla classe Giocatore per accedere all'entità ECS
+            setattr(value, "entity", player_entity)
+            
+            logger.info(f"Impostata entità giocatore Legacy: {value.nome} (ID: {value.id})")
+        
     def add_entity(self, entity: Entity) -> Entity:
         """
         Aggiunge un'entità al mondo
@@ -404,8 +454,17 @@ class World:
                         event_copy = {}
                         for k, v in event.items():
                             # Filtra solo i tipi base serializzabili
-                            if isinstance(v, (str, int, float, bool, list, tuple, dict)) or v is None:
+                            if isinstance(v, (str, int, float, bool)) or v is None:
                                 event_copy[k] = v
+                            elif isinstance(v, (list, tuple)):
+                                # Converti in lista serializzabile
+                                event_copy[k] = self._convert_to_serializable(v)
+                            elif isinstance(v, dict):
+                                # Converti in dizionario serializzabile
+                                event_copy[k] = self._convert_to_serializable(v)
+                            else:
+                                # Per altri tipi, usa la rappresentazione stringa
+                                event_copy[k] = str(v)
                         events_data.append(event_copy)
                     else:
                         # Se non è un dizionario, includi solo il tipo
@@ -421,8 +480,18 @@ class World:
                     if isinstance(event, dict):
                         event_copy = {}
                         for k, v in event.items():
-                            if isinstance(v, (str, int, float, bool, list, tuple, dict)) or v is None:
+                            # Filtra solo i tipi base serializzabili
+                            if isinstance(v, (str, int, float, bool)) or v is None:
                                 event_copy[k] = v
+                            elif isinstance(v, (list, tuple)):
+                                # Converti in lista serializzabile
+                                event_copy[k] = self._convert_to_serializable(v)
+                            elif isinstance(v, dict):
+                                # Converti in dizionario serializzabile
+                                event_copy[k] = self._convert_to_serializable(v)
+                            else:
+                                # Per altri tipi, usa la rappresentazione stringa
+                                event_copy[k] = str(v)
                         pending_events_data.append(event_copy)
                     else:
                         pending_events_data.append({"type": str(type(event).__name__)})
@@ -446,50 +515,13 @@ class World:
                         temporary_states_data[state_name] = state_value.serialize()
                     elif isinstance(state_value, dict):
                         # Creazione manuale di una copia sicura per evitare riferimenti circolari
-                        temp_dict = {}
-                        for k, v in state_value.items():
-                            if isinstance(v, (str, int, float, bool)) or v is None:
-                                # I tipi di base sono sicuri
-                                temp_dict[k] = v
-                            elif isinstance(v, (list, tuple)):
-                                # Per liste e tuple, includi solo elementi di tipo base
-                                safe_list = []
-                                for item in v:
-                                    if isinstance(item, (str, int, float, bool)) or item is None:
-                                        safe_list.append(item)
-                                    elif isinstance(item, dict):
-                                        # Per dizionari innestati, includi solo le chiavi come stringhe
-                                        safe_list.append(str(item))
-                                    else:
-                                        # Per altri oggetti, converti in stringa
-                                        safe_list.append(str(item))
-                                temp_dict[k] = safe_list
-                            elif isinstance(v, dict):
-                                # Per dizionari innestati, includi solo coppie chiave-valore di tipo base
-                                safe_dict = {}
-                                for sub_k, sub_v in v.items():
-                                    if isinstance(sub_v, (str, int, float, bool)) or sub_v is None:
-                                        safe_dict[str(sub_k)] = sub_v
-                                    else:
-                                        # Per valori complessi, converti in stringa
-                                        safe_dict[str(sub_k)] = str(sub_v)
-                                temp_dict[k] = safe_dict
-                            else:
-                                # Per qualsiasi altro tipo, converti in stringa
-                                temp_dict[k] = str(v)
-                        temporary_states_data[state_name] = temp_dict
-                    elif isinstance(state_value, (str, int, float, bool)) or state_value is None:
-                        temporary_states_data[state_name] = state_value
+                        temporary_states_data[state_name] = self._convert_to_serializable(state_value)
                     elif isinstance(state_value, (list, tuple)):
-                        # Per liste e tuple, includi solo elementi di tipo base
-                        safe_list = []
-                        for item in state_value:
-                            if isinstance(item, (str, int, float, bool)) or item is None:
-                                safe_list.append(item)
-                            else:
-                                # Per altri oggetti, converti in stringa
-                                safe_list.append(str(item))
-                        temporary_states_data[state_name] = safe_list
+                        # Per liste e tuple, converti in lista serializzabile
+                        temporary_states_data[state_name] = self._convert_to_serializable(state_value)
+                    elif isinstance(state_value, (str, int, float, bool)) or state_value is None:
+                        # I tipi di base sono già serializzabili
+                        temporary_states_data[state_name] = state_value
                     else:
                         # Se non è serializzabile, tenta di convertirlo in stringa
                         try:
@@ -540,6 +572,66 @@ class World:
                 "pending_events": [],
                 "temporary_states": {}
             }
+        
+    def _convert_to_serializable(self, obj):
+        """
+        Converte un oggetto in un formato serializzabile per JSON.
+        
+        Args:
+            obj: Oggetto da convertire
+            
+        Returns:
+            Versione serializzabile dell'oggetto
+        """
+        if isinstance(obj, (str, int, float, bool)) or obj is None:
+            # Tipi di base già serializzabili
+            return obj
+        elif isinstance(obj, (list, tuple)):
+            # Per liste e tuple, converti ogni elemento
+            return [self._convert_to_serializable(item) for item in obj]
+        elif isinstance(obj, dict):
+            # Per dizionari, converti ogni chiave e valore
+            result = {}
+            for k, v in obj.items():
+                # Assicurati che la chiave sia una stringa
+                key = str(k)
+                # Converti il valore
+                result[key] = self._convert_to_serializable(v)
+            return result
+        elif hasattr(obj, 'to_dict') and callable(getattr(obj, 'to_dict')):
+            # Usa il metodo to_dict se disponibile
+            return self._convert_to_serializable(obj.to_dict())
+        elif hasattr(obj, 'serialize') and callable(getattr(obj, 'serialize')):
+            # Usa il metodo serialize se disponibile
+            return self._convert_to_serializable(obj.serialize())
+        else:
+            # Per altri oggetti, converti in stringa
+            try:
+                return str(obj)
+            except:
+                return f"<<Oggetto non serializzabile: {type(obj).__name__}>>"
+        
+    def serialize_msgpack(self) -> bytes:
+        """
+        Serializza il mondo in formato MessagePack
+        
+        Returns:
+            bytes: Dati serializzati in formato MessagePack
+        """
+        try:
+            import msgpack
+            data = self.serialize()
+            return msgpack.packb(data, use_bin_type=True)
+        except Exception as e:
+            logger.error(f"Errore nella serializzazione MessagePack del mondo: {e}")
+            # Ritorna un dizionario minimo ma valido, serializzato
+            import msgpack
+            return msgpack.packb({
+                "entities": {},
+                "events": [],
+                "pending_events": [],
+                "temporary_states": {}
+            }, use_bin_type=True)
         
     @classmethod
     def deserialize(cls, data: Dict[str, Any]) -> 'World':
@@ -611,6 +703,27 @@ class World:
             logger.error(f"Errore generale nella deserializzazione del mondo: {e}")
             return world
         
+    @classmethod
+    def deserialize_msgpack(cls, data_bytes: bytes) -> 'World':
+        """
+        Deserializza un mondo da dati in formato MessagePack
+        
+        Args:
+            data_bytes: Dati serializzati in formato MessagePack
+            
+        Returns:
+            World: Il mondo deserializzato
+        """
+        try:
+            import msgpack
+            data = msgpack.unpackb(data_bytes, raw=False)
+            return cls.deserialize(data)
+        except Exception as e:
+            logger.error(f"Errore nella deserializzazione MessagePack del mondo: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return cls()  # Ritorna un mondo vuoto
+        
     def clear(self) -> None:
         """Rimuove tutte le entità e gli eventi dal mondo"""
         # Svuota tutti i sistemi
@@ -637,8 +750,18 @@ class World:
         logger.info(f"Ricerca entità con tag 'player': trovate {len(player_entities)} entità")
         
         if player_entities:
-            logger.info(f"Trovata entità giocatore con tag: {player_entities[0].id} con nome {player_entities[0].name}")
-            return player_entities[0]  # Restituisci la prima entità giocatore trovata
+            player_entity = player_entities[0]
+            logger.info(f"Trovata entità giocatore con tag: {player_entity.id} con nome {player_entity.name}")
+            
+            # Verifica se questa è un'entità wrapper con un giocatore legacy
+            if hasattr(player_entity, "_legacy_player"):
+                # Restituisci il giocatore legacy invece dell'entità wrapper
+                # Questo mantiene la compatibilità con il codice esistente
+                legacy_player = getattr(player_entity, "_legacy_player")
+                logger.info(f"Restituisco giocatore legacy: {legacy_player.nome}")
+                return legacy_player
+                
+            return player_entity  # Restituisci la prima entità giocatore trovata
         
         # Piano B: Cerca entità basandoci sul nome
         logger.warning("Nessuna entità con tag 'player' trovata. Tentativo con nome entità...")
@@ -647,19 +770,61 @@ class World:
                 logger.info(f"Trovata entità giocatore dal nome: {entity.id} con nome {entity.name}")
                 # Aggiunge automaticamente il tag
                 entity.add_tag("player")
+                
+                # Verifica se questa è un'entità wrapper con un giocatore legacy
+                if hasattr(entity, "_legacy_player"):
+                    legacy_player = getattr(entity, "_legacy_player")
+                    logger.info(f"Restituisco giocatore legacy: {legacy_player.nome}")
+                    return legacy_player
+                    
                 return entity
         
         # Piano C: Cerca entità con attributo "è_giocatore"
         logger.warning("Nessuna entità con nome 'Player' trovata. Tentativo con attributo...")
         for entity in self.entities.values():
             if hasattr(entity, "è_giocatore") and entity.è_giocatore:
-                logger.info(f"Trovata entità giocatore con attributo: {entity.id} con nome {entity.name}")
-                # Aggiunge automaticamente il tag
+                logger.info(f"Trovata entità giocatore dall'attributo: {entity.id}")
                 entity.add_tag("player")
                 return entity
-        
-        logger.error("Nessuna entità giocatore trovata!")
+                
+        # Se non troviamo nessuna entità, restituisci None
+        logger.error("Nessuna entità giocatore trovata con alcun metodo!")
         return None
+        
+    def inizializza_sistemi(self):
+        """
+        Inizializza e registra i sistemi di base per il mondo di gioco.
+        Questo metodo carica i sistemi ECS principali come movimento, rendering, etc.
+        """
+        logger.info("Inizializzazione dei sistemi di base per il mondo di gioco...")
+        
+        # Importa e inizializza i sistemi necessari
+        try:
+            # Importazione dinamica per evitare dipendenze circolari
+            from core.ecs.systems.movement_system import MovementSystem
+            from core.ecs.systems.collision_system import CollisionSystem
+            from core.ecs.systems.interaction_system import InteractionSystem
+            
+            # Crea e aggiungi i sistemi
+            movement_system = MovementSystem()
+            self.add_system(movement_system)
+            logger.debug("Sistema di movimento aggiunto al mondo")
+            
+            collision_system = CollisionSystem()
+            self.add_system(collision_system)
+            logger.debug("Sistema di collisione aggiunto al mondo")
+            
+            interaction_system = InteractionSystem()
+            self.add_system(interaction_system)
+            logger.debug("Sistema di interazione aggiunto al mondo")
+            
+            # Aggiungi altri sistemi se necessario
+            
+            logger.info("Sistemi di base inizializzati con successo")
+        except ImportError as e:
+            logger.warning(f"Impossibile importare alcuni sistemi: {e}. Funzionalità limitate.")
+        except Exception as e:
+            logger.error(f"Errore durante l'inizializzazione dei sistemi: {e}")
         
     def cambia_mappa(self, id_mappa, x, y):
         """
@@ -682,37 +847,97 @@ class World:
                 logger.error("Impossibile cambiare mappa: nessuna entità giocatore trovata")
                 return False
             
+            # Registra la mappa corrente prima del cambio per debug
+            old_map = None
+            
             # Verifica se stiamo usando un'entità ECS o un oggetto Giocatore
             if hasattr(player_entity, "get_component") and callable(getattr(player_entity, "get_component")):
+                logger.info("Uso modalità entità ECS per il cambio mappa")
                 # Caso entità ECS
                 position_component = player_entity.get_component("position")
                 if not position_component:
                     logger.error("Impossibile cambiare mappa: il giocatore non ha un componente posizione")
                     return False
                 
-                # Aggiorna la mappa e la posizione
-                old_map = position_component.map_name
-                position_component.map_name = id_mappa
-                position_component.x = x
-                position_component.y = y
+                # Ottieni la mappa corrente
+                try:
+                    old_map = position_component.map_name
+                    logger.info(f"Mappa attuale del giocatore: {old_map}")
+                except Exception as e:
+                    logger.warning(f"Impossibile leggere map_name: {e}")
+                
+                # Gestione per vari tipi di Position component
+                try:
+                    if hasattr(position_component, "__class__") and position_component.__class__.__name__ == "Position":
+                        logger.info("Componente posizione di tipo namedtuple")
+                        # È un namedtuple, dobbiamo sostituirlo con uno nuovo
+                        if hasattr(player_entity, "mappa_corrente"):
+                            # Se è un oggetto Giocatore, aggiorna direttamente gli attributi
+                            player_entity.mappa_corrente = id_mappa
+                            player_entity.x = x
+                            player_entity.y = y
+                            logger.info(f"Aggiornata posizione diretta: mappa={id_mappa}, x={x}, y={y}")
+                        else:
+                            # Crea un nuovo namedtuple e sostituisci il componente
+                            from collections import namedtuple
+                            Position = namedtuple('Position', ['x', 'y', 'map_name'])
+                            # Verifica come è registrato il componente nell'entità
+                            if hasattr(player_entity, "components") and isinstance(player_entity.components, dict):
+                                player_entity.components["position"] = Position(x, y, id_mappa)
+                                logger.info(f"Aggiornata posizione via components dict: mappa={id_mappa}, x={x}, y={y}")
+                            elif hasattr(player_entity, "set_component") and callable(getattr(player_entity, "set_component")):
+                                player_entity.set_component("position", Position(x, y, id_mappa))
+                                logger.info(f"Aggiornata posizione via set_component: mappa={id_mappa}, x={x}, y={y}")
+                            else:
+                                logger.error("Impossibile aggiornare la posizione: struttura entità sconosciuta")
+                                return False
+                    else:
+                        logger.info("Componente posizione standard")
+                        # È un componente normale, prova ad aggiornare gli attributi
+                        try:
+                            position_component.map_name = id_mappa
+                            position_component.x = x
+                            position_component.y = y
+                            logger.info(f"Aggiornati attributi del componente posizione: mappa={id_mappa}, x={x}, y={y}")
+                        except AttributeError as e:
+                            logger.error(f"Impossibile aggiornare gli attributi del componente posizione: {e}")
+                            return False
+                except Exception as e:
+                    logger.error(f"Errore nella gestione del componente posizione: {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+                    return False
             else:
+                logger.info("Uso modalità oggetto Giocatore per il cambio mappa")
                 # Caso oggetto Giocatore
-                old_map = getattr(player_entity, "mappa_corrente", None)
-                player_entity.mappa_corrente = id_mappa
-                player_entity.x = x
-                player_entity.y = y
+                try:
+                    old_map = getattr(player_entity, "mappa_corrente", None)
+                    logger.info(f"Mappa attuale del giocatore: {old_map}")
+                    player_entity.mappa_corrente = id_mappa
+                    player_entity.x = x
+                    player_entity.y = y
+                    logger.info(f"Aggiornata posizione del giocatore: mappa={id_mappa}, x={x}, y={y}")
+                except Exception as e:
+                    logger.error(f"Errore nell'aggiornare la posizione dell'oggetto Giocatore: {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+                    return False
             
             logger.info(f"Cambio mappa riuscito: da {old_map} a {id_mappa}, nuova posizione ({x}, {y})")
             
             # Genera un evento di cambio mappa
-            map_change_event = {
-                "type": "map_change",
-                "player_id": player_entity.id,
-                "previous_map": old_map,
-                "new_map": id_mappa,
-                "position": {"x": x, "y": y}
-            }
-            self.add_event(map_change_event)
+            try:
+                map_change_event = {
+                    "type": "map_change",
+                    "player_id": player_entity.id,
+                    "previous_map": old_map,
+                    "new_map": id_mappa,
+                    "position": {"x": x, "y": y}
+                }
+                self.add_event(map_change_event)
+                logger.info(f"Evento cambio mappa generato: {map_change_event}")
+            except Exception as e:
+                logger.warning(f"Impossibile generare evento cambio mappa: {e}, ma proseguiamo comunque")
             
             return True
         except Exception as e:

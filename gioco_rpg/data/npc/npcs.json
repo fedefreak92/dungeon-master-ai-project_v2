@@ -17,20 +17,25 @@
       {
         "nome": "Pugnale",
         "tipo": "arma",
-        "effetto": {"forza": 2},
+        "effetto": {
+          "forza": 2
+        },
         "valore": 10,
         "descrizione": "Un semplice pugnale affilato"
       },
       {
         "nome": "Pozione di cura",
         "tipo": "cura",
-        "effetto": {"cura": 10},
+        "effetto": {
+          "cura": 10
+        },
         "valore": 25,
         "descrizione": "Una pozione curativa di media potenza"
       }
     ],
     "oro": 500,
-    "amichevole": true
+    "amichevole": true,
+    "id": "Durnan"
   },
   "Elminster": {
     "nome": "Elminster",
@@ -50,14 +55,19 @@
       {
         "nome": "Bastone del potere",
         "tipo": "arma",
-        "effetto": {"forza": 2, "intelligenza": 4},
+        "effetto": {
+          "forza": 2,
+          "intelligenza": 4
+        },
         "valore": 500,
         "descrizione": "Un bastone ornato con rune misteriose"
       },
       {
         "nome": "Amuleto della protezione",
         "tipo": "accessorio",
-        "effetto": {"difesa": 3},
+        "effetto": {
+          "difesa": 3
+        },
         "valore": 300,
         "descrizione": "Un amuleto che fornisce protezione magica"
       },
@@ -69,7 +79,8 @@
       }
     ],
     "oro": 1000,
-    "amichevole": true
+    "amichevole": true,
+    "id": "Elminster"
   },
   "Mirt": {
     "nome": "Mirt",
@@ -89,21 +100,27 @@
       {
         "nome": "Spada corta",
         "tipo": "arma",
-        "effetto": {"forza": 3},
+        "effetto": {
+          "forza": 3
+        },
         "valore": 25,
         "descrizione": "Una piccola spada di buona fattura"
       },
       {
         "nome": "Pozione di cura",
         "tipo": "cura",
-        "effetto": {"cura": 10},
+        "effetto": {
+          "cura": 10
+        },
         "valore": 25,
         "descrizione": "Una pozione curativa di media potenza"
       },
       {
         "nome": "Amuleto della protezione",
         "tipo": "accessorio",
-        "effetto": {"difesa": 2},
+        "effetto": {
+          "difesa": 2
+        },
         "valore": 60,
         "descrizione": "Un amuleto magico che protegge chi lo indossa"
       },
@@ -115,7 +132,8 @@
       }
     ],
     "oro": 2000,
-    "amichevole": true
+    "amichevole": true,
+    "id": "Mirt"
   },
   "Violetta": {
     "nome": "Violetta",
@@ -135,34 +153,44 @@
       {
         "nome": "Pugnale",
         "tipo": "arma",
-        "effetto": {"forza": 2},
+        "effetto": {
+          "forza": 2
+        },
         "valore": 10,
         "descrizione": "Un piccolo pugnale da difesa personale"
       },
       {
         "nome": "Pozione di cura leggera",
         "tipo": "cura_leggera",
-        "effetto": {"cura_leggera": 5},
+        "effetto": {
+          "cura_leggera": 5
+        },
         "valore": 10,
         "descrizione": "Una piccola pozione curativa"
       },
       {
         "nome": "Pozione di cura",
         "tipo": "cura",
-        "effetto": {"cura": 10},
+        "effetto": {
+          "cura": 10
+        },
         "valore": 25,
         "descrizione": "Una pozione curativa di media potenza"
       },
       {
         "nome": "Antidoto",
         "tipo": "cura",
-        "effetto": {"cura": 5, "rimuovi_veleno": true},
+        "effetto": {
+          "cura": 5,
+          "rimuovi_veleno": true
+        },
         "valore": 20,
         "descrizione": "Un antidoto che neutralizza i veleni"
       }
     ],
     "oro": 300,
-    "amichevole": true
+    "amichevole": true,
+    "id": "Violetta"
   },
   "Araldo": {
     "nome": "Araldo",
@@ -182,34 +210,43 @@
       {
         "nome": "Martello da fabbro",
         "tipo": "arma",
-        "effetto": {"forza": 4},
+        "effetto": {
+          "forza": 4
+        },
         "valore": 20,
         "descrizione": "Un pesante martello da lavoro che può essere usato anche come arma"
       },
       {
         "nome": "Spada corta",
         "tipo": "arma",
-        "effetto": {"forza": 3},
+        "effetto": {
+          "forza": 3
+        },
         "valore": 25,
         "descrizione": "Una piccola spada di buona fattura"
       },
       {
         "nome": "Spada lunga",
         "tipo": "arma",
-        "effetto": {"forza": 5},
+        "effetto": {
+          "forza": 5
+        },
         "valore": 50,
         "descrizione": "Una spada a una mano con lama affilata"
       },
       {
         "nome": "Armatura di cuoio",
         "tipo": "armatura",
-        "effetto": {"difesa": 2},
+        "effetto": {
+          "difesa": 2
+        },
         "valore": 20,
         "descrizione": "Una leggera armatura di cuoio che offre protezione di base"
       }
     ],
     "oro": 400,
-    "amichevole": true
+    "amichevole": true,
+    "id": "Araldo"
   },
   "Gundren": {
     "nome": "Gundren",
@@ -229,7 +266,9 @@
       {
         "nome": "Ascia da battaglia",
         "tipo": "arma",
-        "effetto": {"forza": 4},
+        "effetto": {
+          "forza": 4
+        },
         "valore": 40,
         "descrizione": "Un'ascia di buona fattura nanica"
       },
@@ -242,12 +281,15 @@
       {
         "nome": "Anello d'oro",
         "tipo": "accessorio",
-        "effetto": {"carisma": 1},
+        "effetto": {
+          "carisma": 1
+        },
         "valore": 30,
         "descrizione": "Un semplice anello d'oro"
       }
     ],
     "oro": 800,
-    "amichevole": true
+    "amichevole": true,
+    "id": "Gundren"
   }
-} 
+}

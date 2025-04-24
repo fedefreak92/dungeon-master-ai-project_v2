@@ -1,15 +1,16 @@
-from states.base_state import BaseGameState
+from states.base_state import EnhancedBaseState
 from entities.nemico import Nemico
 from entities.giocatore import Giocatore
 from entities.npg import NPG
 from util.dado import Dado
+import core.events as Events
 
 # Importa le funzionalità dai moduli separati
 from states.combattimento.azioni import AzioniCombattimento
 from states.combattimento.turni import GestoreTurni
 from states.combattimento.ui import UICombattimento
 
-class CombattimentoState(BaseGameState):
+class CombattimentoState(EnhancedBaseState):
     def __init__(self, nemico=None, npg_ostile=None, gioco=None):
         """
         Inizializza lo stato di combattimento.
@@ -19,6 +20,8 @@ class CombattimentoState(BaseGameState):
             npg_ostile (NPG, optional): Un NPG diventato ostile
             gioco: L'istanza del gioco (opzionale)
         """
+        super().__init__()
+        
         # Pre-definisci il metodo esegui_attacco per evitare errori di inizializzazione
         self.esegui_attacco = lambda *args, **kwargs: {"successo": False, "messaggio": "Metodo non ancora inizializzato"}
         
@@ -27,7 +30,10 @@ class CombattimentoState(BaseGameState):
             self._init_from_context(nemico)
             return
             
-        super().__init__(gioco)
+        # Imposta il contesto di gioco se fornito
+        if gioco:
+            self.set_game_context(gioco)
+            
         self.nemico = nemico
         self.npg_ostile = npg_ostile
         self.turno = 1
@@ -55,6 +61,58 @@ class CombattimentoState(BaseGameState):
         self.determina_azione_ia = lambda *args, **kwargs: self.azioni.determina_azione_ia(*args, **kwargs)
         self.esegui_azione_ia = lambda *args, **kwargs: self.azioni.esegui_azione_ia(*args, **kwargs)
         
+        # Registra handler per eventi
+        self._register_event_handlers()
+        
+    def _register_event_handlers(self):
+        """Registra gli handler per eventi relativi a questo stato"""
+        # Eventi di combattimento
+        self.event_bus.on(Events.COMBAT_START, self._handle_combat_start)
+        self.event_bus.on(Events.COMBAT_END, self._handle_combat_end)
+        self.event_bus.on(Events.COMBAT_NEXT_TURN, self._handle_next_turn)
+        self.event_bus.on(Events.ENTITY_ATTACK, self._handle_entity_attack)
+        self.event_bus.on(Events.ENTITY_USE_ABILITY, self._handle_entity_use_ability)
+        self.event_bus.on(Events.ENTITY_USE_ITEM, self._handle_entity_use_item)
+        self.event_bus.on(Events.ENTITY_SKIP_TURN, self._handle_entity_skip_turn)
+        self.event_bus.on(Events.ENTITY_FLEE, self._handle_entity_flee)
+        self.event_bus.on(Events.ENTITY_DAMAGED, self._handle_entity_damaged)
+        self.event_bus.on(Events.ENTITY_HEALED, self._handle_entity_healed)
+        
+        # Eventi UI
+        self.event_bus.on(Events.UI_DIALOG_OPEN, self._handle_dialog_open)
+        self.event_bus.on(Events.UI_DIALOG_CLOSE, self._handle_dialog_close)
+        self.event_bus.on(Events.MENU_SELECTION, self._handle_menu_selection)
+        
+    def update(self, dt):
+        """
+        Nuovo metodo di aggiornamento basato su EventBus.
+        Sostituisce gradualmente esegui().
+        
+        Args:
+            dt: Delta time, tempo trascorso dall'ultimo aggiornamento
+        """
+        # Ottieni il contesto di gioco
+        gioco = self.gioco
+        if not gioco:
+            return
+        
+        # Aggiorna il renderer grafico se necessario
+        if not self.ui_aggiornata:
+            self.ui.aggiorna_renderer(gioco)
+            self.ui_aggiornata = True
+            
+            # Emetti evento di UI aggiornata
+            self.emit_event(Events.UI_UPDATE, element="combattimento", state=self)
+            
+        # Gestione delle fasi di combattimento
+        if self.fase == "inizializzazione":
+            self._inizializza_combattimento()
+            self.fase = "scelta"
+            
+        # Controlla fine combattimento
+        if self.controlla_fine_combattimento(gioco):
+            self.termina_combattimento()
+        
     def _init_from_context(self, contesto):
         """
         Inizializzazione alternativa da un dizionario di contesto
@@ -70,16 +128,18 @@ class CombattimentoState(BaseGameState):
             self.esegui_attacco = lambda *args, **kwargs: {"successo": False, "messaggio": "Metodo non ancora inizializzato"}
         
         gioco = contesto.get("world")
-        # Chiamiamo il super constructor con super(BaseGameState, self).__init__(gioco) anziché super().__init__(gioco)
-        # per evitare errori nel caso in cui l'oggetto non sia stato completamente inizializzato
+        # Inizializziamo la classe base
         try:
-            from states.base_state import BaseGameState
-            BaseGameState.__init__(self, gioco)
+            super().__init__()
+            # Imposta il contesto di gioco
+            if gioco:
+                self.set_game_context(gioco)
         except Exception as e:
             logger.error(f"Errore nell'inizializzazione della classe base: {e}")
             # Inizializzazione manuale degli attributi
             self.gioco = gioco
             self.callbacks = {}
+            self.event_bus = None  # Non possiamo creare un EventBus qui
         
         # Impostazione degli attributi base
         self.partecipanti = contesto.get("partecipanti", [])
@@ -282,35 +342,269 @@ class CombattimentoState(BaseGameState):
         
     def esegui(self, gioco):
         """
-        Implementazione dell'esecuzione dello stato di combattimento
+        Esecuzione dello stato di combattimento.
+        Mantenuta per retrocompatibilità.
         
         Args:
-            gioco: L'istanza del gioco
+            gioco: Istanza del gioco
         """
         # Salva il contesto di gioco
         self.set_game_context(gioco)
-        giocatore = gioco.giocatore
         
         # Aggiorna il renderer grafico se necessario
         if not self.ui_aggiornata:
             self.ui.aggiorna_renderer(gioco)
             self.ui_aggiornata = True
-            
-            # Mostra interfaccia di combattimento
-            self.ui.mostra_interfaccia_combattimento(gioco)
         
-        # Controlla se il combattimento è finito
-        if self.controlla_fine_combattimento(gioco):
+        # Inizializza il combattimento se necessario
+        if getattr(self, 'fase', None) == "inizializzazione":
+            self._inizializza_combattimento()
+            self.fase = "scelta"
+        
+        # Mostra interfaccia di combattimento
+        self.ui.mostra_interfaccia_combattimento(gioco)
+        
+        # Se siamo nel turno del giocatore, mostra menu di scelta
+        if self.is_player_turn():
+            self.ui.mostra_menu_scelta(gioco)
+        else:
+            # Altrimenti, esegui turno IA
+            self.esegui_turno_ia(gioco)
+            
+        # Aggiungi chiamata a update per integrazione con EventBus
+        self.update(0.033)  # Valore dt predefinito
+        
+        # Elabora gli eventi UI
+        super().esegui(gioco)
+        
+    # Handler eventi
+    def _handle_combat_start(self, **kwargs):
+        """Handler per inizio combattimento"""
+        gioco = self.gioco
+        if not gioco:
             return
             
-        # Gestisce il flusso in base alla fase corrente
-        if self.fase == "scelta" and not self.dati_temporanei.get("mostrato_menu_scelta", False):
-            self.ui.mostra_menu_scelta(gioco)
-            self.dati_temporanei["mostrato_menu_scelta"] = True
-            
-        # Processa gli eventi UI invece che aspettare input testuale
-        super().esegui(gioco)
+        self._inizializza_combattimento()
+        self.fase = "scelta"
+        
+        # Aggiorna UI
+        self.ui_aggiornata = False
     
+    def _handle_combat_end(self, winner=None, **kwargs):
+        """Handler per fine combattimento"""
+        gioco = self.gioco
+        if not gioco:
+            return
+            
+        self.termina_combattimento()
+    
+    def _handle_next_turn(self, **kwargs):
+        """Handler per passaggio al turno successivo"""
+        gioco = self.gioco
+        if not gioco:
+            return
+            
+        self.gestore_turni.passa_al_turno_successivo()
+        
+        # Aggiorna UI
+        self.ui_aggiornata = False
+    
+    def _handle_entity_attack(self, attacker_id=None, target_id=None, **kwargs):
+        """Handler per attacco di un'entità"""
+        gioco = self.gioco
+        if not gioco or not attacker_id or not target_id:
+            return
+            
+        # Ottieni le entità
+        attacker = gioco.get_entity(attacker_id)
+        target = gioco.get_entity(target_id)
+        
+        if not attacker or not target:
+            return
+            
+        # Esegui attacco
+        risultato = self.esegui_attacco(gioco, attacker, target)
+        
+        # Emetti evento di danno se l'attacco ha avuto successo
+        if risultato.get("successo", False) and "danno" in risultato:
+            self.emit_event(Events.ENTITY_DAMAGED, 
+                          entity_id=target_id, 
+                          amount=risultato["danno"],
+                          attacker_id=attacker_id)
+        
+        # Aggiorna UI
+        self.ui_aggiornata = False
+    
+    def _handle_entity_use_ability(self, entity_id=None, ability_id=None, target_id=None, **kwargs):
+        """Handler per uso abilità di un'entità"""
+        gioco = self.gioco
+        if not gioco or not entity_id or not ability_id:
+            return
+            
+        # Ottieni l'entità
+        entity = gioco.get_entity(entity_id)
+        
+        if not entity:
+            return
+            
+        # Ottieni il target se specificato
+        target = None
+        if target_id:
+            target = gioco.get_entity(target_id)
+            
+        # Usa abilità
+        risultato = self.usa_abilita(gioco, entity, ability_id, target)
+        
+        # Aggiorna UI
+        self.ui_aggiornata = False
+    
+    def _handle_entity_use_item(self, entity_id=None, item_id=None, target_id=None, **kwargs):
+        """Handler per uso oggetto di un'entità"""
+        gioco = self.gioco
+        if not gioco or not entity_id or not item_id:
+            return
+            
+        # Ottieni l'entità
+        entity = gioco.get_entity(entity_id)
+        
+        if not entity:
+            return
+            
+        # Ottieni il target se specificato
+        target = None
+        if target_id:
+            target = gioco.get_entity(target_id)
+            
+        # Usa oggetto
+        risultato = self.usa_oggetto(gioco, entity, item_id, target)
+        
+        # Aggiorna UI
+        self.ui_aggiornata = False
+    
+    def _handle_entity_skip_turn(self, entity_id=None, **kwargs):
+        """Handler per salto turno di un'entità"""
+        gioco = self.gioco
+        if not gioco or not entity_id:
+            return
+            
+        # Ottieni l'entità
+        entity = gioco.get_entity(entity_id)
+        
+        if not entity:
+            return
+            
+        # Passa turno
+        self.passa_turno(gioco, entity)
+        
+        # Passa al turno successivo
+        self.emit_event(Events.COMBAT_NEXT_TURN)
+        
+        # Aggiorna UI
+        self.ui_aggiornata = False
+    
+    def _handle_entity_flee(self, entity_id=None, **kwargs):
+        """Handler per fuga di un'entità"""
+        gioco = self.gioco
+        if not gioco or not entity_id:
+            return
+            
+        # Ottieni l'entità
+        entity = gioco.get_entity(entity_id)
+        
+        if not entity:
+            return
+            
+        # Tenta fuga
+        risultato = self.azioni.tenta_fuga(gioco, entity)
+        
+        # Se la fuga ha successo, termina il combattimento
+        if risultato.get("successo", False):
+            self.emit_event(Events.COMBAT_END, winner="fuga")
+        
+        # Aggiorna UI
+        self.ui_aggiornata = False
+    
+    def _handle_entity_damaged(self, entity_id=None, amount=0, **kwargs):
+        """Handler per danno a un'entità"""
+        gioco = self.gioco
+        if not gioco or not entity_id:
+            return
+            
+        # Aggiorna UI
+        self.ui_aggiornata = False
+    
+    def _handle_entity_healed(self, entity_id=None, amount=0, **kwargs):
+        """Handler per guarigione di un'entità"""
+        gioco = self.gioco
+        if not gioco or not entity_id:
+            return
+            
+        # Aggiorna UI
+        self.ui_aggiornata = False
+    
+    def _handle_dialog_open(self, dialog_id=None, **kwargs):
+        """Handler per apertura dialogo"""
+        pass
+    
+    def _handle_dialog_close(self, **kwargs):
+        """Handler per chiusura dialogo"""
+        pass
+    
+    def _handle_menu_selection(self, choice=None, menu_id=None, **kwargs):
+        """Handler per selezione menu"""
+        if not choice or menu_id != "combattimento":
+            return
+            
+        gioco = self.gioco
+        if not gioco:
+            return
+            
+        # Processa la scelta in base all'azione
+        if choice == "Attacco":
+            # Emetti evento per mostrare selezione target
+            self.emit_event(Events.UI_DIALOG_OPEN, 
+                          dialog_id="seleziona_target",
+                          title="Seleziona bersaglio", 
+                          message="Scegli un bersaglio da attaccare:", 
+                          options=self._get_target_options())
+        elif choice == "Abilità":
+            # Emetti evento per mostrare selezione abilità
+            abilita_disponibili = self.get_abilita_disponibili()
+            self.emit_event(Events.UI_DIALOG_OPEN, 
+                          dialog_id="seleziona_abilita",
+                          title="Seleziona abilità", 
+                          message="Scegli un'abilità da utilizzare:", 
+                          options=abilita_disponibili)
+        elif choice == "Oggetti":
+            # Emetti evento per mostrare selezione oggetti
+            self.azioni.mostra_inventario(gioco, gioco.giocatore)
+        elif choice == "Fuga":
+            # Emetti evento di fuga
+            self.emit_event(Events.ENTITY_FLEE, entity_id=gioco.giocatore.id)
+        elif choice == "Passa":
+            # Emetti evento di salto turno
+            self.emit_event(Events.ENTITY_SKIP_TURN, entity_id=gioco.giocatore.id)
+
+    def _handle_dialog_choice(self, event):
+        """
+        Handler legacy per le scelte dai dialoghi.
+        Mantenuto per retrocompatibilità.
+        
+        Args:
+            event: Evento di scelta da dialogo
+        """
+        if not hasattr(event, "data") or not event.data:
+            return
+        
+        choice = event.data.get("choice")
+        dialog_id = event.data.get("dialog_id", "")
+        
+        if not choice:
+            return
+            
+        # Converti in formato nuovo
+        self._handle_menu_selection(choice=choice, menu_id="combattimento", dialog_id=dialog_id)
+        
     def controlla_fine_combattimento(self, gioco):
         """
         Verifica se il combattimento è terminato.
@@ -396,83 +690,6 @@ class CombattimentoState(BaseGameState):
             self.turno_corrente = None
         
         return True
-    
-    def _handle_dialog_choice(self, event):
-        """
-        Handler per le scelte dai dialoghi
-        
-        Args:
-            event: Evento di scelta da dialogo
-        """
-        if not hasattr(event, "data") or not event.data:
-            return
-        
-        choice = event.data.get("choice")
-        if not choice:
-            return
-            
-        game_ctx = self.gioco
-        if not game_ctx:
-            return
-        
-        # Menu principale di combattimento
-        if self.fase == "scelta":
-            if choice == "Attacca":
-                self.esegui_attacco(game_ctx)
-            elif choice == "Usa oggetto":
-                self.azioni.mostra_inventario(game_ctx)
-            elif choice == "Cambia equipaggiamento":
-                self.azioni.mostra_opzioni_equipaggiamento(game_ctx)
-            elif choice == "Fuggi":
-                self.azioni.tenta_fuga(game_ctx)
-                
-        # Scelta dell'oggetto da usare
-        elif self.fase == "usa_oggetto":
-            # Annulla e torna al menu principale
-            if choice == "Annulla":
-                self.fase = "scelta"
-                self.dati_temporanei.clear()
-                self.dati_temporanei["mostrato_menu_scelta"] = False
-            else:
-                # Trova l'oggetto selezionato
-                if "items" in self.dati_temporanei:
-                    items = self.dati_temporanei["items"]
-                    for i, item in enumerate(items):
-                        if hasattr(item, 'nome') and item.nome == choice:
-                            self.azioni.usa_oggetto_selezionato(game_ctx, item)
-                            break
-                
-        # Scelta del tipo di equipaggiamento da cambiare
-        elif self.fase == "cambio_equip_tipo":
-            if choice == "Arma":
-                self.azioni.mostra_armi_disponibili(game_ctx)
-            elif choice == "Armatura":
-                self.azioni.mostra_armature_disponibili(game_ctx)
-            elif choice == "Accessorio":
-                self.azioni.mostra_accessori_disponibili(game_ctx)
-            elif choice == "Annulla":
-                self.fase = "scelta"
-                self.dati_temporanei.clear()
-                self.dati_temporanei["mostrato_menu_scelta"] = False
-                
-        # Scelta dell'equipaggiamento specifico
-        elif self.fase == "cambio_equip_item":
-            if choice == "Annulla":
-                self.azioni.mostra_opzioni_equipaggiamento(game_ctx)
-            else:
-                tipo_equip = self.dati_temporanei.get("tipo_equip")
-                if tipo_equip and "items" in self.dati_temporanei:
-                    items = self.dati_temporanei["items"]
-                    for item in items:
-                        if hasattr(item, 'nome') and item.nome == choice:
-                            self.azioni.cambia_equipaggiamento_item(game_ctx, tipo_equip, item)
-                            break
-                            
-        # Conferma di fine combattimento
-        elif self.fase == "fine_combattimento":
-            # Torna alla mappa o allo stato precedente
-            if game_ctx.stato_corrente() == self:
-                game_ctx.pop_stato()
     
     @classmethod
     def from_dict(cls, data, game=None):

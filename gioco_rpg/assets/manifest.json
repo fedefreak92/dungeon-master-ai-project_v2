@@ -1,69 +1,37 @@
 {
   "version": "1.0.0",
-  "last_updated": 1744918027.954494,
+  "last_updated": 1745518661.2659981,
   "sprites": {
     "chest": {
       "id": "chest",
       "name": "Chest",
-      "file": "chest.png",
-      "path": "sprites/chest.png",
-      "type": "sprite",
-      "dimensions": {
-        "width": 32,
-        "height": 32
-      },
-      "offset": {
-        "x": 0,
-        "y": 0
-      },
+      "file": "sprites\\chest.png",
+      "dimensions": null,
+      "offset": null,
       "tags": []
     },
     "enemy_goblin": {
       "id": "enemy_goblin",
       "name": "Enemy_goblin",
-      "file": "enemy_goblin.png",
-      "path": "sprites/enemy_goblin.png",
-      "type": "sprite",
-      "dimensions": {
-        "width": 32,
-        "height": 32
-      },
-      "offset": {
-        "x": 0,
-        "y": 0
-      },
+      "file": "sprites\\enemy_goblin.png",
+      "dimensions": null,
+      "offset": null,
       "tags": []
     },
     "npc_merchant": {
       "id": "npc_merchant",
       "name": "Npc_merchant",
-      "file": "npc_merchant.png",
-      "path": "sprites/npc_merchant.png",
-      "type": "sprite",
-      "dimensions": {
-        "width": 32,
-        "height": 32
-      },
-      "offset": {
-        "x": 0,
-        "y": 0
-      },
+      "file": "sprites\\npc_merchant.png",
+      "dimensions": null,
+      "offset": null,
       "tags": []
     },
     "player": {
       "id": "player",
       "name": "Player",
-      "file": "player.png",
-      "path": "sprites/player.png",
-      "type": "sprite",
-      "dimensions": {
-        "width": 32,
-        "height": 32
-      },
-      "offset": {
-        "x": 0,
-        "y": 0
-      },
+      "file": "sprites\\player.png",
+      "dimensions": null,
+      "offset": null,
       "tags": []
     }
   },
@@ -71,145 +39,73 @@
     "door": {
       "id": "door",
       "name": "Door",
-      "file": "door.png",
-      "path": "tiles/door.png",
-      "type": "tile",
-      "dimensions": {
-        "width": 32,
-        "height": 32
-      },
-      "properties": {
-        "walkable": true,
-        "transparent": true
-      },
+      "file": "tiles\\door.png",
+      "dimensions": null,
+      "properties": {},
       "tags": []
     },
     "floor": {
       "id": "floor",
       "name": "Floor",
-      "file": "floor.png",
-      "path": "tiles/floor.png",
-      "type": "tile",
-      "dimensions": {
-        "width": 32,
-        "height": 32
-      },
-      "properties": {
-        "walkable": true,
-        "transparent": true
-      },
+      "file": "tiles\\floor.png",
+      "dimensions": null,
+      "properties": {},
       "tags": []
     },
     "wall": {
       "id": "wall",
       "name": "Wall",
-      "file": "wall.png",
-      "path": "tiles/wall.png",
-      "type": "tile",
-      "dimensions": {
-        "width": 32,
-        "height": 32
-      },
-      "properties": {
-        "walkable": true,
-        "transparent": true
-      },
+      "file": "tiles\\wall.png",
+      "dimensions": null,
+      "properties": {},
       "tags": []
     },
     "bridge": {
       "id": "bridge",
       "name": "Bridge",
-      "file": "bridge.png",
-      "path": "tiles/bridge.png",
-      "type": "tile",
-      "dimensions": {
-        "width": 32,
-        "height": 32
-      },
-      "properties": {
-        "walkable": true,
-        "transparent": true
-      },
+      "file": "tiles\\bridge.png",
+      "dimensions": null,
+      "properties": {},
       "tags": []
     },
     "grass": {
       "id": "grass",
       "name": "Grass",
-      "file": "grass.png",
-      "path": "tiles/grass.png",
-      "type": "tile",
-      "dimensions": {
-        "width": 32,
-        "height": 32
-      },
-      "properties": {
-        "walkable": true,
-        "transparent": true
-      },
+      "file": "tiles\\grass.png",
+      "dimensions": null,
+      "properties": {},
       "tags": []
     },
     "lava": {
       "id": "lava",
       "name": "Lava",
-      "file": "lava.png",
-      "path": "tiles/lava.png",
-      "type": "tile",
-      "dimensions": {
-        "width": 32,
-        "height": 32
-      },
-      "properties": {
-        "walkable": true,
-        "transparent": true
-      },
+      "file": "tiles\\lava.png",
+      "dimensions": null,
+      "properties": {},
       "tags": []
     },
     "road": {
       "id": "road",
       "name": "Road",
-      "file": "road.png",
-      "path": "tiles/road.png",
-      "type": "tile",
-      "dimensions": {
-        "width": 32,
-        "height": 32
-      },
-      "properties": {
-        "walkable": true,
-        "transparent": true
-      },
+      "file": "tiles\\road.png",
+      "dimensions": null,
+      "properties": {},
       "tags": []
     },
     "stairs": {
       "id": "stairs",
       "name": "Stairs",
-      "file": "stairs.png",
-      "path": "tiles/stairs.png",
-      "type": "tile",
-      "dimensions": {
-        "width": 32,
-        "height": 32
-      },
-      "properties": {
-        "walkable": true,
-        "transparent": true
-      },
+      "file": "tiles\\stairs.png",
+      "dimensions": null,
+      "properties": {},
       "tags": []
     },
     "water": {
       "id": "water",
       "name": "Water",
-      "file": "water.png",
-      "path": "tiles/water.png",
-      "type": "tile",
-      "dimensions": {
-        "width": 32,
-        "height": 32
-      },
-      "properties": {
-        "walkable": true,
-        "transparent": true
-      },
+      "file": "tiles\\water.png",
+      "dimensions": null,
+      "properties": {},
       "tags": []
     }
   },

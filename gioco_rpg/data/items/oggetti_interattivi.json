@@ -10,14 +10,18 @@
       {
         "nome": "Anello d'oro",
         "tipo": "accessorio",
-        "effetto": {"carisma": 1},
+        "effetto": {
+          "carisma": 1
+        },
         "valore": 30,
         "descrizione": "Un prezioso anello d'oro"
       },
       {
         "nome": "Pozione di cura",
         "tipo": "cura",
-        "effetto": {"cura": 10},
+        "effetto": {
+          "cura": 10
+        },
         "valore": 25,
         "descrizione": "Una pozione che ripristina 10 punti vita"
       }
@@ -47,7 +51,15 @@
     "richiede_chiave": true,
     "posizione": "taverna",
     "posizione_destinazione": "cantina",
-    "token": "D"
+    "token": "D",
+    "stati_possibili": {
+      "chiusa": [
+        "aperta"
+      ],
+      "aperta": [
+        "chiusa"
+      ]
+    }
   },
   {
     "nome": "Porta del mercato",
@@ -57,7 +69,15 @@
     "richiede_chiave": false,
     "posizione": "taverna",
     "posizione_destinazione": "mercato",
-    "token": "D"
+    "token": "D",
+    "stati_possibili": {
+      "chiusa": [
+        "aperta"
+      ],
+      "aperta": [
+        "chiusa"
+      ]
+    }
   },
   {
     "nome": "Leva della parete",
@@ -96,9 +116,16 @@
       "esaminato": "Noti che l'altare ha delle rune che formano un incantesimo antico"
     },
     "stati_possibili": {
-      "inattivo": ["esaminato", "attivo"],
-      "esaminato": ["attivo"],
-      "attivo": ["inattivo"]
+      "inattivo": [
+        "esaminato",
+        "attivo"
+      ],
+      "esaminato": [
+        "attivo"
+      ],
+      "attivo": [
+        "inattivo"
+      ]
     },
     "abilita_richieste": {
       "percezione": "esaminato",
@@ -134,7 +161,15 @@
     "tipo": "oggetto_interattivo",
     "descrizione": "Un lungo bancone di legno dove Durnan serve le bevande",
     "stato": "normale",
-    "token": "O"
+    "token": "O",
+    "stati_possibili": {
+      "inattivo": [
+        "attivo"
+      ],
+      "attivo": [
+        "inattivo"
+      ]
+    }
   },
   {
     "nome": "Camino",
@@ -147,8 +182,12 @@
       "spento": "Il camino è freddo e le ceneri sono grigie"
     },
     "stati_possibili": {
-      "acceso": ["spento"],
-      "spento": ["acceso"]
+      "acceso": [
+        "spento"
+      ],
+      "spento": [
+        "acceso"
+      ]
     }
   },
   {
@@ -161,11 +200,21 @@
       {
         "nome": "Mela",
         "tipo": "cibo",
-        "effetto": {"cura": 2},
+        "effetto": {
+          "cura": 2
+        },
         "valore": 1,
         "descrizione": "Una mela rossa e succosa"
       }
-    ]
+    ],
+    "stati_possibili": {
+      "inattivo": [
+        "attivo"
+      ],
+      "attivo": [
+        "inattivo"
+      ]
+    }
   },
   {
     "nome": "Fontana",
@@ -178,8 +227,12 @@
       "inattiva": "La fontana è ferma e l'acqua è immobile"
     },
     "stati_possibili": {
-      "attiva": ["inattiva"],
-      "inattiva": ["attiva"]
+      "attiva": [
+        "inattiva"
+      ],
+      "inattiva": [
+        "attiva"
+      ]
     }
   },
   {
@@ -187,7 +240,15 @@
     "tipo": "oggetto_interattivo",
     "descrizione": "Una statua di un antico eroe della città",
     "stato": "normale",
-    "token": "O"
+    "token": "O",
+    "stati_possibili": {
+      "inattivo": [
+        "attivo"
+      ],
+      "attivo": [
+        "inattivo"
+      ]
+    }
   },
   {
     "nome": "bancone",
@@ -200,8 +261,12 @@
       "aperto": "Il bancone è aperto, puoi vedere alcune bottiglie all'interno."
     },
     "stati_possibili": {
-      "chiuso": ["aperto"],
-      "aperto": ["chiuso"]
+      "chiuso": [
+        "aperto"
+      ],
+      "aperto": [
+        "chiuso"
+      ]
     }
   },
   {
@@ -215,8 +280,12 @@
       "spento": "Un camino in pietra con ceneri fredde."
     },
     "stati_possibili": {
-      "acceso": ["spento"],
-      "spento": ["acceso"]
+      "acceso": [
+        "spento"
+      ],
+      "spento": [
+        "acceso"
+      ]
     }
   },
   {
@@ -230,8 +299,12 @@
       "sporco": "Un tavolo in legno con alcune macchie di bevande e cibo."
     },
     "stati_possibili": {
-      "pulito": ["sporco"],
-      "sporco": ["pulito"]
+      "pulito": [
+        "sporco"
+      ],
+      "sporco": [
+        "pulito"
+      ]
     }
   },
   {
@@ -245,7 +318,9 @@
       "rotta": "Una sedia rotta, con una gamba danneggiata."
     },
     "stati_possibili": {
-      "integra": ["rotta"],
+      "integra": [
+        "rotta"
+      ],
       "rotta": []
     }
   },
@@ -260,8 +335,12 @@
       "aperto": "Un barile di legno aperto, contenente un liquido ambrato."
     },
     "stati_possibili": {
-      "chiuso": ["aperto"],
-      "aperto": ["chiuso"]
+      "chiuso": [
+        "aperto"
+      ],
+      "aperto": [
+        "chiuso"
+      ]
     }
   },
   {
@@ -275,8 +354,12 @@
       "bloccata": "Una scala in legno, ma sembra che qualcuno abbia bloccato l'accesso."
     },
     "stati_possibili": {
-      "utilizzabile": ["bloccata"],
-      "bloccata": ["utilizzabile"]
+      "utilizzabile": [
+        "bloccata"
+      ],
+      "bloccata": [
+        "utilizzabile"
+      ]
     }
   },
   {
@@ -291,8 +374,12 @@
       "aperto": "Un baule di legno riccamente decorato, è aperto e mostra il suo contenuto."
     },
     "stati_possibili": {
-      "chiuso": ["aperto"],
-      "aperto": ["chiuso"]
+      "chiuso": [
+        "aperto"
+      ],
+      "aperto": [
+        "chiuso"
+      ]
     }
   },
   {
@@ -306,8 +393,12 @@
       "chiusa": "Una bancarella chiusa, con le tende abbassate."
     },
     "stati_possibili": {
-      "aperta": ["chiusa"],
-      "chiusa": ["aperta"]
+      "aperta": [
+        "chiusa"
+      ],
+      "chiusa": [
+        "aperta"
+      ]
     }
   },
   {
@@ -321,8 +412,12 @@
       "inattiva": "Una fontana in pietra asciutta, non sembra funzionare."
     },
     "stati_possibili": {
-      "attiva": ["inattiva"],
-      "inattiva": ["attiva"]
+      "attiva": [
+        "inattiva"
+      ],
+      "inattiva": [
+        "attiva"
+      ]
     }
   },
   {
@@ -336,8 +431,12 @@
       "danneggiata": "Una statua di pietra parzialmente danneggiata."
     },
     "stati_possibili": {
-      "integra": ["danneggiata"],
-      "danneggiata": ["integra"]
+      "integra": [
+        "danneggiata"
+      ],
+      "danneggiata": [
+        "integra"
+      ]
     }
   },
   {
@@ -353,8 +452,12 @@
       "aperta": "Una porta robusta aperta verso la taverna."
     },
     "stati_possibili": {
-      "chiusa": ["aperta"],
-      "aperta": ["chiusa"]
+      "chiusa": [
+        "aperta"
+      ],
+      "aperta": [
+        "chiusa"
+      ]
     }
   },
   {
@@ -370,8 +473,12 @@
       "aperta": "Una porta di legno aperta che conduce alla cantina buia."
     },
     "stati_possibili": {
-      "chiusa": ["aperta"],
-      "aperta": ["chiusa"]
+      "chiusa": [
+        "aperta"
+      ],
+      "aperta": [
+        "chiusa"
+      ]
     }
   },
   {
@@ -387,8 +494,12 @@
       "disattivata": "Una sezione del pavimento con una trappola a spuntoni disattivata."
     },
     "stati_possibili": {
-      "attiva": ["disattivata"],
-      "disattivata": ["attiva"]
+      "attiva": [
+        "disattivata"
+      ],
+      "disattivata": [
+        "attiva"
+      ]
     }
   },
   {
@@ -402,8 +513,12 @@
       "attivo": "Un altare di pietra con iscrizioni arcane che emettono un bagliore blu."
     },
     "stati_possibili": {
-      "inattivo": ["attivo"],
-      "attivo": ["inattivo"]
+      "inattivo": [
+        "attivo"
+      ],
+      "attivo": [
+        "inattivo"
+      ]
     }
   },
   {
@@ -419,8 +534,12 @@
       "aperta": "Una porta massiccia aperta verso l'esterno."
     },
     "stati_possibili": {
-      "chiusa": ["aperta"],
-      "aperta": ["chiusa"]
+      "chiusa": [
+        "aperta"
+      ],
+      "aperta": [
+        "chiusa"
+      ]
     }
   }
-] 
+]

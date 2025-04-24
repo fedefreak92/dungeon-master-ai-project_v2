@@ -1,15 +1,16 @@
-from states.base_state import BaseGameState
+from states.base.enhanced_base_state import EnhancedBaseState
 from .ui_handlers import TavernaUI
 from .menu_handlers import MenuTavernaHandler
 from .oggetti_interattivi import inizializza_oggetti_taverna
 from entities.npg import NPG
 import logging
+import core.events as Events
 
-class TavernaState(BaseGameState):
+class TavernaState(EnhancedBaseState):
     """Classe che rappresenta lo stato della taverna"""
     
-    def __init__(self, game):
-        super().__init__(game)
+    def __init__(self, game=None):
+        super().__init__()
         self.nome_stato = "taverna"
         self.ultima_scelta = None
         self.prima_visita = True
@@ -47,41 +48,104 @@ class TavernaState(BaseGameState):
         }
         
         # Salva il riferimento al gioco per gli handler di eventi
-        self.gioco = game
-        
-        # Implementa il metodo register_event_handler se non è già fornito dalla classe base
-        if not hasattr(self, 'register_event_handler'):
-            self.register_event_handler = self._register_event_handler
+        if game:
+            self.set_game_context(game)
         
         # Inizializza menu e comandi
         self._init_commands()
+        
+        # Registra gli handler di eventi
+        self._register_event_handlers()
 
-    def _register_event_handler(self, event_name, handler):
-        """
-        Registra un handler per un evento specifico
+    def _register_event_handlers(self):
+        """Registra gli handler per eventi relativi alla taverna"""
+        self.event_bus.on(Events.PLAYER_MOVE, self._handle_player_move)
+        self.event_bus.on(Events.PLAYER_INTERACT, self._handle_player_interact)
+        self.event_bus.on(Events.MENU_SELECTION, self._handle_menu_selection)
+        self.event_bus.on(Events.MENU_CHANGED, self._handle_menu_changed)
+        self.event_bus.on(Events.UI_DIALOG_OPEN, self._handle_dialog_open)
+        self.event_bus.on(Events.UI_DIALOG_CLOSE, self._handle_dialog_close)
+        self.event_bus.on("TAVERNA_DIALOGO_INIZIATO", self._handle_dialogo_iniziato)
+        self.event_bus.on("TAVERNA_DIALOGO_TERMINATO", self._handle_dialogo_terminato)
         
-        Args:
-            event_name (str): Nome dell'evento
-            handler (callable): Funzione da chiamare quando l'evento si verifica
-        """
-        if hasattr(self, 'gioco') and self.gioco is not None:
-            if hasattr(self.gioco, 'io') and self.gioco.io is not None:
-                self.gioco.io.register_event_handler(event_name, handler)
-            else:
-                logger = logging.getLogger(__name__)
-                logger.warning(f"Impossibile registrare handler: self.gioco.io non è disponibile")
-        else:
-            logger = logging.getLogger(__name__)
-            logger.warning(f"Impossibile registrare handler: self.gioco non è disponibile")
+    def _handle_player_move(self, direction, **kwargs):
+        """Gestisce l'evento di movimento del giocatore"""
+        gioco = self.gioco
+        if not gioco:
+            return
+            
+        # Logica di movimento specifica della taverna
+        # Implementazione da spostare dal file movimento.py
         
+    def _handle_player_interact(self, interaction_type=None, entity_id=None, **kwargs):
+        """Gestisce l'evento di interazione del giocatore"""
+        gioco = self.gioco
+        if not gioco:
+            return
+            
+        # Logica di interazione specifica della taverna
+        # Implementazione da spostare dal file oggetti_interattivi.py
+    
+    def _handle_menu_selection(self, menu_id=None, selection=None, **kwargs):
+        """Gestisce l'evento di selezione di un elemento del menu"""
+        gioco = self.gioco
+        if not gioco:
+            return
+            
+        # Delega al menu handler
+        if hasattr(self.menu_handler, f"gestisci_{selection}"):
+            getattr(self.menu_handler, f"gestisci_{selection}")(gioco)
+    
+    def _handle_menu_changed(self, menu_id=None, **kwargs):
+        """Gestisce l'evento di cambio menu"""
+        gioco = self.gioco
+        if not gioco:
+            return
+            
+        self.menu_attivo = menu_id
+        self.ui_aggiornata = False
+    
+    def _handle_dialog_open(self, dialog_id=None, **kwargs):
+        """Gestisce l'evento di apertura dialogo"""
+        gioco = self.gioco
+        if not gioco:
+            return
+            
+        # Logica per l'apertura di un dialogo
+        
+    def _handle_dialog_close(self, **kwargs):
+        """Gestisce l'evento di chiusura dialogo"""
+        gioco = self.gioco
+        if not gioco:
+            return
+            
+        # Logica per la chiusura di un dialogo
+    
+    def _handle_dialogo_iniziato(self, npg_id=None, **kwargs):
+        """Gestisce l'evento di inizio dialogo con un NPG"""
+        self.nome_npg_attivo = npg_id
+        self.stato_conversazione = "inizio"
+    
+    def _handle_dialogo_terminato(self, **kwargs):
+        """Gestisce l'evento di fine dialogo con un NPG"""
+        self.nome_npg_attivo = None
+        self.stato_conversazione = "inizio"
+
     def _init_commands(self):
         """Inizializza i comandi e le loro mappature per questo stato"""
         # Questo è un metodo temporaneo che può essere implementato completamente in futuro
         pass
 
     def esegui(self, gioco):
-        # Memorizza il riferimento al gioco per gli handler di eventi
-        self.gioco = gioco
+        """
+        Implementazione dell'esecuzione dello stato.
+        Mantenuta per retrocompatibilità.
+        
+        Args:
+            gioco: L'istanza del gioco
+        """
+        # Salva il contesto di gioco
+        self.set_game_context(gioco)
         
         if self.prima_visita:
             self.ui_handler.mostra_benvenuto(gioco)
@@ -98,12 +162,44 @@ class TavernaState(BaseGameState):
         if not getattr(self, "ui_aggiornata", False):
             self.ui_handler.aggiorna_renderer(gioco)
             self.ui_aggiornata = True
+            
+        # Aggiungi chiamata a update per integrazione con EventBus
+        self.update(0.033)  # Valore dt predefinito
     
-    def pausa(self, gioco):
+    def update(self, dt):
+        """
+        Nuovo metodo di aggiornamento basato su EventBus.
+        Sostituisce gradualmente esegui().
+        
+        Args:
+            dt: Delta time, tempo trascorso dall'ultimo aggiornamento
+        """
+        # Ottieni il contesto di gioco
+        gioco = self.gioco
+        if not gioco:
+            return
+        
+        # Logica di aggiornamento specifica dello stato
+        if not getattr(self, "ui_aggiornata", False):
+            self.ui_handler.aggiorna_renderer(gioco)
+            self.ui_aggiornata = True
+    
+    def pausa(self, gioco=None):
         """
         Quando la taverna viene messa in pausa (es. durante un dialogo)
         mostriamo una notifica grafica
         """
+        # Usa il nuovo sistema EventBus ma mantieni il comportamento originale
+        super().pausa(gioco)
+        
+        # Se il gioco è fornito, salva il contesto
+        if gioco:
+            self.set_game_context(gioco)
+        
+        gioco = self.gioco
+        if not gioco:
+            return
+            
         # Memorizza lo stato corrente
         self.stato_precedente = self.menu_attivo
         
@@ -117,11 +213,22 @@ class TavernaState(BaseGameState):
             "type": "info"
         })
         
-    def riprendi(self, gioco):
+    def riprendi(self, gioco=None):
         """
         Quando la taverna riprende dopo una pausa
         mostriamo una notifica di ripresa
         """
+        # Usa il nuovo sistema EventBus ma mantieni il comportamento originale
+        super().riprendi(gioco)
+        
+        # Se il gioco è fornito, salva il contesto
+        if gioco:
+            self.set_game_context(gioco)
+        
+        gioco = self.gioco
+        if not gioco:
+            return
+            
         # Mostra un effetto di dissolvenza
         gioco.io.mostra_transizione("fade", 0.2)
         
@@ -189,22 +296,16 @@ class TavernaState(BaseGameState):
         Returns:
             TavernaState: Nuova istanza di TavernaState
         """
-        # Creiamo un oggetto senza chiamare __init__ per evitare l'errore del parametro mancante
-        state = object.__new__(cls)
+        # Creiamo un'istanza con il costruttore standard
+        state = cls(game)
         
-        # Inizializziamo manualmente gli attributi basilari
-        state.nome_stato = "taverna"
-        state.ultima_scelta = None
-        state.prima_visita = False  # Non è la prima visita durante un caricamento
-        state.fase = "menu_principale"
-        state.ultimo_input = None
-        state.dati_contestuali = {}
-        state.gioco = game  # Importante: inizializza gioco invece di game
-        state.menu_attivo = "menu_principale"  # Inizializza menu_attivo
+        # Imposta la prima visita a False durante un caricamento
+        state.prima_visita = False
         
-        # Inizializza handler UI e menu
-        state.ui_handler = TavernaUI(state)
-        state.menu_handler = MenuTavernaHandler(state)
+        # Carica altri attributi dal dizionario se presenti
+        state.fase = data.get("fase", "menu_principale")
+        state.ultimo_input = data.get("ultimo_input")
+        state.ultima_scelta = data.get("ultima_scelta")
         
         # Ricrea gli NPG dai nomi
         state.npg_presenti = {}
@@ -213,80 +314,4 @@ class TavernaState(BaseGameState):
             from entities.npg import NPG
             state.npg_presenti[nome] = NPG(nome)
         
-        # Inizializza gli oggetti interattivi vuoti (verranno caricati dal sistema JSON)
-        state.oggetti_interattivi = {}
-        
-        # Carica altri attributi dal dizionario se presenti
-        state.fase = data.get("fase", "menu_principale")
-        state.ultimo_input = data.get("ultimo_input")
-        state.ultima_scelta = data.get("ultima_scelta")
-        state.nome_npg_attivo = None
-        state.stato_conversazione = "inizio"
-        state.stato_precedente = None
-        state.mostra_mappa = False
-        
-        # Direzioni di movimento
-        state.direzioni = {
-            "nord": (0, -1),
-            "sud": (0, 1),
-            "est": (1, 0),
-            "ovest": (-1, 0)
-        }
-        
-        # Inizializza menu e comandi
-        if hasattr(state, '_init_commands'):
-            state._init_commands()
-            
-        # Implementa il metodo register_event_handler se non è già fornito
-        if not hasattr(state, 'register_event_handler'):
-            state.register_event_handler = state._register_event_handler
-        
-        return state
-        
-    def __getstate__(self):
-        """
-        Metodo speciale per la serializzazione con pickle.
-        
-        Returns:
-            dict: Stato dell'oggetto serializzabile
-        """
-        state = self.__dict__.copy()
-        # Rimuovi oggetti che non possono essere serializzati
-        if 'gioco' in state:
-            del state['gioco']
-        if 'ui_handler' in state:
-            del state['ui_handler']
-        if 'menu_handler' in state:
-            del state['menu_handler']
-        if 'register_event_handler' in state and callable(state['register_event_handler']):
-            del state['register_event_handler']
-        # Tratta gli NPG in modo speciale
-        state['npg_presenti'] = {k: v.__getstate__() if hasattr(v, '__getstate__') else {'nome': v.nome} for k, v in self.npg_presenti.items()}
-        return state
-        
-    def __setstate__(self, state):
-        """
-        Metodo speciale per la deserializzazione con pickle.
-        
-        Args:
-            state (dict): Stato dell'oggetto da deserializzare
-        """
-        # Ripristina lo stato
-        self.__dict__.update(state)
-        # Ricrea oggetti UI quando necessario
-        from .ui_handlers import TavernaUI
-        from .menu_handlers import MenuTavernaHandler
-        self.ui_handler = TavernaUI(self)
-        self.menu_handler = MenuTavernaHandler(self)
-        # Ricrea gli NPG
-        from entities.npg import NPG
-        self.npg_presenti = {k: NPG.from_dict(v) if isinstance(v, dict) else NPG(v.get('nome', k)) for k, v in state.get('npg_presenti', {}).items()}
-        
-    def serialize(self):
-        """
-        Serializza lo stato per la trasmissione JSON.
-        
-        Returns:
-            dict: Rappresentazione serializzabile dell'oggetto
-        """
-        return self.to_dict() 
+        return state 

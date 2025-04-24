@@ -50,7 +50,39 @@ class PositionComponent(Component):
         self.x = x
         self.y = y
         self.z = z
-        self.map_name = map_name
+        self._map_name = map_name
+        
+    def __getattribute__(self, name):
+        """Override per gestire l'accesso agli attributi in modo compatibile"""
+        # Gestione speciale per map_name
+        if name == 'map_name' and not hasattr(type(self), 'map_name'):
+            # Se la proprietà non esiste nella classe, accediamo direttamente all'attributo
+            try:
+                return object.__getattribute__(self, '_map_name')
+            except AttributeError:
+                # Se _map_name non esiste, restituisci None
+                return None
+        return object.__getattribute__(self, name)
+    
+    def __setattr__(self, name, value):
+        """Override per gestire l'impostazione degli attributi in modo compatibile"""
+        # Gestione speciale per map_name
+        if name == 'map_name' and not hasattr(type(self), 'map_name'):
+            # Se la proprietà non esiste nella classe, impostiamo direttamente l'attributo _map_name
+            object.__setattr__(self, '_map_name', value)
+        else:
+            # Per tutti gli altri attributi, comportamento standard
+            object.__setattr__(self, name, value)
+            
+    @property
+    def map_name(self):
+        """Getter per il nome della mappa"""
+        return self._map_name
+        
+    @map_name.setter
+    def map_name(self, value):
+        """Setter per il nome della mappa"""
+        self._map_name = value
         
     def to_dict(self):
         """
@@ -78,12 +110,23 @@ class PositionComponent(Component):
         Returns:
             PositionComponent: Nuova istanza del componente
         """
-        return cls(
+        # Crea una nuova istanza con i valori dal dizionario
+        instance = cls(
             x=data.get("x", 0),
             y=data.get("y", 0),
             z=data.get("z", 0),
             map_name=data.get("map_name")
         )
+        
+        # Assicuriamoci che la classe abbia i getter e setter adeguati
+        # (per compatibilità retroattiva)
+        if not hasattr(cls, "map_name") or not isinstance(cls.__dict__.get("map_name"), property):
+            setattr(cls, "map_name", property(
+                lambda self: self._map_name if hasattr(self, "_map_name") else None,
+                lambda self, value: setattr(self, "_map_name", value)
+            ))
+            
+        return instance
 
 
 class RenderableComponent(Component):

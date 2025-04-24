@@ -1,6 +1,7 @@
 """
 Modulo per la gestione degli eventi dell'interfaccia utente dello stato di dialogo
 """
+import core.events as Events
 
 def handle_dialog_choice(self, event):
     """
@@ -33,6 +34,12 @@ def handle_dialog_choice(self, event):
                 if idx < len(destinazioni):
                     destinazione = destinazioni[idx]
                     
+                    # Emetti evento per la selezione del dialogo
+                    self.emit_event(Events.MENU_SELECTION, 
+                                   menu_id="dialog_options",
+                                   selection=choice,
+                                   destination=destinazione)
+                    
                     # Effetto audio per la selezione
                     game_ctx.io.play_sound({
                         "sound_id": "dialog_select",
@@ -41,7 +48,7 @@ def handle_dialog_choice(self, event):
                     
                     # Se la destinazione è None, termina il dialogo
                     if destinazione is None:
-                        self._termina_dialogo(game_ctx)
+                        self.emit_event(Events.UI_DIALOG_CLOSE)
                     else:
                         # Altrimenti, passa allo stato successivo
                         self.stato_corrente = destinazione
@@ -53,7 +60,7 @@ def handle_dialog_choice(self, event):
     # Fase finale del dialogo o caso senza opzioni
     elif self.fase == "fine":
         if choice == "Continua" or choice == "Chiudi":
-            self._termina_dialogo(game_ctx)
+            self.emit_event(Events.UI_DIALOG_CLOSE)
 
 def handle_click_event(self, event):
     """
@@ -75,12 +82,13 @@ def handle_click_event(self, event):
     
     # Gestione click su elementi specifici dell'interfaccia di dialogo
     if target == "ritratto_npg":
-        # Click sul ritratto dell'NPG
-        self._mostra_info_npg(game_ctx)
+        # Emetti evento di click sul ritratto
+        self.emit_event(Events.UI_DIALOG_OPEN, 
+                       dialog_id="info_npg")
     elif target == "sfondo_dialogo":
         # Click sullo sfondo del dialogo potrebbe continuare il dialogo
         if self.fase == "fine":
-            self._termina_dialogo(game_ctx)
+            self.emit_event(Events.UI_DIALOG_CLOSE)
     elif target.startswith("opzione_dialogo_"):
         # Click su un'opzione di dialogo
         try:
@@ -109,11 +117,13 @@ def handle_menu_action(self, event):
     
     # Gestione azioni menu contestuale
     if action == "Info Personaggio":
-        self._mostra_info_npg(game_ctx)
+        self.emit_event(Events.UI_DIALOG_OPEN, 
+                       dialog_id="info_npg")
     elif action == "Mostra Inventario":
-        self._mostra_inventario_npg(game_ctx)
+        self.emit_event(Events.UI_DIALOG_OPEN, 
+                       dialog_id="inventario_npg")
     elif action == "Termina Dialogo":
-        self._termina_dialogo(game_ctx)
+        self.emit_event(Events.UI_DIALOG_CLOSE)
 
 def gestisci_click_opzione(self, gioco, indice):
     """
@@ -131,7 +141,12 @@ def gestisci_click_opzione(self, gioco, indice):
         return
     
     # Ottieni la destinazione
-    _, destinazione = dati_conversazione["opzioni"][indice]
+    opzione_testo, destinazione = dati_conversazione["opzioni"][indice]
+    
+    # Emetti evento di selezione opzione
+    self.emit_event(Events.DIALOG_CHOICE, 
+                   choice=opzione_testo, 
+                   dialog_id=self.stato_corrente)
     
     # Effetto audio per la selezione
     gioco.io.play_sound({
@@ -141,7 +156,7 @@ def gestisci_click_opzione(self, gioco, indice):
     
     # Procedi con la destinazione
     if destinazione is None:
-        self._termina_dialogo(gioco)
+        self.emit_event(Events.UI_DIALOG_CLOSE)
     else:
         self.stato_corrente = destinazione
         self.dati_contestuali["mostrato_dialogo_corrente"] = False

@@ -210,6 +210,32 @@ class OggettoInterattivo:
         
         return result
     
+    def to_msgpack(self):
+        """
+        Converte l'oggetto interattivo in formato MessagePack per la serializzazione.
+        MessagePack è più efficiente di JSON per la serializzazione e deserializzazione.
+        
+        Returns:
+            bytes: Rappresentazione dell'oggetto in formato MessagePack
+        """
+        import msgpack
+        return msgpack.packb(self.to_dict(), use_bin_type=True)
+    
+    @classmethod
+    def from_msgpack(cls, data_bytes):
+        """
+        Crea un'istanza di OggettoInterattivo da dati in formato MessagePack.
+        
+        Args:
+            data_bytes (bytes): Dati in formato MessagePack
+            
+        Returns:
+            OggettoInterattivo: Nuova istanza di OggettoInterattivo
+        """
+        import msgpack
+        data = msgpack.unpackb(data_bytes, raw=False)
+        return cls.from_dict(data)
+    
     @classmethod
     def from_dict(cls, data):
         """

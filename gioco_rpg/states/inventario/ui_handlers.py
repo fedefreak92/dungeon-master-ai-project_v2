@@ -1,4 +1,5 @@
 from core.io_interface import GameIO
+import core.events as Events
 
 class UIInventarioHandler:
     """
@@ -96,75 +97,6 @@ class UIInventarioHandler:
         renderer.update()
         return True
         
-    def _handle_click_event(self, event):
-        """
-        Gestisce eventi di click.
-        
-        Args:
-            event: L'evento di click
-            
-        Returns:
-            bool: True se l'evento è stato gestito, False altrimenti
-        """
-        return self.inventario_state.menu_handler.handle_dialog_choice(event)
-    
-    def _handle_menu_action(self, event):
-        """
-        Gestisce azioni del menu.
-        
-        Args:
-            event: L'evento di azione del menu
-            
-        Returns:
-            bool: True se l'evento è stato gestito, False altrimenti
-        """
-        return self.inventario_state.menu_handler.handle_dialog_choice(event)
-    
-    def _handle_dialog_choice(self, event):
-        """
-        Gestisce scelte di dialogo.
-        
-        Args:
-            event: L'evento di scelta di dialogo
-            
-        Returns:
-            bool: True se l'evento è stato gestito, False altrimenti
-        """
-        return self.inventario_state.menu_handler.handle_dialog_choice(event)
-    
-    def _handle_keypress(self, event):
-        """
-        Gestisce eventi di tastiera.
-        
-        Args:
-            event: L'evento di pressione tasto
-            
-        Returns:
-            bool: True se l'evento è stato gestito, False altrimenti
-        """
-        # Ottieni il contesto di gioco
-        gioco = self.inventario_state.gioco
-        if not gioco:
-            return False
-            
-        # Ottieni il tasto premuto
-        key = event.get("key")
-        if not key:
-            return False
-            
-        # Gestisci tasti specifici
-        if key == "Escape":
-            # Torna indietro al menu principale o esci dall'inventario
-            if self.inventario_state.fase != "menu_principale":
-                self.inventario_state.fase = "menu_principale"
-                self.inventario_state.ui_aggiornata = False
-                return True
-            else:
-                self.inventario_state.menu_handler.torna_indietro(gioco)
-                return True
-                
-        return False
-    
     def mostra_menu_principale(self, gioco):
         """
         Mostra il menu principale dell'inventario.
@@ -172,125 +104,28 @@ class UIInventarioHandler:
         Args:
             gioco: L'istanza del gioco
         """
-        # Mostra sfondo dell'inventario
-        gioco.io.mostra_ui_elemento({
-            "type": "panel",
-            "id": "sfondo_inventario",
-            "x": 100,
-            "y": 50,
-            "width": 600,
-            "height": 500,
-            "color": "#333333",
-            "opacity": 0.9,
-            "z_index": 10
-        })
+        # Emetti evento del menu principale
+        if hasattr(self.inventario_state, 'emit_event'):
+            self.inventario_state.emit_event("MENU_DISPLAY", 
+                                           menu_id="inventario_principale", 
+                                           options=["Usa oggetto", "Equipaggia oggetto", 
+                                                   "Rimuovi equipaggiamento", "Esamina oggetto", 
+                                                   "Torna indietro"])
         
-        # Titolo dell'inventario
-        gioco.io.mostra_ui_elemento({
-            "type": "text",
-            "id": "titolo_inventario",
-            "text": "GESTIONE INVENTARIO",
-            "x": 400,
-            "y": 80,
-            "font_size": 24,
-            "centered": True,
-            "color": "#FFFFFF",
-            "z_index": 11
-        })
+        # Mostra intestazione
+        gioco.io.mostra_messaggio("Inventario di " + gioco.giocatore.nome)
         
-        # Mostra oro del giocatore
-        gioco.io.mostra_ui_elemento({
-            "type": "text",
-            "id": "oro_giocatore",
-            "text": f"Oro: {gioco.giocatore.oro}",
-            "x": 400,
-            "y": 120,
-            "font_size": 18,
-            "centered": True,
-            "color": "#FFD700",
-            "z_index": 11
-        })
+        # Mostra statistiche inventario
+        capacita = len(gioco.giocatore.inventario)
+        capacita_max = gioco.giocatore.capacita_inventario if hasattr(gioco.giocatore, 'capacita_inventario') else 20
+        gioco.io.mostra_messaggio(f"Spazio: {capacita}/{capacita_max}")
         
-        # Mostra equipaggiamento attuale
-        y_offset = 160
-        if gioco.giocatore.arma:
-            arma_nome = gioco.giocatore.arma.nome if hasattr(gioco.giocatore.arma, 'nome') else str(gioco.giocatore.arma)
-            gioco.io.mostra_ui_elemento({
-                "type": "text",
-                "id": "arma_equipaggiata",
-                "text": f"Arma: {arma_nome}",
-                "x": 400,
-                "y": y_offset,
-                "font_size": 16,
-                "centered": True,
-                "color": "#FF8C00",
-                "z_index": 11
-            })
-            y_offset += 30
-                
-        if gioco.giocatore.armatura:
-            armatura_nome = gioco.giocatore.armatura.nome if hasattr(gioco.giocatore.armatura, 'nome') else str(gioco.giocatore.armatura)
-            gioco.io.mostra_ui_elemento({
-                "type": "text",
-                "id": "armatura_equipaggiata",
-                "text": f"Armatura: {armatura_nome}",
-                "x": 400,
-                "y": y_offset,
-                "font_size": 16,
-                "centered": True,
-                "color": "#1E90FF",
-                "z_index": 11
-            })
-            y_offset += 30
-        
-        # Lista oggetti nell'inventario
-        y_offset = 200
-        gioco.io.mostra_ui_elemento({
-            "type": "text",
-            "id": "titolo_lista_oggetti",
-            "text": "OGGETTI",
-            "x": 400,
-            "y": y_offset,
-            "font_size": 20,
-            "centered": True,
-            "color": "#FFFFFF",
-            "z_index": 11
-        })
-        y_offset += 30
-        
-        # Aggiungi visualizzazione a scorrimento per l'inventario
-        oggetti_per_pagina = 8
-        
-        for i, item in enumerate(gioco.giocatore.inventario[:oggetti_per_pagina], 1):
-            nome_oggetto = item.nome if hasattr(item, 'nome') else str(item)
-            tipo_oggetto = item.tipo if hasattr(item, 'tipo') else "N/A"
-            
-            gioco.io.mostra_ui_elemento({
-                "type": "interactive_text",
-                "id": f"oggetto_{i-1}",
-                "text": f"{i}. {nome_oggetto} - {tipo_oggetto}",
-                "x": 200,
-                "y": y_offset,
-                "width": 400,
-                "font_size": 16,
-                "color": "#FFFFFF",
-                "hover_color": "#AAFFAA",
-                "on_click": {"target": f"oggetto_{i-1}"},
-                "z_index": 11
-            })
-            y_offset += 25
-        
-        # Pulsanti di azione
-        y_offset = 450
-        
-        # Azioni disponibili come pulsanti
-        gioco.io.mostra_dialogo("Azioni", "Cosa vuoi fare?", [
-            "Usa oggetto",
-            "Equipaggia oggetto",
-            "Rimuovi equipaggiamento",
-            "Esamina oggetto",
-            "Torna indietro"
-        ])
+        # Mostra il menu delle opzioni
+        gioco.io.mostra_dialogo(
+            "Gestione Inventario", 
+            "Cosa vuoi fare?", 
+            ["Usa oggetto", "Equipaggia oggetto", "Rimuovi equipaggiamento", "Esamina oggetto", "Torna indietro"]
+        )
     
     def mostra_usa_oggetto(self, gioco):
         """
@@ -595,4 +430,110 @@ class UIInventarioHandler:
                 y_offset += 25
         
         # Pulsante per tornare indietro
-        gioco.io.mostra_dialogo("", "", ["Chiudi"]) 
+        gioco.io.mostra_dialogo("", "", ["Chiudi"])
+    
+    # Conversione eventi IO in eventi EventBus
+    def _convertire_evento_a_eventbus(self, event, event_type):
+        """
+        Converte un evento IO in un evento EventBus.
+        
+        Args:
+            event: Evento IO originale
+            event_type: Tipo di evento da emettere
+            
+        Returns:
+            bool: True se l'evento è stato convertito e emesso, False altrimenti
+        """
+        if not hasattr(self.inventario_state, 'emit_event'):
+            return False
+            
+        if not hasattr(event, "data") or not event.data:
+            return False
+            
+        # Mappa le proprietà dell'evento IO in parametri per EventBus
+        params = {}
+        for key, value in event.data.items():
+            params[key] = value
+            
+        # Emetti l'evento EventBus
+        self.inventario_state.emit_event(event_type, **params)
+        return True
+    
+    def _handle_click_event(self, event):
+        """
+        Gestisce eventi di click.
+        
+        Args:
+            event: L'evento di click
+            
+        Returns:
+            bool: True se l'evento è stato gestito, False altrimenti
+        """
+        # Converti in evento EventBus se possibile
+        self._convertire_evento_a_eventbus(event, "UI_CLICK")
+        
+        return self.inventario_state.menu_handler.handle_dialog_choice(event)
+    
+    def _handle_menu_action(self, event):
+        """
+        Gestisce azioni del menu.
+        
+        Args:
+            event: L'evento di azione del menu
+            
+        Returns:
+            bool: True se l'evento è stato gestito, False altrimenti
+        """
+        # Converti in evento EventBus se possibile
+        self._convertire_evento_a_eventbus(event, "MENU_ACTION")
+        
+        return self.inventario_state.menu_handler.handle_dialog_choice(event)
+    
+    def _handle_dialog_choice(self, event):
+        """
+        Gestisce scelte di dialogo.
+        
+        Args:
+            event: L'evento di scelta di dialogo
+            
+        Returns:
+            bool: True se l'evento è stato gestito, False altrimenti
+        """
+        # Converti in evento EventBus se possibile
+        if hasattr(event, "data") and event.data and "choice" in event.data:
+            if hasattr(self.inventario_state, 'emit_event'):
+                self.inventario_state.emit_event("MENU_SELECTION", 
+                                              menu_id="inventario", 
+                                              choice=event.data["choice"])
+        
+        return self.inventario_state.menu_handler.handle_dialog_choice(event)
+    
+    def _handle_keypress(self, event):
+        """
+        Gestisce eventi di pressione tasti.
+        
+        Args:
+            event: L'evento di pressione tasto
+            
+        Returns:
+            bool: True se l'evento è stato gestito, False altrimenti
+        """
+        # Converti in evento EventBus se possibile
+        self._convertire_evento_a_eventbus(event, "KEY_PRESSED")
+        
+        # Gestione specifica dei tasti
+        if not hasattr(event, "data") or not event.data:
+            return False
+            
+        key = event.data.get("key")
+        if not key:
+            return False
+            
+        # Tasto ESC per tornare indietro
+        if key == "Escape":
+            gioco = self.inventario_state.gioco
+            if gioco:
+                self.inventario_state.menu_handler.torna_indietro(gioco)
+                return True
+                
+        return False 

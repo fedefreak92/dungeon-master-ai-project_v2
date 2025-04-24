@@ -1,6 +1,11 @@
 import random
 from core.io_interface import GUI2DIO
 import uuid
+from typing import Dict, List, Optional, Any
+import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Mappa delle abilità associate alle caratteristiche (D&D 5e style)
 ABILITA_ASSOCIATE = {
@@ -31,11 +36,26 @@ class Dado:
         return random.randint(1, self.facce)
 
 class Entita:
-    def __init__(self, nome, hp=10, hp_max=10, forza_base=10, difesa=0, destrezza_base=10, costituzione_base=10, intelligenza_base=10, saggezza_base=10, carisma_base=10, token="E", id=None):
-        self.nome = nome
-        self.hp = hp
-        self.hp_max = hp_max
+    """Classe base per tutte le entità del gioco."""
+    
+    def __init__(self, nome=None, id=None, posizione=None, token="E"):
+        """
+        Inizializza una nuova entità.
+        
+        Args:
+            nome (str, optional): Nome dell'entità. Defaults to None.
+            id (str, optional): ID univoco dell'entità. Defaults to None.
+            posizione (tuple, optional): Posizione (x, y) dell'entità. Defaults to None.
+            token (str, optional): Token per rappresentazione testuale. Defaults to "E".
+        """
+        self.id = id or str(uuid.uuid4())
+        self.nome = nome or f"Entita-{self.id[:8]}"
+        self.posizione = posizione
         self.token = token
+        self.stato = "normale"  # Stati possibili: normale, invisibile, morto, ecc.
+        self.interagibile = True
+        self.visibile = True
+        self.tags = []
         
         # Attributo id per compatibilità con il sistema ECS
         self.id = id if id else str(uuid.uuid4())
@@ -44,20 +64,20 @@ class Entita:
         self.tags = set()
         
         # Valori base delle caratteristiche
-        self.forza_base = forza_base
-        self.destrezza_base = destrezza_base
-        self.costituzione_base = costituzione_base
-        self.intelligenza_base = intelligenza_base
-        self.saggezza_base = saggezza_base
-        self.carisma_base = carisma_base
+        self.forza_base = 10
+        self.destrezza_base = 10
+        self.costituzione_base = 10
+        self.intelligenza_base = 10
+        self.saggezza_base = 10
+        self.carisma_base = 10
         
         # Modificatori calcolati
-        self.modificatore_forza = self.calcola_modificatore(forza_base)
-        self.modificatore_destrezza = self.calcola_modificatore(destrezza_base)
-        self.modificatore_costituzione = self.calcola_modificatore(costituzione_base)
-        self.modificatore_intelligenza = self.calcola_modificatore(intelligenza_base)
-        self.modificatore_saggezza = self.calcola_modificatore(saggezza_base)
-        self.modificatore_carisma = self.calcola_modificatore(carisma_base)
+        self.modificatore_forza = self.calcola_modificatore(self.forza_base)
+        self.modificatore_destrezza = self.calcola_modificatore(self.destrezza_base)
+        self.modificatore_costituzione = self.calcola_modificatore(self.costituzione_base)
+        self.modificatore_intelligenza = self.calcola_modificatore(self.intelligenza_base)
+        self.modificatore_saggezza = self.calcola_modificatore(self.saggezza_base)
+        self.modificatore_carisma = self.calcola_modificatore(self.carisma_base)
         
         # Attributi per la posizione
         self.x = 0
@@ -69,7 +89,7 @@ class Entita:
         self.bonus_competenza = 2  # Può crescere con il livello
         
         # Altri attributi
-        self.difesa = difesa
+        self.difesa = 0
         self.inventario = []
         self.oro = 0
         self.esperienza = 0
@@ -346,64 +366,23 @@ class Entita:
         competenza_bonus = self.bonus_competenza if self.abilita_competenze.get(nome_abilita.lower()) else 0
         return modificatore_base + competenza_bonus
 
-    def to_dict(self, already_serialized=None):
+    def to_dict(self):
         """
         Converte l'entità in un dizionario per la serializzazione.
-        Gestisce riferimenti circolari attraverso il parametro already_serialized.
         
-        Args:
-            already_serialized (set, optional): Set di ID di oggetti già serializzati
-            
         Returns:
-            dict: Rappresentazione dell'entità in formato dizionario
+            dict: Dizionario rappresentante lo stato dell'entità.
         """
-        # Per retrocompatibilità, se il metodo è chiamato con un numero errato di parametri
-        # comportati come il vecchio metodo
-        import inspect
-        if already_serialized is not None and not isinstance(already_serialized, set):
-            # Potrebbe essere un caso di chiamata errata, ignora il parametro
-            already_serialized = None
-            
-        # Inizializza il set se non fornito
-        if already_serialized is None:
-            already_serialized = set()
-            
-        # Evita riferimenti circolari
-        if id(self) in already_serialized:
-            return {"reference_id": id(self), "nome": self.nome, "tipo": "riferimento"}
-            
-        # Aggiungi questo oggetto al set
-        already_serialized.add(id(self))
-        
-        # Funzione per serializzare in modo sicuro
-        def serialize_safely(item):
-            if item is None:
-                return None
-            if not hasattr(item, 'to_dict'):
-                if isinstance(item, (str, int, float, bool)):
-                    return item
-                return getattr(item, 'nome', str(item))
-                
-            # Tenta prima con already_serialized
-            try:
-                return item.to_dict(already_serialized)
-            except TypeError:
-                # Se fallisce, tenta senza parametro
-                return item.to_dict()
-        
-        # Serializza liste in modo sicuro
-        def serialize_list(items):
-            result = []
-            for item in items:
-                result.append(serialize_safely(item))
-            return result
-        
         return {
-            "id": self.id,  # Includi l'ID dell'entità
+            "id": self.id,
             "nome": self.nome,
-            "hp": self.hp,
-            "hp_max": self.hp_max,
+            "posizione": self.posizione,
             "token": self.token,
+            "stato": self.stato,
+            "interagibile": self.interagibile,
+            "visibile": self.visibile,
+            "tags": list(self.tags),
+            "tipo": self.__class__.__name__,
             "forza_base": self.forza_base,
             "destrezza_base": self.destrezza_base,
             "costituzione_base": self.costituzione_base,
@@ -416,63 +395,123 @@ class Entita:
             "abilita_competenze": self.abilita_competenze,
             "bonus_competenza": self.bonus_competenza,
             "difesa": self.difesa,
-            "inventario": serialize_list(self.inventario),
+            "inventario": self.inventario,
             "oro": self.oro,
             "esperienza": self.esperienza,
             "livello": self.livello,
-            "arma": serialize_safely(self.arma),
-            "armatura": serialize_safely(self.armatura),
-            "accessori": serialize_list(self.accessori),
+            "arma": self.arma,
+            "armatura": self.armatura,
+            "accessori": self.accessori
         }
     
-    @classmethod
-    def from_dict(cls, dati, game_context=None):
+    # Alias per compatibilità con il sistema ECS
+    serialize = to_dict
+    
+    def to_msgpack(self):
         """
-        Crea un'istanza della classe dal dizionario.
+        Converte l'entità in formato MessagePack per la serializzazione.
+        
+        Returns:
+            bytes: Dati serializzati in formato MessagePack.
+        """
+        try:
+            import msgpack
+            return msgpack.packb(self.to_dict(), use_bin_type=True)
+        except Exception as e:
+            logger.error(f"Errore nella serializzazione MessagePack dell'entità {self.id}: {e}")
+            # Fallback a dizionario serializzato in JSON e poi convertito in bytes
+            return json.dumps(self.to_dict()).encode()
+    
+    # Alias per compatibilità con il sistema ECS
+    serialize_msgpack = to_msgpack
+    
+    @classmethod
+    def from_dict(cls, data):
+        """
+        Crea un'entità da un dizionario.
         
         Args:
-            dati (dict): Dizionario con i dati dell'entità
-            game_context (GameContext, optional): Contesto di gioco
+            data (dict): Dizionario con i dati dell'entità.
             
         Returns:
-            Entita: Istanza di Entita
+            Entita: Istanza dell'entità creata.
         """
-        entita = cls(dati.get('nome', "Sconosciuto"), game_context=game_context, id=dati.get('id'))
+        entita = cls(
+            nome=data.get("nome"),
+            id=data.get("id"),
+            posizione=data.get("posizione"),
+            token=data.get("token", "E")
+        )
         
-        # Imposta i valori di base
-        entita.hp = dati.get('hp', 10)
-        entita.hp_max = dati.get('hp_max', 10)
-        entita.token = dati.get('token', '@')
+        entita.stato = data.get("stato", "normale")
+        entita.interagibile = data.get("interagibile", True)
+        entita.visibile = data.get("visibile", True)
+        entita.tags = set(data.get("tags", []))
         
-        # Imposta le statistiche di base
-        entita.forza_base = dati.get('forza_base', 10)
-        entita.destrezza_base = dati.get('destrezza_base', 10)
-        entita.costituzione_base = dati.get('costituzione_base', 10)
-        entita.intelligenza_base = dati.get('intelligenza_base', 10)
-        entita.saggezza_base = dati.get('saggezza_base', 10)
-        entita.carisma_base = dati.get('carisma_base', 10)
+        entita.forza_base = data.get("forza_base", 10)
+        entita.destrezza_base = data.get("destrezza_base", 10)
+        entita.costituzione_base = data.get("costituzione_base", 10)
+        entita.intelligenza_base = data.get("intelligenza_base", 10)
+        entita.saggezza_base = data.get("saggezza_base", 10)
+        entita.carisma_base = data.get("carisma_base", 10)
         
-        # Imposta la posizione
-        entita.x = dati.get('x', 0)
-        entita.y = dati.get('y', 0)
-        entita.mappa_corrente = dati.get('mappa_corrente', 'overworld')
+        entita.x = data.get("x", 0)
+        entita.y = data.get("y", 0)
+        entita.mappa_corrente = data.get("mappa_corrente", "overworld")
         
-        # Imposta le competenze e abilità
-        entita.abilita_competenze = dati.get('abilita_competenze', {})
-        entita.bonus_competenza = dati.get('bonus_competenza', 2)
-        entita.difesa = dati.get('difesa', 10)
+        entita.abilita_competenze = data.get("abilita_competenze", {})
+        entita.bonus_competenza = data.get("bonus_competenza", 2)
+        entita.difesa = data.get("difesa", 0)
         
-        # Imposta l'inventario (come stringhe per ora)
-        entita.inventario = dati.get('inventario', [])
-        entita.oro = dati.get('oro', 0)
+        entita.inventario = data.get("inventario", [])
+        entita.oro = data.get("oro", 0)
         
-        # Imposta esperienza e livello
-        entita.esperienza = dati.get('esperienza', 0)
-        entita.livello = dati.get('livello', 1)
+        entita.esperienza = data.get("esperienza", 0)
+        entita.livello = data.get("livello", 1)
         
-        # Imposta equipaggiamento (come stringhe per ora)
-        entita.arma = dati.get('arma')
-        entita.armatura = dati.get('armatura')
-        entita.accessori = dati.get('accessori', [])
+        entita.arma = data.get("arma")
+        entita.armatura = data.get("armatura")
+        entita.accessori = data.get("accessori", [])
         
         return entita
+    
+    # Alias per compatibilità con il sistema ECS
+    deserialize = classmethod(from_dict)
+    
+    @classmethod
+    def from_msgpack(cls, data_bytes):
+        """
+        Crea un'entità da dati in formato MessagePack.
+        
+        Args:
+            data_bytes (bytes): Dati serializzati in formato MessagePack.
+            
+        Returns:
+            Entita: Istanza dell'entità creata.
+        """
+        try:
+            import msgpack
+            data = msgpack.unpackb(data_bytes, raw=False)
+            return cls.from_dict(data)
+        except Exception as e:
+            logger.error(f"Errore nella deserializzazione MessagePack: {e}")
+            try:
+                # Tenta di interpretare i dati come JSON
+                data = json.loads(data_bytes.decode())
+                return cls.from_dict(data)
+            except Exception as e2:
+                logger.error(f"Errore anche con fallback JSON: {e2}")
+                return cls()  # Ritorna un'entità vuota in caso di errore
+    
+    # Alias per compatibilità con il sistema ECS
+    deserialize_msgpack = classmethod(from_msgpack)
+    
+    def __str__(self):
+        """
+        Rappresentazione testuale dell'entità.
+        
+        Returns:
+            str: Stringa che rappresenta l'entità.
+        """
+        pos_str = f"({self.posizione[0]}, {self.posizione[1]})" if self.posizione else "(?, ?)"
+        return f"{self.nome} [{self.token}] @ {pos_str}"

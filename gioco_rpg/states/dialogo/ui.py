@@ -1,6 +1,7 @@
 """
 Modulo per la gestione dell'interfaccia utente dello stato di dialogo
 """
+import core.events as Events
 
 def mostra_interfaccia_dialogo(self, gioco):
     """
@@ -9,6 +10,11 @@ def mostra_interfaccia_dialogo(self, gioco):
     Args:
         gioco: L'istanza del gioco
     """
+    # Emetti evento per aggiornare l'interfaccia UI
+    self.emit_event(Events.UI_UPDATE, 
+                   component="dialog_interface",
+                   state="open")
+                   
     # Aggiungi elementi UI per il dialogo
     gioco.io.mostra_ui_elemento({
         "type": "dialog_background",
@@ -60,7 +66,7 @@ def mostra_interfaccia_dialogo(self, gioco):
         "text_color": "#FFFFFF",
         "z_index": 15,
         "clickable": True,
-        "onClick": lambda: self._termina_dialogo(gioco)
+        "onClick": lambda: self.emit_event(Events.UI_DIALOG_CLOSE)
     })
 
 def mostra_dialogo_corrente(self, gioco):
@@ -75,7 +81,11 @@ def mostra_dialogo_corrente(self, gioco):
     
     # Se i dati non esistono, torna al menu principale
     if not dati_conversazione:
-        gioco.io.mostra_dialogo("Avviso", "Non c'è altro da dire.", ["Chiudi"])
+        self.emit_event(Events.UI_DIALOG_OPEN, 
+                       dialog_id="avviso",
+                       title="Avviso",
+                       content="Non c'è altro da dire.",
+                       options=["Chiudi"])
         self.fase = "fine"
         return
     
@@ -88,6 +98,11 @@ def mostra_dialogo_corrente(self, gioco):
         "sound_id": "dialog_text",
         "volume": 0.4
     })
+    
+    # Emetti evento di aggiornamento dialogo
+    self.emit_event(Events.UI_UPDATE, 
+                   component="dialog_text",
+                   content=dati_conversazione['testo'])
     
     # Aggiungi effetto di digitazione del testo
     testo_dialogo = dati_conversazione['testo']
@@ -110,11 +125,20 @@ def mostra_dialogo_corrente(self, gioco):
     
     # Se la conversazione non ha opzioni, mostra solo un pulsante per continuare
     if not dati_conversazione.get("opzioni"):
-        gioco.io.mostra_dialogo("", "", ["Continua"])
+        self.emit_event(Events.UI_DIALOG_OPEN, 
+                        dialog_id="continua_dialogo",
+                        title="",
+                        content="",
+                        options=["Continua"])
         self.fase = "fine"
     else:
         # Prepara le opzioni di dialogo
         opzioni = [testo for testo, _ in dati_conversazione["opzioni"]]
+        
+        # Emetti evento di opzioni dialogo
+        self.emit_event(Events.UI_UPDATE, 
+                       component="dialog_options",
+                       options=opzioni)
         
         # Mostra le opzioni come pulsanti interattivi
         for i, opzione in enumerate(opzioni):
@@ -130,7 +154,8 @@ def mostra_dialogo_corrente(self, gioco):
                 "text_color": "#FFFFFF",
                 "z_index": 13,
                 "clickable": True,
-                "highlight_on_hover": True
+                "highlight_on_hover": True,
+                "onClick": lambda idx=i: self.emit_event(Events.DIALOG_CHOICE, choice=opzioni[idx])
             })
         
         # Salva le opzioni di destinazione per l'handler
@@ -156,6 +181,13 @@ def mostra_info_npg(self, gioco):
     if hasattr(self.npg, "professione"):
         info += f"Professione: {self.npg.professione}\n"
     
+    # Emetti evento di dialogo informazioni
+    self.emit_event(Events.UI_DIALOG_OPEN, 
+                   dialog_id="info_npg",
+                   title=f"Informazioni su {self.npg.nome}",
+                   content=info,
+                   options=["Chiudi"])
+    
     # Mostra le informazioni in un dialogo
     gioco.io.mostra_dialogo(f"Informazioni su {self.npg.nome}", info, ["Chiudi"])
     
@@ -174,6 +206,11 @@ def mostra_inventario_npg(self, gioco):
     """
     # Verifica se l'NPG ha un inventario
     if not hasattr(self.npg, "inventario") or not self.npg.inventario:
+        self.emit_event(Events.UI_DIALOG_OPEN, 
+                       dialog_id="inventario_vuoto",
+                       title=f"Inventario di {self.npg.nome}",
+                       content="Non ha oggetti da mostrare.",
+                       options=["Chiudi"])
         gioco.io.mostra_dialogo(f"Inventario di {self.npg.nome}", "Non ha oggetti da mostrare.", ["Chiudi"])
         return
     
@@ -186,6 +223,14 @@ def mostra_inventario_npg(self, gioco):
             items.append(str(item))
     
     items_text = "\n".join([f"- {item}" for item in items])
+    
+    # Emetti evento di dialogo inventario
+    self.emit_event(Events.UI_DIALOG_OPEN, 
+                   dialog_id="inventario_npg",
+                   title=f"Inventario di {self.npg.nome}",
+                   content=items_text,
+                   options=["Chiudi"])
+    
     gioco.io.mostra_dialogo(f"Inventario di {self.npg.nome}", items_text, ["Chiudi"])
     
     # Effetto sonoro per apertura inventario

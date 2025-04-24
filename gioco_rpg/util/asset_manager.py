@@ -18,6 +18,65 @@ logger = logging.getLogger(__name__)
 # Singleton globale
 _global_asset_manager = None
 
+# Classe per limitare il number di messaggi di log ripetitivi
+class LogThrottler:
+    def __init__(self, max_occurrences=3, reset_interval=300):
+        self.log_counts = {}
+        self.max_occurrences = max_occurrences
+        self.reset_interval = reset_interval  # secondi
+        self.last_reset = time.time()
+    
+    def should_log(self, message):
+        # Reset periodico
+        current_time = time.time()
+        if current_time - self.last_reset > self.reset_interval:
+            self.log_counts.clear()
+            self.last_reset = current_time
+            
+        # Incrementa contatore per questo messaggio
+        count = self.log_counts.get(message, 0) + 1
+        self.log_counts[message] = count
+        
+        # Log solo se sotto la soglia o un multiplo della soglia
+        # (permette di loggare "logged N times" periodicamente)
+        return count <= self.max_occurrences or count % (self.max_occurrences * 5) == 0
+
+# Inizializza il throttler
+log_throttler = LogThrottler()
+
+def throttled_log(level, message, logger=logger):
+    """Logga un messaggio solo se non è stato loggato troppe volte."""
+    if log_throttler.should_log(message):
+        count = log_throttler.log_counts.get(message, 1)
+        if count > log_throttler.max_occurrences:
+            message = f"{message} (ripetuto {count} volte)"
+        
+        if level == logging.DEBUG:
+            logger.debug(message)
+        elif level == logging.INFO:
+            logger.info(message)
+        elif level == logging.WARNING:
+            logger.warning(message)
+        elif level == logging.ERROR:
+            logger.error(message)
+        elif level == logging.CRITICAL:
+            logger.critical(message)
+
+def cleanup_assets():
+    """
+    Pulisce tutte le risorse degli asset.
+    Chiude tutti gli AssetManager aperti.
+    """
+    global _global_asset_manager
+    
+    # Chiudi tutti gli AssetManager aperti
+    AssetManager.close_all()
+    
+    # Reset dell'istanza globale
+    _global_asset_manager = None
+    
+    logger.info("Pulizia asset completata")
+
 def get_asset_manager(base_path=None):
     """
     Restituisce l'istanza singleton dell'AssetManager.
@@ -295,108 +354,100 @@ class AssetManager:
     
     def register_sprite(self, sprite_id, name, file_path, dimensions=None, offset=None, tags=None):
         """
-        Registra uno sprite.
+        Registra uno sprite nel registro degli asset.
         
         Args:
-            sprite_id (str): ID univoco dello sprite.
-            name (str): Nome leggibile dello sprite.
-            file_path (str): Percorso del file relativo alla directory degli asset.
-            dimensions (dict, optional): Dimensioni dello sprite {"width": w, "height": h}.
-            offset (dict, optional): Offset dello sprite {"x": x, "y": y}.
-            tags (list, optional): Tag associati allo sprite.
-        
+            sprite_id (str): ID univoco per questo sprite
+            name (str): Nome descrittivo
+            file_path (str): Percorso relativo al file dell'asset
+            dimensions (tuple, optional): Dimensioni (larghezza, altezza)
+            offset (tuple, optional): Offset di disegno (x, y)
+            tags (list, optional): Tag per categorizzare lo sprite
+            
         Returns:
-            bool: True se lo sprite è stato registrato con successo, False altrimenti.
+            bool: True se lo sprite è stato registrato con successo, False altrimenti
         """
         try:
-            # Normalizza il percorso del file
-            if os.path.isabs(file_path):
-                # Se è un percorso assoluto, rendilo relativo alla directory di base
-                rel_path = os.path.relpath(file_path, self.base_path)
-            else:
-                # Altrimenti, lo consideriamo già relativo
-                rel_path = file_path.replace("\\", "/")
+            # Verifica se il file esiste
+            abs_path = os.path.join(self.base_path, file_path)
+            if not os.path.exists(abs_path):
+                fallback_path = os.path.join(self.base_path, "fallback", file_path)
+                if os.path.exists(fallback_path):
+                    throttled_log(logging.WARNING, f"Sprite {sprite_id} non trovato, uso fallback: {fallback_path}")
+                    file_path = os.path.join("fallback", file_path)
+                    abs_path = fallback_path
+                else:
+                    throttled_log(logging.WARNING, f"Sprite {sprite_id} non trovato e nessun fallback disponibile: {file_path}")
+                    return False
             
-            # Ottieni solo il nome del file
-            file_name = os.path.basename(file_path)
-            
-            # Crea il dizionario dello sprite
-            sprite_data = {
+            # Registrazione sprite
+            self.sprites[sprite_id] = {
                 "id": sprite_id,
                 "name": name,
-                "file": file_name,
-                "path": rel_path,
-                "type": "sprite",
-                "dimensions": dimensions if dimensions else {"width": 32, "height": 32},
-                "offset": offset if offset else {"x": 0, "y": 0},
-                "tags": tags if tags else []
+                "file": file_path,
+                "dimensions": dimensions,
+                "offset": offset,
+                "tags": tags or []
             }
             
-            # Registra lo sprite
-            self.sprites[sprite_id] = sprite_data
+            throttled_log(logging.DEBUG, f"Sprite registrato: {sprite_id}")
             
-            logger.debug(f"Sprite registrato: {sprite_id} ({rel_path})")
-            
-            # Salva il manifest
-            self.save_manifest()
+            # Aggiorna il manifest
+            self.manifest["sprites"] = self.sprites
             
             return True
-        
         except Exception as e:
             logger.error(f"Errore nella registrazione dello sprite {sprite_id}: {e}")
+            logger.debug(traceback.format_exc())
             return False
     
     def register_tile(self, tile_id, name, file_path, dimensions=None, properties=None, tags=None):
         """
-        Registra un tile.
+        Registra un tile nel registro degli asset.
         
         Args:
-            tile_id (str): ID univoco del tile.
-            name (str): Nome leggibile del tile.
-            file_path (str): Percorso del file relativo alla directory degli asset.
-            dimensions (dict, optional): Dimensioni del tile {"width": w, "height": h}.
-            properties (dict, optional): Proprietà del tile (ad es. {"walkable": True}).
-            tags (list, optional): Tag associati al tile.
-        
+            tile_id (str): ID univoco per questo tile
+            name (str): Nome descrittivo
+            file_path (str): Percorso relativo al file dell'asset
+            dimensions (tuple, optional): Dimensioni (larghezza, altezza)
+            properties (dict, optional): Proprietà del tile (es. walkable, transparent)
+            tags (list, optional): Tag per categorizzare il tile
+            
         Returns:
-            bool: True se il tile è stato registrato con successo, False altrimenti.
+            bool: True se il tile è stato registrato con successo, False altrimenti
         """
         try:
-            # Normalizza il percorso del file
-            if os.path.isabs(file_path):
-                # Se è un percorso assoluto, rendilo relativo alla directory di base
-                rel_path = os.path.relpath(file_path, self.base_path)
-            else:
-                # Altrimenti, lo consideriamo già relativo
-                rel_path = file_path.replace("\\", "/")
+            # Verifica se il file esiste
+            abs_path = os.path.join(self.base_path, file_path)
+            if not os.path.exists(abs_path):
+                fallback_path = os.path.join(self.base_path, "fallback", file_path)
+                if os.path.exists(fallback_path):
+                    throttled_log(logging.WARNING, f"Tile {tile_id} non trovato, uso fallback: {fallback_path}")
+                    file_path = os.path.join("fallback", file_path)
+                    abs_path = fallback_path
+                else:
+                    throttled_log(logging.WARNING, f"Tile {tile_id} non trovato e nessun fallback disponibile: {file_path}")
+                    return False
             
-            # Ottieni solo il nome del file
-            file_name = os.path.basename(file_path)
-            
-            # Crea il dizionario del tile
-            tile_data = {
+            # Registrazione tile
+            self.tiles[tile_id] = {
                 "id": tile_id,
                 "name": name,
-                "file": file_name,
-                "path": rel_path,
-                "type": "tile",
-                "dimensions": dimensions if dimensions else {"width": 32, "height": 32},
-                "properties": properties if properties else {"walkable": True, "transparent": True},
-                "tags": tags if tags else []
+                "file": file_path,
+                "dimensions": dimensions,
+                "properties": properties or {},
+                "tags": tags or []
             }
             
-            # Registra il tile
-            self.tiles[tile_id] = tile_data
+            throttled_log(logging.DEBUG, f"Tile registrato: {tile_id}")
             
-            logger.debug(f"Tile registrato: {tile_id} ({rel_path})")
-            
-            # Salva il manifest
-            self.save_manifest()
+            # Aggiorna il manifest
+            self.manifest["tiles"] = self.tiles
             
             return True
-        
         except Exception as e:
             logger.error(f"Errore nella registrazione del tile {tile_id}: {e}")
+            logger.debug(traceback.format_exc())
             return False
     
     def register_ui_element(self, ui_id, name, file_path, dimensions=None, tags=None):

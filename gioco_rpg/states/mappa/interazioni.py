@@ -1,105 +1,275 @@
 """
-Gestione delle interazioni con l'ambiente sulla mappa.
-Contiene le funzioni per interagire con oggetti, NPC e aree del gioco.
+Funzioni per gestire le interazioni del giocatore con elementi della mappa.
 """
 
-def interagisci_con_oggetto(mappa_state, gioco):
+import logging
+from core.event_bus import EventBus
+import core.events as Events
+
+logger = logging.getLogger(__name__)
+
+def interagisci_con_oggetto(stato, gioco):
     """
-    Interagisce con un oggetto adiacente
+    Gestisce l'interazione con un oggetto adiacente al giocatore.
     
     Args:
-        mappa_state: Istanza di MappaState
-        gioco: Oggetto Game
+        stato: Lo stato mappa corrente
+        gioco: L'istanza del gioco
+        
+    Returns:
+        bool: True se l'interazione è avvenuta, False altrimenti
     """
-    if gioco.giocatore.interagisci_con_oggetto_adiacente(gioco.gestore_mappe, gioco):
-        pass  # L'interazione è già gestita nel metodo
-    else:
+    # Ottieni la mappa corrente
+    mappa_corrente = gioco.giocatore.mappa_corrente
+    mappa = gioco.gestore_mappe.ottieni_mappa(mappa_corrente)
+    
+    if not mappa:
+        gioco.io.mostra_messaggio("Errore: mappa non trovata.")
+        return False
+    
+    # Ottieni oggetti adiacenti
+    oggetti_adiacenti = gioco.giocatore.ottieni_oggetti_vicini(gioco.gestore_mappe, 1)
+    
+    if not oggetti_adiacenti:
         gioco.io.mostra_messaggio("Non ci sono oggetti con cui interagire nelle vicinanze.")
+        return False
+    
+    # Mostra finestra di dialogo con lista di oggetti
+    opzioni = [obj.nome for obj in oggetti_adiacenti.values()]
+    gioco.io.mostra_dialogo("Oggetti Vicini", "Con quale oggetto vuoi interagire?", opzioni + ["Annulla"])
+    
+    # Memorizza oggetti per l'handler di dialogo
+    stato.dati_contestuali = {"oggetti_adiacenti": oggetti_adiacenti}
+    stato.ultima_scelta = "interagisci_oggetto"
+    
+    # Emetti evento di interazione iniziata
+    if hasattr(stato, 'event_bus'):
+        stato.event_bus.emit(
+            Events.PLAYER_INTERACT,
+            interaction_type="object",
+            objects=list(oggetti_adiacenti.keys()),
+            map_name=mappa_corrente
+        )
+    
+    return True
 
-def interagisci_con_npg(mappa_state, gioco):
+def interagisci_con_npg(stato, gioco):
     """
-    Interagisce con un NPC adiacente
+    Gestisce l'interazione con un NPC adiacente al giocatore.
     
     Args:
-        mappa_state: Istanza di MappaState
-        gioco: Oggetto Game
+        stato: Lo stato mappa corrente
+        gioco: L'istanza del gioco
+        
+    Returns:
+        bool: True se l'interazione è avvenuta, False altrimenti
     """
-    if gioco.giocatore.interagisci_con_npg_adiacente(gioco.gestore_mappe, gioco):
-        pass  # L'interazione è già gestita nel metodo
-    else:
+    # Ottieni la mappa corrente
+    mappa_corrente = gioco.giocatore.mappa_corrente
+    mappa = gioco.gestore_mappe.ottieni_mappa(mappa_corrente)
+    
+    if not mappa:
+        gioco.io.mostra_messaggio("Errore: mappa non trovata.")
+        return False
+    
+    # Ottieni NPC adiacenti
+    npg_adiacenti = gioco.giocatore.ottieni_npg_vicini(gioco.gestore_mappe, 1)
+    
+    if not npg_adiacenti:
         gioco.io.mostra_messaggio("Non ci sono personaggi con cui parlare nelle vicinanze.")
+        return False
+    
+    # Mostra finestra di dialogo con lista di NPC
+    opzioni = [npg.nome for npg in npg_adiacenti.values()]
+    gioco.io.mostra_dialogo("Personaggi Vicini", "Con chi vuoi parlare?", opzioni + ["Annulla"])
+    
+    # Memorizza NPC per l'handler di dialogo
+    stato.dati_contestuali = {"npg_adiacenti": npg_adiacenti}
+    stato.ultima_scelta = "interagisci_npg"
+    
+    # Emetti evento di interazione iniziata
+    if hasattr(stato, 'event_bus'):
+        stato.event_bus.emit(
+            Events.PLAYER_INTERACT,
+            interaction_type="npc",
+            npcs=list(npg_adiacenti.keys()),
+            map_name=mappa_corrente
+        )
+    
+    return True
 
-def esamina_area(mappa_state, gioco):
+def esamina_area(stato, gioco):
     """
-    Esamina l'area per trovare oggetti o personaggi
+    Esamina l'area circostante per trovare oggetti o NPC.
     
     Args:
-        mappa_state: Istanza di MappaState
-        gioco: Oggetto Game
+        stato: Lo stato mappa corrente
+        gioco: L'istanza del gioco
     """
-    gioco.io.mostra_messaggio("Esamini attentamente l'area circostante...")
+    # Ottieni la mappa corrente
+    mappa_corrente = gioco.giocatore.mappa_corrente
+    mappa = gioco.gestore_mappe.ottieni_mappa(mappa_corrente)
     
-    # Si potrebbe implementare una meccanica di scoperta di oggetti nascosti qui
+    if not mappa:
+        gioco.io.mostra_messaggio("Errore: mappa non trovata.")
+        return
+    
+    # Ottieni oggetti vicini
     oggetti_vicini = gioco.giocatore.ottieni_oggetti_vicini(gioco.gestore_mappe, 2)
+    
+    # Ottieni NPC vicini
     npg_vicini = gioco.giocatore.ottieni_npg_vicini(gioco.gestore_mappe, 2)
     
-    if oggetti_vicini or npg_vicini:
-        gioco.io.mostra_messaggio("Noti alcune cose interessanti:")
-        
-        if oggetti_vicini:
-            gioco.io.mostra_messaggio("\nOggetti:")
-            for pos, obj in oggetti_vicini.items():
-                x, y = pos
-                gioco.io.mostra_messaggio(f"- {obj.nome} a ({x}, {y}) da te")
-        
-        if npg_vicini:
-            gioco.io.mostra_messaggio("\nPersonaggi:")
-            for pos, npg in npg_vicini.items():
-                x, y = pos
-                gioco.io.mostra_messaggio(f"- {npg.nome} a ({x}, {y}) da te")
+    # Mostra i risultati
+    gioco.io.mostra_messaggio("\n=== AREA CIRCOSTANTE ===")
+    
+    if oggetti_vicini:
+        gioco.io.mostra_messaggio("Oggetti nelle vicinanze:")
+        for obj_id, obj in oggetti_vicini.items():
+            x_diff = obj.x - gioco.giocatore.x
+            y_diff = obj.y - gioco.giocatore.y
+            direzione = determina_direzione(x_diff, y_diff)
+            gioco.io.mostra_messaggio(f"- {obj.nome} ({direzione})")
     else:
-        gioco.io.mostra_messaggio("Non noti nulla di particolare.")
+        gioco.io.mostra_messaggio("Non ci sono oggetti nelle vicinanze.")
+    
+    if npg_vicini:
+        gioco.io.mostra_messaggio("\nPersonaggi nelle vicinanze:")
+        for npg_id, npg in npg_vicini.items():
+            x_diff = npg.x - gioco.giocatore.x
+            y_diff = npg.y - gioco.giocatore.y
+            direzione = determina_direzione(x_diff, y_diff)
+            gioco.io.mostra_messaggio(f"- {npg.nome} ({direzione})")
+    else:
+        gioco.io.mostra_messaggio("Non ci sono personaggi nelle vicinanze.")
+    
+    # Emetti evento di area esaminata
+    if hasattr(stato, 'event_bus'):
+        stato.event_bus.emit(
+            Events.PLAYER_INTERACT,
+            interaction_type="area",
+            objects=list(oggetti_vicini.keys()) if oggetti_vicini else [],
+            npcs=list(npg_vicini.keys()) if npg_vicini else [],
+            range=2,
+            map_name=mappa_corrente
+        )
 
-def torna_indietro(mappa_state, gioco):
+def determina_direzione(x_diff, y_diff):
     """
-    Torna allo stato precedente
+    Determina la direzione in base alla differenza di coordinate.
     
     Args:
-        mappa_state: Istanza di MappaState
-        gioco: Oggetto Game
+        x_diff: Differenza in x
+        y_diff: Differenza in y
+        
+    Returns:
+        str: Direzione (nord, sud, est, ovest, nord-est, ecc.)
     """
-    if gioco.stato_corrente() == mappa_state:
+    if x_diff == 0 and y_diff < 0:
+        return "nord"
+    elif x_diff == 0 and y_diff > 0:
+        return "sud"
+    elif x_diff > 0 and y_diff == 0:
+        return "est"
+    elif x_diff < 0 and y_diff == 0:
+        return "ovest"
+    elif x_diff > 0 and y_diff < 0:
+        return "nord-est"
+    elif x_diff < 0 and y_diff < 0:
+        return "nord-ovest"
+    elif x_diff > 0 and y_diff > 0:
+        return "sud-est"
+    elif x_diff < 0 and y_diff > 0:
+        return "sud-ovest"
+    else:
+        return "qui"
+
+def torna_indietro(stato, gioco):
+    """
+    Torna allo stato precedente.
+    
+    Args:
+        stato: Lo stato mappa corrente
+        gioco: L'istanza del gioco
+    """
+    # Emetti evento di uscita dalla mappa
+    if hasattr(stato, 'event_bus'):
+        stato.event_bus.emit(
+            Events.POP_STATE
+        )
+    else:
+        # Retrocompatibilità
         gioco.pop_stato()
-        
-def gestisci_interazione_oggetto(mappa_state, gioco, oggetto_id, azione):
+    
+    gioco.io.mostra_messaggio("Stai tornando indietro...")
+
+def gestisci_interazione_oggetto(stato, gioco, oggetto_id):
     """
-    Gestisce interazioni specifiche con oggetti
+    Gestisce l'interazione con un oggetto specifico.
     
     Args:
-        mappa_state: Istanza di MappaState
-        gioco: Oggetto Game
-        oggetto_id: ID dell'oggetto
-        azione: Tipo di azione (esamina, raccogli, usa)
-    """
-    if azione == "esamina":
-        gioco.io.mostra_messaggio(f"Stai esaminando l'oggetto {oggetto_id}...")
-    elif azione == "raccogli":
-        gioco.io.mostra_messaggio(f"Hai raccolto l'oggetto {oggetto_id}!")
-        # Implementa la logica per raccogliere l'oggetto
-    elif azione == "usa":
-        gioco.io.mostra_messaggio(f"Stai usando l'oggetto {oggetto_id}...")
+        stato: Lo stato mappa corrente
+        gioco: L'istanza del gioco
+        oggetto_id: ID dell'oggetto con cui interagire
         
-def gestisci_interazione_npg(mappa_state, gioco, npg_id, azione):
+    Returns:
+        bool: True se l'interazione è avvenuta, False altrimenti
     """
-    Gestisce interazioni specifiche con NPC
+    # Ottieni la mappa corrente
+    mappa_corrente = gioco.giocatore.mappa_corrente
+    mappa = gioco.gestore_mappe.ottieni_mappa(mappa_corrente)
     
-    Args:
-        mappa_state: Istanza di MappaState
-        gioco: Oggetto Game
-        npg_id: ID del personaggio
-        azione: Tipo di azione (parla, commercia)
-    """
-    if azione == "parla":
-        gioco.io.mostra_messaggio(f"Stai parlando con {npg_id}...")
-    elif azione == "commercia":
-        gioco.io.mostra_messaggio(f"Stai commerciando con {npg_id}...") 
+    if not mappa:
+        gioco.io.mostra_messaggio("Errore: mappa non trovata.")
+        return False
+    
+    # Ottieni l'oggetto
+    oggetto = mappa.oggetti.get(oggetto_id)
+    
+    if not oggetto:
+        gioco.io.mostra_messaggio("L'oggetto non è più disponibile.")
+        return False
+    
+    # Gestisci l'interazione in base al tipo di oggetto
+    if oggetto.tipo == "porta":
+        gioco.io.mostra_messaggio(f"Hai aperto la porta verso {oggetto.destinazione}.")
+        
+        # Emetti evento di cambio mappa
+        if hasattr(stato, 'event_bus'):
+            stato.event_bus.emit(
+                Events.MAP_CHANGE,
+                entity_id=gioco.giocatore.id,
+                from_map=mappa_corrente,
+                to_map=oggetto.destinazione,
+                target_pos=oggetto.coordinate_destinazione
+            )
+        
+    elif oggetto.tipo == "chest":
+        gioco.io.mostra_messaggio(f"Hai aperto il forziere e trovato: {oggetto.contenuto}.")
+        
+        # Emetti evento di tesoro trovato
+        if hasattr(stato, 'event_bus'):
+            stato.event_bus.emit(
+                Events.TREASURE_FOUND,
+                entity_id=gioco.giocatore.id,
+                treasure_id=oggetto_id,
+                contents=oggetto.contenuto
+            )
+        
+    elif oggetto.tipo == "lever":
+        gioco.io.mostra_messaggio(f"Hai azionato la leva: {oggetto.descrizione}")
+        
+        # Emetti evento di trigger attivato
+        if hasattr(stato, 'event_bus'):
+            stato.event_bus.emit(
+                Events.TRIGGER_ACTIVATED,
+                trigger_id=oggetto_id,
+                trigger_type="lever",
+                entity_id=gioco.giocatore.id,
+                position=(oggetto.x, oggetto.y)
+            )
+        
+    else:
+        gioco.io.mostra_messaggio(f"Hai esaminato: {oggetto.descrizione}")
+    
+    return True 

@@ -1,0 +1,122 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Schema Classe",
+  "description": "Schema per la validazione delle classi di personaggio",
+  "type": "object",
+  "additionalProperties": {
+    "type": "object",
+    "required": [
+      "descrizione",
+      "statistiche_base",
+      "abilita_speciali",
+      "equipaggiamento_iniziale",
+      "hp_base",
+      "mana_base",
+      "progressione"
+    ],
+    "properties": {
+      "descrizione": {
+        "type": "string",
+        "description": "Descrizione della classe di personaggio"
+      },
+      "statistiche_base": {
+        "type": "object",
+        "required": [
+          "forza",
+          "destrezza",
+          "costituzione",
+          "intelligenza",
+          "saggezza",
+          "carisma"
+        ],
+        "properties": {
+          "forza": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Valore base di forza"
+          },
+          "destrezza": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Valore base di destrezza"
+          },
+          "costituzione": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Valore base di costituzione"
+          },
+          "intelligenza": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Valore base di intelligenza"
+          },
+          "saggezza": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Valore base di saggezza"
+          },
+          "carisma": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Valore base di carisma"
+          }
+        }
+      },
+      "abilita_speciali": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Abilità speciali iniziali della classe"
+      },
+      "equipaggiamento_iniziale": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Equipaggiamento iniziale della classe"
+      },
+      "hp_base": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Punti vita base della classe"
+      },
+      "mana_base": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Punti mana base della classe"
+      },
+      "progressione": {
+        "type": "object",
+        "required": ["hp_per_livello"],
+        "properties": {
+          "hp_per_livello": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Punti vita guadagnati ad ogni livello"
+          },
+          "mana_per_livello": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Punti mana guadagnati ad ogni livello"
+          },
+          "abilita_ai_livelli": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Abilità speciali sbloccate a determinati livelli"
+          }
+        }
+      },
+      "_version": {
+        "type": "string",
+        "description": "Versione del formato dati"
+      },
+      "_last_modified": {
+        "type": "number",
+        "description": "Timestamp dell'ultima modifica"
+      }
+    }
+  }
+} 

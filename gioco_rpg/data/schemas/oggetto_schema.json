@@ -1,0 +1,18 @@
+{
+  "type": "object",
+  "properties": {
+    "nome": {
+      "type": "string"
+    },
+    "posizione": {
+      "type": "array"
+    }
+  },
+  "required": [
+    "nome",
+    "posizione"
+  ],
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Oggetto Schema",
+  "description": "Schema per la validazione di oggetto"
+}

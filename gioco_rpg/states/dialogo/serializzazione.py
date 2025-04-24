@@ -1,6 +1,7 @@
 """
 Modulo per la serializzazione e deserializzazione dello stato di dialogo
 """
+import core.events as Events
 
 def to_dict(self):
     """
@@ -27,6 +28,11 @@ def to_dict(self):
             data["npg"] = self.npg.to_dict()
         else:
             data["npg"] = {"nome": self.npg.nome}
+    
+    # Emetti evento di serializzazione
+    self.emit_event(Events.STATE_PAUSED, 
+                   state_type="dialogo",
+                   state_data=data)
     
     return data
 
@@ -62,5 +68,11 @@ def from_dict(cls, data, game=None):
     state.stato_corrente = data.get("stato_corrente", "inizio")
     state.fase = data.get("fase", "conversazione")
     state.ui_aggiornata = data.get("ui_aggiornata", False)
+    
+    # Emetti evento di deserializzazione se il contesto di gioco è disponibile
+    if game and hasattr(state, 'event_bus'):
+        state.emit_event(Events.STATE_RESUMED, 
+                        state_type="dialogo",
+                        state_id=id(state))
     
     return state 

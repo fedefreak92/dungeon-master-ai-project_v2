@@ -1,4 +1,4 @@
-from items.oggetto_interattivo import OggettoInterattivo 
+from items.oggetto_interattivo import OggettoInterattivo, Porta 
 from entities.npg import NPG     
 from entities.entita import Entita   
 from entities.giocatore import Giocatore
@@ -9,7 +9,7 @@ from pathlib import Path
 import os
 
 class Mappa:
-    def __init__(self, nome, larghezza, altezza, tipo="interno"):
+    def __init__(self, nome, larghezza, altezza, tipo="interno", descrizione=""):
         """
         Inizializza una mappa con nome, dimensioni e tipo.
         
@@ -18,11 +18,13 @@ class Mappa:
             larghezza (int): Larghezza della mappa in celle
             altezza (int): Altezza della mappa in celle
             tipo (str): Tipo di mappa (interno, esterno, sotterraneo)
+            descrizione (str): Descrizione testuale della mappa
         """
         self.nome = nome
         self.larghezza = larghezza
         self.altezza = altezza
         self.tipo = tipo
+        self.descrizione = descrizione
         
         # Inizializza la griglia con spazi vuoti (0)
         self.griglia = [[0 for _ in range(larghezza)] for _ in range(altezza)]
@@ -317,6 +319,7 @@ class Mappa:
             "larghezza": self.larghezza,
             "altezza": self.altezza,
             "tipo": self.tipo,
+            "descrizione": self.descrizione,
             "griglia": griglia_serializzata,
             "oggetti": oggetti_dict,
             "npg": npg_dict,
@@ -340,66 +343,191 @@ class Mappa:
             nome=data.get("nome", "mappa_sconosciuta"),
             larghezza=data.get("larghezza", 10),
             altezza=data.get("altezza", 10),
-            tipo=data.get("tipo", "interno")
+            tipo=data.get("tipo", "interno"),
+            descrizione=data.get("descrizione", "")
         )
         
-        # Carica la griglia
+        # Imposta la griglia
         if "griglia" in data:
-            mappa.griglia = [riga.copy() for riga in data["griglia"]]
-        
-        # Carica gli oggetti
-        from items.oggetto_interattivo import OggettoInterattivo
-        for pos_str, obj_data in data.get("oggetti", {}).items():
-            try:
-                # Converti la stringa di posizione in tupla
-                pos = eval(pos_str)  # Sicuro perché la posizione è una tupla semplice (x, y)
-                
-                # Crea l'oggetto usando from_dict se disponibile
-                if isinstance(obj_data, dict):
-                    obj = OggettoInterattivo.from_dict(obj_data)
-                    mappa.oggetti[pos] = obj
-                    # Aggiorna la posizione dell'oggetto
-                    obj.posizione = (pos[0], pos[1], mappa.nome)
-            except Exception as e:
-                print(f"Errore durante il caricamento dell'oggetto in {pos_str}: {e}")
-        
-        # Carica gli NPG
-        from entities.npg import NPG
-        for pos_str, npg_data in data.get("npg", {}).items():
-            try:
-                # Converti la stringa di posizione in tupla
-                pos = eval(pos_str)
-                
-                # Crea l'NPG usando from_dict se disponibile
-                if isinstance(npg_data, dict):
-                    if hasattr(NPG, 'from_dict'):
-                        npg = NPG.from_dict(npg_data)
-                    else:
-                        npg = NPG(npg_data.get("nome", "NPC"), token=npg_data.get("token", "N"))
-                    
-                    mappa.npg[pos] = npg
-                    npg.imposta_posizione(pos[0], pos[1])
-            except Exception as e:
-                print(f"Errore durante il caricamento dell'NPG in {pos_str}: {e}")
-        
-        # Carica le porte
-        for pos_str, dest_data in data.get("porte", {}).items():
-            try:
-                pos = eval(pos_str)
-                # Converti la lista di destinazione in tupla
-                if isinstance(dest_data, list) and len(dest_data) == 3:
-                    mappa.porte[pos] = (dest_data[0], dest_data[1], dest_data[2])
-            except Exception as e:
-                print(f"Errore durante il caricamento della porta in {pos_str}: {e}")
-        
+            mappa.griglia = data["griglia"]
+            
         # Carica la posizione iniziale del giocatore
         if "pos_iniziale_giocatore" in data:
-            pos_iniziale = data["pos_iniziale_giocatore"]
-            if isinstance(pos_iniziale, list):
-                mappa.pos_iniziale_giocatore = tuple(pos_iniziale)
-            else:
-                mappa.pos_iniziale_giocatore = pos_iniziale
-        
+            mappa.pos_iniziale_giocatore = data["pos_iniziale_giocatore"]
+            
+        # Carica oggetti
+        # Nota: Le chiavi potrebbero essere stringhe come "[x, y]" o "(x, y)"
+        from items.oggetto_interattivo import OggettoInterattivo, Porta
+        for key, obj_data in data.get("oggetti", {}).items():
+            try:
+                # Converti la chiave in coordinate (x, y) se necessario
+                if isinstance(key, str):
+                    if key.startswith("[") and key.endswith("]"):
+                        # Formato [x, y]
+                        coord_str = key.strip("[]")
+                        x, y = map(int, coord_str.split(","))
+                        pos = (x, y)
+                    elif key.startswith("(") and key.endswith(")"):
+                        # Formato (x, y)
+                        coord_str = key.strip("()")
+                        x, y = map(int, coord_str.split(","))
+                        pos = (x, y)
+                    else:
+                        # Tenta una valutazione sicura della stringa
+                        import ast
+                        try:
+                            pos_eval = ast.literal_eval(key)
+                            # Verifica che sia una coppia di numeri
+                            if isinstance(pos_eval, (list, tuple)) and len(pos_eval) == 2:
+                                x, y = pos_eval
+                                pos = (x, y)
+                            else:
+                                raise ValueError(f"Formato posizione non valido: {key}")
+                        except (ValueError, SyntaxError):
+                            print(f"Errore durante il caricamento dell'oggetto in {key}: formato posizione non valido")
+                            continue
+                elif isinstance(key, (list, tuple)) and len(key) == 2:
+                    # Il nostro formato standardizzato (x, y)
+                    x, y = key
+                    pos = (x, y)
+                else:
+                    print(f"Errore durante il caricamento dell'oggetto in {key}: tipo di chiave non supportato")
+                    continue
+                
+                # Gestione speciale per le porte
+                if isinstance(obj_data, dict) and obj_data.get("tipo") == "porta":
+                    porta = Porta(
+                        nome=obj_data.get("nome", "Porta"),
+                        descrizione=obj_data.get("descrizione", ""),
+                        stato=obj_data.get("stato", "chiusa")
+                    )
+                    mappa.oggetti[pos] = porta
+                    
+                    # Se c'è informazione sulla destinazione, aggiungi anche alle porte
+                    if "mappa_dest" in obj_data and "pos_dest" in obj_data:
+                        mappa.porte[pos] = (obj_data["mappa_dest"], obj_data["pos_dest"])
+                # Altri oggetti interattivi
+                elif isinstance(obj_data, dict):
+                    oggetto = OggettoInterattivo(
+                        nome=obj_data.get("nome", "Oggetto"),
+                        descrizione=obj_data.get("descrizione", ""),
+                        stato=obj_data.get("stato", "normale")
+                    )
+                    # Aggiungi altri attributi se disponibili
+                    for attr, value in obj_data.items():
+                        if attr not in ["nome", "descrizione", "stato"]:
+                            setattr(oggetto, attr, value)
+                    mappa.oggetti[pos] = oggetto
+                else:
+                    print(f"Errore durante il caricamento dell'oggetto in {pos}: dati non validi")
+            except Exception as e:
+                print(f"Errore durante il caricamento dell'oggetto in {key}: {str(e)}")
+                
+        # Carica NPG
+        for key, npg_data in data.get("npg", {}).items():
+            try:
+                # Converti la chiave in coordinate (x, y) se necessario
+                if isinstance(key, str):
+                    if key.startswith("[") and key.endswith("]"):
+                        # Formato [x, y]
+                        coord_str = key.strip("[]")
+                        x, y = map(int, coord_str.split(","))
+                        pos = (x, y)
+                    elif key.startswith("(") and key.endswith(")"):
+                        # Formato (x, y)
+                        coord_str = key.strip("()")
+                        x, y = map(int, coord_str.split(","))
+                        pos = (x, y)
+                    else:
+                        # Tenta una valutazione sicura della stringa
+                        import ast
+                        try:
+                            pos_eval = ast.literal_eval(key)
+                            # Verifica che sia una coppia di numeri
+                            if isinstance(pos_eval, (list, tuple)) and len(pos_eval) == 2:
+                                x, y = pos_eval
+                                pos = (x, y)
+                            else:
+                                raise ValueError(f"Formato posizione non valido: {key}")
+                        except (ValueError, SyntaxError):
+                            print(f"Errore durante il caricamento dell'NPG in {key}: formato posizione non valido")
+                            continue
+                elif isinstance(key, (list, tuple)) and len(key) == 2:
+                    # Il nostro formato standardizzato (x, y)
+                    x, y = key
+                    pos = (x, y)
+                else:
+                    print(f"Errore durante il caricamento dell'NPG in {key}: tipo di chiave non supportato")
+                    continue
+                
+                # Importa NPG solo se necessario
+                from entities.npg import NPG
+                
+                if isinstance(npg_data, dict):
+                    npg = NPG(
+                        nome=npg_data.get("nome", "NPC"),
+                        token=npg_data.get("token", "N")
+                    )
+                    # Aggiungi altri attributi se disponibili
+                    for attr, value in npg_data.items():
+                        if attr not in ["nome", "token"]:
+                            setattr(npg, attr, value)
+                    mappa.npg[pos] = npg
+                else:
+                    print(f"Errore durante il caricamento dell'NPG in {pos}: dati non validi")
+            except Exception as e:
+                print(f"Errore durante il caricamento dell'NPG in {key}: {str(e)}")
+                
+        # Carica porte (collegamenti tra mappe)
+        for key, porta_data in data.get("porte", {}).items():
+            try:
+                # Converti la chiave in coordinate (x, y) se necessario
+                if isinstance(key, str):
+                    if key.startswith("[") and key.endswith("]"):
+                        # Formato [x, y]
+                        coord_str = key.strip("[]")
+                        x, y = map(int, coord_str.split(","))
+                        pos = (x, y)
+                    elif key.startswith("(") and key.endswith(")"):
+                        # Formato (x, y)
+                        coord_str = key.strip("()")
+                        x, y = map(int, coord_str.split(","))
+                        pos = (x, y)
+                    else:
+                        # Tenta una valutazione sicura della stringa
+                        import ast
+                        try:
+                            pos_eval = ast.literal_eval(key)
+                            # Verifica che sia una coppia di numeri
+                            if isinstance(pos_eval, (list, tuple)) and len(pos_eval) == 2:
+                                x, y = pos_eval
+                                pos = (x, y)
+                            else:
+                                raise ValueError(f"Formato posizione non valido: {key}")
+                        except (ValueError, SyntaxError):
+                            print(f"Errore durante il caricamento della porta in {key}: formato posizione non valido")
+                            continue
+                elif isinstance(key, (list, tuple)) and len(key) == 2:
+                    # Il nostro formato standardizzato (x, y)
+                    x, y = key
+                    pos = (x, y)
+                else:
+                    print(f"Errore durante il caricamento della porta in {key}: tipo di chiave non supportato")
+                    continue
+                
+                # Le porte possono essere in formato (mappa_dest, (x_dest, y_dest)) o [mappa_dest, [x_dest, y_dest]]
+                if isinstance(porta_data, (list, tuple)) and len(porta_data) == 2:
+                    mappa_dest = porta_data[0]
+                    pos_dest = porta_data[1]
+                    # Converti pos_dest in tupla se è una lista
+                    if isinstance(pos_dest, list):
+                        pos_dest = tuple(pos_dest)
+                    mappa.porte[pos] = (mappa_dest, pos_dest)
+                else:
+                    print(f"Errore durante il caricamento della porta in {pos}: dati destinazione non validi")
+            except Exception as e:
+                print(f"Errore durante il caricamento della porta in {key}: {str(e)}")
+                
         return mappa
 
 class MappaComponente:

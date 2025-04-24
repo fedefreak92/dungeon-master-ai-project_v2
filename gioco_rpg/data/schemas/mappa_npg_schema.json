@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Schema Mappe NPG",
+  "description": "Schema per la validazione del file mappe_npg.json",
+  "type": "object",
+  "additionalProperties": {
+    "type": "array",
+    "items": {
+      "type": "object",
+      "required": ["nome", "posizione"],
+      "properties": {
+        "nome": {
+          "type": "string",
+          "description": "Nome dell'NPC"
+        },
+        "posizione": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "integer"
+          },
+          "description": "Coordinate [x, y] dell'NPC sulla mappa"
+        },
+        "id": {
+          "type": "string",
+          "description": "Identificatore opzionale dell'NPC (se diverso dal nome)"
+        }
+      }
+    }
+  }
+} 

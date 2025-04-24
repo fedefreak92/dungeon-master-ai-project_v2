@@ -13,14 +13,18 @@ DATA_DIR = BASE_DIR / "data"
 SAVE_DIR = BASE_DIR / "salvataggi"
 SESSIONS_DIR = BASE_DIR / "sessioni"
 BACKUPS_DIR = BASE_DIR / "backup"
+MAPS_DIR = BASE_DIR / "data" / "mappe"  # Aggiungo la cartella per le mappe
 
 # Assicurati che tutte le directory esistano
-for directory in [DATA_DIR, SAVE_DIR, SESSIONS_DIR, BACKUPS_DIR]:
+for directory in [DATA_DIR, SAVE_DIR, SESSIONS_DIR, BACKUPS_DIR, MAPS_DIR]:
     directory.mkdir(exist_ok=True, parents=True)
 
+# Configurazione formato dati
+USE_MSGPACK = True  # Usa MessagePack come formato predefinito per i salvataggi
+
 # Costanti per i percorsi di salvataggio
-DEFAULT_SAVE_PATH = SAVE_DIR / "salvataggio.json"
-DEFAULT_MAP_SAVE_PATH = SAVE_DIR / "mappe_salvataggio.json"
+DEFAULT_SAVE_PATH = SAVE_DIR / ("salvataggio.msgpack" if USE_MSGPACK else "salvataggio.json")
+DEFAULT_MAP_SAVE_PATH = SAVE_DIR / ("mappe_salvataggio.msgpack" if USE_MSGPACK else "mappe_salvataggio.json")
 DEFAULT_SESSION_PREFIX = "sessione_"
 DEFAULT_BACKUP_PREFIX = "backup_"
 
@@ -40,9 +44,12 @@ def get_save_path(filename=None):
     if not filename:
         return DEFAULT_SAVE_PATH
     
-    # Se il nome del file non ha estensione .json, aggiungila
-    if not filename.lower().endswith('.json'):
-        filename += '.json'
+    # Se il nome del file non ha estensione, aggiungi quella predefinita
+    if not (filename.lower().endswith('.json') or filename.lower().endswith('.msgpack')):
+        if USE_MSGPACK:
+            filename += '.msgpack'
+        else:
+            filename += '.json'
     
     return SAVE_DIR / filename
 
@@ -57,11 +64,18 @@ def get_standardized_paths(filename=None):
         dict: Dizionario con tutti i percorsi standardizzati
     """
     # Normalizza il nome file
-    if filename and not filename.lower().endswith('.json'):
-        filename += '.json'
+    if filename:
+        if not (filename.lower().endswith('.json') or filename.lower().endswith('.msgpack')):
+            if USE_MSGPACK:
+                filename += '.msgpack'
+            else:
+                filename += '.json'
+    else:
+        filename = "salvataggio.msgpack" if USE_MSGPACK else "salvataggio.json"
     
-    base_filename = filename or "salvataggio.json"
-    map_filename = "mappe_" + base_filename if filename else "mappe_salvataggio.json"
+    base_filename = filename
+    ext = '.msgpack' if USE_MSGPACK else '.json'
+    map_filename = f"mappe_{base_filename.rsplit('.', 1)[0]}{ext}"
     
     return {
         "save": SAVE_DIR / base_filename,
@@ -143,12 +157,13 @@ def list_save_files():
     """
     # Cerca tutti i file di salvataggio con diverse estensioni
     json_files = [f.name for f in SAVE_DIR.glob("*.json")]
+    msgpack_files = [f.name for f in SAVE_DIR.glob("*.msgpack")]
     dat_files = [f.name for f in SAVE_DIR.glob("*.dat")]
     pickle_files = [f.name for f in SAVE_DIR.glob("*.pickle")]
     no_ext_files = [f.name for f in SAVE_DIR.glob("*") if f.is_file() and "." not in f.name]
     
     # Combina tutti i file trovati
-    all_files = json_files + dat_files + pickle_files + no_ext_files
+    all_files = json_files + msgpack_files + dat_files + pickle_files + no_ext_files
     
     # Rimuovi duplicati (file con lo stesso nome base ma estensioni diverse)
     unique_files = []
@@ -170,7 +185,7 @@ def list_backup_files():
     Returns:
         list: Lista di nomi di file di backup
     """
-    return [f.name for f in BACKUPS_DIR.glob("*.json")]
+    return [f.name for f in BACKUPS_DIR.glob("*.json") or f in BACKUPS_DIR.glob("*.msgpack")]
 
 def validate_save_data(data):
     """

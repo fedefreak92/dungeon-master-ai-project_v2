@@ -1,6 +1,7 @@
-from states.base_state import BaseGameState
+from states.base_state import EnhancedBaseState
+import core.events as Events
 
-class EsempioStatoGrafico(BaseGameState):
+class EsempioStatoGrafico(EnhancedBaseState):
     """
     Stato di esempio che mostra come convertire input testuali in eventi UI.
     Questo è un modello da seguire per aggiornare tutti gli stati del gioco.
@@ -8,9 +9,24 @@ class EsempioStatoGrafico(BaseGameState):
     
     def __init__(self, gioco=None):
         """Inizializza lo stato di esempio"""
-        super().__init__(gioco)
+        super().__init__()
         self.ultima_scelta = None
         self.menu_attivo = None
+        self.ui_aggiornata = False
+        
+        # Imposta il contesto di gioco se fornito
+        if gioco:
+            self.set_game_context(gioco)
+            
+        # Registra gli handler degli eventi
+        self._register_event_handlers()
+        
+    def _register_event_handlers(self):
+        """Registra gli handler per eventi relativi a questo stato"""
+        self.event_bus.on(Events.UI_DIALOG_OPEN, self._handle_dialog_open)
+        self.event_bus.on(Events.UI_DIALOG_CLOSE, self._handle_dialog_close)
+        self.event_bus.on(Events.MENU_SELECTION, self._handle_menu_selection)
+        self.event_bus.on(Events.UI_CLICK, self._handle_click_event)
         
     def _init_commands(self):
         """Inizializza i comandi disponibili per questo stato"""
@@ -21,9 +37,31 @@ class EsempioStatoGrafico(BaseGameState):
             "torna_indietro": self._torna_indietro
         }
     
+    def update(self, dt):
+        """
+        Aggiornamento basato su eventi.
+        
+        Args:
+            dt: Delta time, tempo trascorso dall'ultimo aggiornamento
+        """
+        gioco = self.gioco
+        if not gioco:
+            return
+            
+        # Aggiorna il renderer grafico se necessario
+        if not self.ui_aggiornata:
+            self.aggiorna_renderer(gioco)
+            self.ui_aggiornata = True
+            
+        # Mostra menu iniziale se non ne è già attivo uno
+        if not self.menu_attivo:
+            self._mostra_menu_principale(gioco)
+            self.menu_attivo = "principale"
+    
     def esegui(self, gioco):
         """
         Esecuzione dello stato
+        Mantenuta per retrocompatibilità.
         
         Args:
             gioco: Istanza del gioco
@@ -41,9 +79,10 @@ class EsempioStatoGrafico(BaseGameState):
             self._mostra_menu_principale(gioco)
             self.menu_attivo = "principale"
         
-        # Elabora gli eventi UI - questo sostituisce l'input testuale
-        # Gli handler registrati (_handle_click_event, _handle_dialog_choice, ecc.)
-        # si occuperanno di gestire le interazioni dell'utente
+        # Chiama update per integrazione con EventBus
+        self.update(0.033)  # Valore dt predefinito
+        
+        # Elabora gli eventi UI
         super().esegui(gioco)
     
     def _mostra_menu_principale(self, gioco):
@@ -53,23 +92,78 @@ class EsempioStatoGrafico(BaseGameState):
         Args:
             gioco: Istanza del gioco
         """
-        # PRIMA:
-        # gioco.io.mostra_messaggio("Menu Principale:")
-        # gioco.io.mostra_messaggio("1. Azione A")
-        # gioco.io.mostra_messaggio("2. Azione B")
-        # gioco.io.mostra_messaggio("3. Torna indietro")
-        # scelta = gioco.io.richiedi_input("Scelta: ")
+        # Emetti evento di apertura dialogo
+        self.emit_event(Events.UI_DIALOG_OPEN, 
+                       dialog_id="menu_principale",
+                       title="Menu Principale", 
+                       message="Seleziona un'opzione:", 
+                       options=["Azione A", "Azione B", "Torna indietro"])
         
-        # DOPO:
-        gioco.io.mostra_dialogo("Menu Principale", "Seleziona un'opzione:", [
-            "Azione A",
-            "Azione B",
-            "Torna indietro"
-        ])
+    def _handle_dialog_open(self, dialog_id=None, **kwargs):
+        """
+        Handler per l'apertura di un dialogo
+        
+        Args:
+            dialog_id: ID del dialogo da aprire
+            **kwargs: Parametri aggiuntivi
+        """
+        gioco = self.gioco
+        if not gioco or dialog_id != "menu_principale":
+            return
+            
+        # Mostra il dialogo usando il vecchio sistema per retrocompatibilità
+        title = kwargs.get("title", "Menu Principale")
+        message = kwargs.get("message", "Seleziona un'opzione:")
+        options = kwargs.get("options", [])
+        
+        gioco.io.mostra_dialogo(title, message, options)
+    
+    def _handle_dialog_close(self, **kwargs):
+        """Handler per la chiusura di un dialogo"""
+        pass
+        
+    def _handle_menu_selection(self, choice=None, menu_id=None, **kwargs):
+        """
+        Handler per le selezioni dal menu
+        
+        Args:
+            choice: Opzione selezionata
+            menu_id: ID del menu
+            **kwargs: Parametri aggiuntivi
+        """
+        if not choice:
+            return
+            
+        gioco = self.gioco
+        if not gioco:
+            return
+            
+        # Memorizza l'ultima scelta
+        self.ultima_scelta = choice
+        
+        # Gestione menu principale
+        if self.menu_attivo == "principale" and menu_id == "menu_principale":
+            if choice == "Azione A":
+                self._azione_a(gioco)
+            elif choice == "Azione B":
+                self._azione_b(gioco)
+            elif choice == "Torna indietro":
+                self._torna_indietro(gioco)
+        
+        # Gestione menu secondario (esempio)
+        elif self.menu_attivo == "secondario" and menu_id == "menu_secondario":
+            if choice == "Opzione 1":
+                self._opzione_1(gioco)
+            elif choice == "Opzione 2":
+                self._opzione_2(gioco)
+            elif choice == "Indietro":
+                self._mostra_menu_principale(gioco)
+                self.menu_attivo = "principale"
     
     def _handle_dialog_choice(self, event):
         """
-        Handler per le scelte dai dialoghi
+        Handler legacy per le scelte dai dialoghi.
+        Mantenuto per retrocompatibilità.
         
         Args:
             event: Evento di scelta da dialogo
@@ -81,57 +175,35 @@ class EsempioStatoGrafico(BaseGameState):
         if not choice:
             return
             
-        game_ctx = self.gioco
-        if not game_ctx:
-            return
+        # Converti in formato nuovo
+        menu_id = "menu_principale"
+        if self.menu_attivo == "secondario":
+            menu_id = "menu_secondario"
             
-        # Memorizza l'ultima scelta
-        self.ultima_scelta = choice
-        
-        # Gestione menu principale
-        if self.menu_attivo == "principale":
-            if choice == "Azione A":
-                self._azione_a(game_ctx)
-            elif choice == "Azione B":
-                self._azione_b(game_ctx)
-            elif choice == "Torna indietro":
-                self._torna_indietro(game_ctx)
-        
-        # Gestione menu secondario (esempio)
-        elif self.menu_attivo == "secondario":
-            if choice == "Opzione 1":
-                self._opzione_1(game_ctx)
-            elif choice == "Opzione 2":
-                self._opzione_2(game_ctx)
-            elif choice == "Indietro":
-                self._mostra_menu_principale(game_ctx)
-                self.menu_attivo = "principale"
+        self._handle_menu_selection(choice=choice, menu_id=menu_id)
     
-    def _handle_click_event(self, event):
+    def _handle_click_event(self, target=None, **kwargs):
         """
         Handler per eventi di click
         
         Args:
-            event: Evento di click
+            target: Elemento cliccato
+            **kwargs: Parametri aggiuntivi
         """
-        if not hasattr(event, "data") or not event.data:
-            return
-        
-        target = event.data.get("target")
         if not target:
             return
             
-        game_ctx = self.gioco
-        if not game_ctx:
+        gioco = self.gioco
+        if not gioco:
             return
             
         # Esempio di gestione click su elementi interattivi
         if target.startswith("oggetto_"):
             obj_id = target.replace("oggetto_", "")
-            self._interagisci_con_oggetto(game_ctx, obj_id)
+            self._interagisci_con_oggetto(gioco, obj_id)
         elif target.startswith("npc_"):
             npc_id = target.replace("npc_", "")
-            self._interagisci_con_npc(game_ctx, npc_id)
+            self._interagisci_con_npc(gioco, npc_id)
     
     def _azione_a(self, gioco):
         """
@@ -142,12 +214,12 @@ class EsempioStatoGrafico(BaseGameState):
         """
         gioco.io.mostra_messaggio("Hai scelto l'Azione A!")
         
-        # Esempio di mostrare un menu secondario
-        gioco.io.mostra_dialogo("Menu Secondario", "Seleziona un'opzione:", [
-            "Opzione 1",
-            "Opzione 2",
-            "Indietro"
-        ])
+        # Esempio di mostrare un menu secondario usando eventi
+        self.emit_event(Events.UI_DIALOG_OPEN, 
+                       dialog_id="menu_secondario",
+                       title="Menu Secondario", 
+                       message="Seleziona un'opzione:", 
+                       options=["Opzione 1", "Opzione 2", "Indietro"])
         
         self.menu_attivo = "secondario"
         
@@ -160,16 +232,12 @@ class EsempioStatoGrafico(BaseGameState):
         """
         gioco.io.mostra_messaggio("Hai scelto l'Azione B!")
         
-        # Esempio di interazione senza input testuale
-        gioco.io.aggiungi_elemento_interattivo(
-            "oggetto_speciale", 
-            "oggetto",
-            (10, 10),
-            "special_item",
-            {
-                "onClick": lambda elem, event: self._interagisci_con_oggetto(gioco, "speciale")
-            }
-        )
+        # Esempio di interazione usando eventi
+        self.emit_event(Events.UI_ADD_INTERACTIVE_ELEMENT, 
+                       element_id="oggetto_speciale",
+                       element_type="oggetto",
+                       position=(10, 10),
+                       sprite="special_item")
         
         self.ui_aggiornata = False  # Richiedi aggiornamento del renderer
     
@@ -180,6 +248,10 @@ class EsempioStatoGrafico(BaseGameState):
         Args:
             gioco: Istanza del gioco
         """
+        # Usa eventi per il pop dello stato
+        self.emit_event(Events.POP_STATE)
+        
+        # Mantieni per retrocompatibilità
         if gioco.stato_corrente() == self:
             gioco.pop_stato()
     
@@ -197,7 +269,7 @@ class EsempioStatoGrafico(BaseGameState):
         # Torna al menu principale
         self._mostra_menu_principale(gioco)
         self.menu_attivo = "principale"
-    
+        
     def _opzione_2(self, gioco):
         """
         Esegue l'opzione 2
@@ -221,14 +293,15 @@ class EsempioStatoGrafico(BaseGameState):
             gioco: Istanza del gioco
             obj_id: ID dell'oggetto
         """
-        gioco.io.mostra_messaggio(f"Stai interagendo con l'oggetto {obj_id}")
+        # Usa eventi per interagire con l'oggetto
+        self.emit_event(Events.PLAYER_INTERACT, 
+                       interaction_type="object",
+                       object_id=obj_id)
         
-        # Mostra menu contestuale per l'oggetto
-        gioco.io.mostra_menu_contestuale((10, 10), [
-            "Esamina",
-            "Raccogli",
-            "Usa"
-        ])
+        # Codice di retrocompatibilità
+        gioco.io.mostra_messaggio(f"Interagisci con oggetto: {obj_id}")
+        
+        # Altre operazioni specifiche...
     
     def _interagisci_con_npc(self, gioco, npc_id):
         """
@@ -236,40 +309,17 @@ class EsempioStatoGrafico(BaseGameState):
         
         Args:
             gioco: Istanza del gioco
-            npc_id: ID del personaggio
+            npc_id: ID dell'NPC
         """
-        gioco.io.mostra_messaggio(f"Stai interagendo con il personaggio {npc_id}")
+        # Usa eventi per interagire con l'NPC
+        self.emit_event(Events.PLAYER_INTERACT, 
+                       interaction_type="npc",
+                       npc_id=npc_id)
         
-        # Mostra dialogo con il personaggio
-        gioco.io.mostra_dialogo(f"Dialogo con {npc_id}", 
-                               "Cosa vuoi fare?", 
-                               ["Parla", "Commercia", "Addio"])
-    
-    def _handle_menu_action(self, event):
-        """
-        Handler per azioni menu
+        # Codice di retrocompatibilità
+        gioco.io.mostra_messaggio(f"Interagisci con NPC: {npc_id}")
         
-        Args:
-            event: Evento menu
-        """
-        if not hasattr(event, "data") or not event.data:
-            return
-        
-        action = event.data.get("action")
-        if not action:
-            return
-            
-        game_ctx = self.gioco
-        if not game_ctx:
-            return
-            
-        # Gestione azioni menu contestuale
-        if action == "Esamina":
-            game_ctx.io.mostra_messaggio("Stai esaminando l'oggetto...")
-        elif action == "Raccogli":
-            game_ctx.io.mostra_messaggio("Hai raccolto l'oggetto!")
-        elif action == "Usa":
-            game_ctx.io.mostra_messaggio("Stai usando l'oggetto...")
+        # Altre operazioni specifiche...
     
     def to_dict(self):
         """

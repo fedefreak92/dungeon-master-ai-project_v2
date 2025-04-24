@@ -1,7 +1,10 @@
 import json
 import os
 import random
+import logging
 from entities.entita import Entita
+
+logger = logging.getLogger(__name__)
 
 class Nemico(Entita):
     def __init__(self, nome, hp=10, danno=2, token="M", forza_base=None, difesa=0, tipo_mostro=None):
@@ -147,6 +150,21 @@ class Nemico(Entita):
         })
         return data
     
+    def to_msgpack(self):
+        """
+        Converte il nemico in formato MessagePack.
+        
+        Returns:
+            bytes: Dati serializzati in formato MessagePack
+        """
+        try:
+            import msgpack
+            return msgpack.packb(self.to_dict(), use_bin_type=True)
+        except Exception as e:
+            logger.error(f"Errore nella serializzazione MessagePack del nemico {self.nome}: {e}")
+            # Fallback a dizionario serializzato in JSON e poi convertito in bytes
+            return json.dumps(self.to_dict()).encode()
+    
     @classmethod
     def from_dict(cls, data):
         """
@@ -188,3 +206,28 @@ class Nemico(Entita):
         nemico.oro = data.get("oro", 10)
         
         return nemico
+    
+    @classmethod
+    def from_msgpack(cls, data_bytes):
+        """
+        Crea un'istanza di Nemico da dati in formato MessagePack.
+        
+        Args:
+            data_bytes (bytes): Dati serializzati in formato MessagePack
+            
+        Returns:
+            Nemico: Nuova istanza di Nemico
+        """
+        try:
+            import msgpack
+            dati = msgpack.unpackb(data_bytes, raw=False)
+            return cls.from_dict(dati)
+        except Exception as e:
+            logger.error(f"Errore nella deserializzazione MessagePack del nemico: {e}")
+            try:
+                # Tenta di interpretare i dati come JSON
+                dati = json.loads(data_bytes.decode())
+                return cls.from_dict(dati)
+            except Exception as e2:
+                logger.error(f"Errore anche con fallback JSON: {e2}")
+                return cls("Nemico Errore")  # Ritorna un nemico base in caso di errore
