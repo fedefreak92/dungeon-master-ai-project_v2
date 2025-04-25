@@ -147,6 +147,18 @@ L'architettura FSM garantisce transizioni fluide tra i diversi stati di gioco (m
 - **Parametri Ping/Pong**: Impostazione corretta dei parametri per evitare disconnessioni
 - **Gestione Connessione**: Meccanismi migliorati per la riconnessione e gestione client
 - **Directory**: `server/websocket/` 
+- **React Hooks Optimizations**: Corretta implementazione degli hooks React per evitare problemi come "React Hook cannot be called inside a callback"
+- **Context Distribution**: Migliorata la distribuzione e l'utilizzo dei context Socket.IO nel frontend
+- **Socket Lifecycle Management**: Perfezionata la gestione del ciclo di vita delle connessioni socket
+
+### 🔧 Correzioni React e Socket.IO
+- **Hook Compliant**: Ristrutturato il codice per rispettare le "Rules of Hooks" di React, in particolare:
+  - Estrazione corretta delle funzioni dai context come `on`, `off` e `emit` all'inizio dei componenti
+  - Rimozione delle chiamate a hooks all'interno di callbacks o condizioni
+  - Correzione delle dipendenze degli useEffect per evitare aggiornamenti infiniti
+- **Variabili Non Utilizzate**: Eliminazione delle variabili non utilizzate importate dai context
+- **Dependency Management**: Migliorata la gestione delle dipendenze nei React Hooks
+- **File Principali Modificati**: `App.jsx`, `MapSelectState.jsx`, `MapContainer.jsx`
 
 ### 🖼️ Sistema di Sprite Sheet
 - **Consolidamento Immagini**: Riduzione delle richieste HTTP tramite l'uso di sprite sheet
@@ -168,6 +180,7 @@ L'architettura FSM garantisce transizioni fluide tra i diversi stati di gioco (m
 
 ### 📊 Vantaggi delle Ottimizzazioni
 - **Performance**: Riduzione significativa dei tempi di caricamento
-- **Stabilità**: Connessioni WebSocket più affidabili
+- **Stabilità**: Connessioni WebSocket più affidabili e codice frontend più stabile
 - **Efficienza**: Riduzione della banda utilizzata e dei tempi di risposta
-- **Manutenibilità**: Maggiore facilità di debug e monitoraggio 
+- **Manutenibilità**: Maggiore facilità di debug e monitoraggio
+- **Compatibilità**: Miglior rispetto delle regole React per evitare problemi in futuro 
