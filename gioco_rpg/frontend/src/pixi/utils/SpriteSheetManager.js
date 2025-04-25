@@ -20,7 +20,28 @@ export default class SpriteSheetManager {
       // Verifica la disponibilità del server
       const serverAvailable = await AssetLoader.checkServerAvailability();
       
-      // Configurazione delle spritesheet da caricare
+      // Verifica se ci sono sprite sheet disponibili tramite il nuovo endpoint API
+      if (serverAvailable) {
+        try {
+          const response = await fetch(`${API_URL}/api/diagnostics/assets`);
+          if (response.ok) {
+            const data = await response.json();
+            
+            // Se abbiamo informazioni sugli sprite sheet, li carichiamo
+            if (data.sprite_sheets && data.sprite_sheets.sheets > 0) {
+              console.log(`Trovati ${data.sprite_sheets.sheets} sprite sheet sul server`);
+              
+              // Carica tutti gli sprite sheet disponibili
+              await this.loadAllSpriteSheets();
+              return true;
+            }
+          }
+        } catch (err) {
+          console.warn('Errore nella richiesta delle informazioni sugli sprite sheet:', err);
+        }
+      }
+      
+      // Configurazione delle spritesheet fallback
       const spriteSheetConfigs = [
         { 
           name: 'tiles', 
@@ -48,6 +69,108 @@ export default class SpriteSheetManager {
       return true;
     } catch (err) {
       console.error('Errore nell\'inizializzazione del SpriteSheetManager:', err);
+      return false;
+    }
+  }
+  
+  /**
+   * Carica tutti gli sprite sheet disponibili sul server
+   */
+  static async loadAllSpriteSheets() {
+    try {
+      // Ottieni la lista degli sprite sheet disponibili
+      const response = await fetch(`${API_URL}/assets/spritesheets/`);
+      if (!response.ok) {
+        throw new Error(`Errore nella richiesta degli sprite sheet: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (!data.spritesheets || !Array.isArray(data.spritesheets) || data.spritesheets.length === 0) {
+        console.warn('Nessuno sprite sheet trovato sul server');
+        return [];
+      }
+      
+      console.log(`Trovati ${data.spritesheets.length} sprite sheet:`, data.spritesheets);
+      
+      // Carica tutti gli sprite sheet in parallelo
+      const loadPromises = data.spritesheets.map(sheet => {
+        // Estrai l'ID dallo sprite sheet
+        const sheetId = sheet.id || sheet.name || sheet;
+        // Se l'URL non è specificato, lo costruiamo basandoci sull'ID
+        const url = sheet.url || `${API_URL}/assets/spritesheets/${sheetId}.json`;
+        
+        // Carica lo sprite sheet
+        return this.loadSpriteSheet(sheetId, url)
+          .catch(err => {
+            console.warn(`Errore nel caricamento dello sprite sheet ${sheetId}:`, err);
+            return null;
+          });
+      });
+      
+      // Attendi il caricamento di tutti gli sprite sheet
+      const results = await Promise.all(loadPromises);
+      
+      // Filtra solo i risultati validi
+      const loadedSheets = results.filter(Boolean);
+      console.log(`Caricati ${loadedSheets.length}/${data.spritesheets.length} sprite sheet`);
+      
+      return loadedSheets;
+    } catch (err) {
+      console.error('Errore nel caricamento di tutti gli sprite sheet:', err);
+      return [];
+    }
+  }
+  
+  /**
+   * Genera sprite sheet sul server
+   * @returns {Promise<boolean>} - true se la generazione è avvenuta con successo
+   */
+  static async generateSpriteSheets() {
+    try {
+      console.log('Richiesta generazione sprite sheet sul server...');
+      
+      // Verifica la disponibilità del server
+      const serverAvailable = await AssetLoader.checkServerAvailability();
+      if (!serverAvailable) {
+        console.warn('Server non disponibile, impossibile generare sprite sheet');
+        return false;
+      }
+      
+      // Richiedi la generazione degli sprite sheet
+      const response = await fetch(`${API_URL}/api/diagnostics/generate-sprite-sheets`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          async: true // Esegui la generazione in modo asincrono sul server
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Errore nella richiesta di generazione sprite sheet: ${response.status}`);
+      }
+      
+      const result = await response.json();
+      console.log('Risposta generazione sprite sheet:', result);
+      
+      // Se la generazione è stata avviata con successo, attendiamo un po' e poi ricarichiamo gli sprite sheet
+      if (result.status === 'started' || result.status === 'completed') {
+        if (result.status === 'started') {
+          // Se è asincrono, attendiamo qualche secondo per dare tempo al server di generare i primi sprite sheet
+          console.log('Generazione avviata in background, attesa 3 secondi...');
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        }
+        
+        // Ricarichiamo gli sprite sheet
+        await this.loadAllSpriteSheets();
+        return true;
+      }
+      
+      return false;
+    } catch (err) {
+      console.error('Errore nella generazione degli sprite sheet:', err);
       return false;
     }
   }

@@ -47,12 +47,25 @@ class GameStateManager extends EventEmitter {
       this.handleGameEvent(event);
     });
     
-    // In caso di riconnessione, richiedi un risync se necessario
+    // Gestione migliorata della riconnessione
     socketService.on('connect', () => {
-      const disconnectionTime = socketService.disconnectionTime;
+      const disconnectionDuration = socketService.disconnectionDuration || 0;
       
-      if (disconnectionTime && Date.now() - disconnectionTime > 10000) {
-        // Se disconnessi per più di 10 secondi, richiedi risync completo
+      // Imposta una soglia più bassa per il risync (5 secondi)
+      if (disconnectionDuration > 5000) {
+        console.log(`Disconnesso per ${disconnectionDuration/1000}s, richiedo sincronizzazione completa`);
+        this.requestFullSync();
+      } else if (disconnectionDuration > 0) {
+        console.log(`Breve disconnessione (${disconnectionDuration/1000}s), richiedo aggiornamenti recenti`);
+        this.requestRecentUpdates();
+      }
+    });
+    
+    // Ascolta per errori di sincronizzazione
+    socketService.on('sync_error', (data) => {
+      console.warn('Errore di sincronizzazione:', data);
+      // In caso di errori di versione, richiedi stato completo
+      if (data.error === 'version_mismatch') {
         this.requestFullSync();
       }
     });
@@ -432,6 +445,24 @@ class GameStateManager extends EventEmitter {
     
     // Notifica reset
     this.emit('state_reset');
+  }
+  
+  /**
+   * Richiede aggiornamenti recenti invece dello stato completo
+   * Utile per brevi disconnessioni
+   */
+  requestRecentUpdates() {
+    if (!socketService.isConnected()) {
+      console.warn('Impossibile richiedere aggiornamenti recenti: socket disconnesso');
+      return;
+    }
+    
+    socketService.emit('request_recent_updates', {
+      last_version: this.state.version,
+      timestamp: Date.now()
+    });
+    
+    this.emit('sync_started', { type: 'partial' });
   }
 }
 

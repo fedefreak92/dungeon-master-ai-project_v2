@@ -28,26 +28,53 @@ class IOService {
     this.renderEvents = [];
     this.listenersRegistered = false;
     
-    // Registra per l'evento di connessione completata
+    // Registra handler per eventi di connessione/disconnessione
+    this._setupConnectionHandlers();
+  }
+  
+  /**
+   * Configura gli handler per gestire connessione/disconnessione WebSocket
+   * @private
+   */
+  _setupConnectionHandlers() {
+    // Registra sempre l'handler di connessione, indipendentemente dallo stato attuale
     socketService.on('connect', () => {
+      console.log('WebSocket connesso, configurazione listener IOService');
+      
+      // Registra i listener solo se non già registrati
       if (!this.listenersRegistered) {
         this.setupSocketListeners();
         this.listenersRegistered = true;
         console.log('Listener WebSocket registrati con successo');
       }
+      
+      // Invia un evento per indicare che i listener sono pronti
+      if (this.onReady) {
+        this.onReady();
+      }
     });
+    
+    // Gestione disconnessioni
+    socketService.on('disconnect', () => {
+      console.log('WebSocket disconnesso, stato listener preservato');
+      // Non resettiamo this.listenersRegistered per conservare lo stato
+      // I listener verranno riattivati quando la connessione sarà ristabilita
+    });
+    
+    // Se il socket è già connesso, registra i listener immediatamente
+    if (socketService.isConnected()) {
+      console.log('WebSocket già connesso, registrazione immediata dei listener');
+      this.setupSocketListeners();
+      this.listenersRegistered = true;
+    }
   }
   
   /**
    * Configura i listener per eventi dal server
    */
   setupSocketListeners() {
-    // Controlla se il socket è connesso
-    if (!socketService.isConnected()) {
-      console.warn('Socket non ancora inizializzato, saltando registrazione eventi WebSocket');
-      return;
-    }
-    
+    // Registra gli eventi senza verificare lo stato di connessione
+    // I listener verranno attivati automaticamente alla connessione
     console.log('Registrazione listener per eventi WebSocket...');
     
     // Ascolta eventi di messaggio
@@ -123,19 +150,6 @@ class IOService {
     socketService.on('hide_tooltip', () => {
       this.nascondiTooltip();
     });
-  }
-  
-  /**
-   * Inizializzazione manuale quando la connessione è pronta
-   * @returns {boolean} true se i listener sono stati inizializzati, false altrimenti
-   */
-  initializeSocketListeners() {
-    if (!this.listenersRegistered && socketService.isConnected()) {
-      this.setupSocketListeners();
-      this.listenersRegistered = true;
-      return true;
-    }
-    return false;
   }
   
   /**

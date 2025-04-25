@@ -1,18 +1,25 @@
 import io from 'socket.io-client';
 
-const API_URL = 'http://localhost:5000';
+// Usa variabile di ambiente per l'URL API se disponibile, altrimenti usa il default
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
-// Opzioni avanzate per Socket.IO con strategia di fallback
+// Opzioni ottimizzate per Socket.IO con strategia di connessione migliore
 const SOCKET_OPTIONS = {
-  transports: ['websocket', 'polling'],  // Fallback a polling se WebSocket fallisce
+  transports: ['websocket', 'polling'],  // Preferisci WebSocket, fallback su polling
   reconnection: true,
-  reconnectionAttempts: Infinity,  // Non limita i tentativi
-  reconnectionDelay: 1000,
-  reconnectionDelayMax: 30000,
-  timeout: 20000,
-  autoConnect: false,
-  forceNew: true,  // Forza una nuova connessione
-  path: '/socket.io/', 
+  reconnectionAttempts: Infinity,    // Infiniti tentativi di riconnessione
+  reconnectionDelay: 1000,           // 1 secondo iniziale
+  reconnectionDelayMax: 5000,        // Max 5 secondi (ridotto)
+  randomizationFactor: 0.5,          // Aggiunge casualità al backoff
+  timeout: 20000,                    // Timeout di connessione a 20 secondi
+  autoConnect: false,                // Controlliamo manualmente la connessione
+  forceNew: false,                   // Non forzare una nuova connessione per permettere riutilizzo
+  path: '/socket.io/',               // Path di default Socket.IO
+  pingTimeout: 60000,                // Aumentato a 60 secondi per miglior stabilità
+  pingInterval: 25000,               // Mantenuto a 25 secondi
+  upgrade: true,                     // Abilita l'upgrade da polling a websocket
+  rememberUpgrade: true,             // Ricorda se l'upgrade ha funzionato
+  rejectUnauthorized: false,         // Utile per ambienti di sviluppo
   query: {}
 };
 
@@ -78,7 +85,7 @@ class SocketService {
         this.disconnect();
         
         // Piccolo ritardo per garantire la disconnessione completa
-        setTimeout(() => this._createNewConnection(sessionId, options, resolve, reject), 300);
+        setTimeout(() => this._createNewConnection(sessionId, options, resolve, reject), 500);
       } else {
         // Nessun socket esistente, crea una nuova connessione direttamente
         this._createNewConnection(sessionId, options, resolve, reject);
@@ -94,28 +101,55 @@ class SocketService {
     // Salva l'ID sessione per riconnessioni
     this.sessionId = sessionId;
     
-    // Prepara le opzioni con fallback a polling
+    // Prepara le opzioni con parametri ottimizzati
     const socketOptions = {
       ...SOCKET_OPTIONS,
       ...options,
       query: {
         ...SOCKET_OPTIONS.query,
         sessionId: sessionId,
-        stateVersion: this.stateVersion
+        stateVersion: this.stateVersion,
+        reconnect: this.reconnecting ? 'true' : 'false'
       }
     };
     
     try {
+      // Chiudiamo qualsiasi socket precedente
+      if (this.socket) {
+        this.socket.close();
+        this.socket = null;
+      }
+      
       // Crea la connessione socket
       console.log('Creazione connessione WebSocket con opzioni:', socketOptions);
       this.socket = io(API_URL, socketOptions);
 
-      // Configura gli handler di eventi
+      // Configura monitor di latenza
+      this._setupLatencyMonitor();
+      
+      // Configura gli handler di eventi prima che il socket si connetta
       this.setupEventHandlers(resolve, reject);
+
+      // Aggiungi un timeout di sicurezza per garantire che la connessione non blocchi indefinitamente
+      const connectionTimeout = setTimeout(() => {
+        if (!this.connected) {
+          console.error("Timeout durante il tentativo di connessione WebSocket");
+          if (this.socket) {
+            this.socket.close();
+          }
+          reject(new Error("Timeout durante il tentativo di connessione"));
+        }
+      }, socketOptions.timeout || 20000);
 
       // Avvia la connessione
       console.log('Avvio connessione socket...');
       this.socket.connect();
+      
+      // Callback aggiuntivo per gestire il successo della connessione
+      this.socket.once('connect', () => {
+        clearTimeout(connectionTimeout);
+        // Il resto della gestione avverrà in setupEventHandlers
+      });
       
       // Avvia monitoraggio performance
       this.startMonitoring();
@@ -125,6 +159,34 @@ class SocketService {
       this.connected = false;
       reject(new Error(`Errore durante creazione socket: ${err.message}`));
     }
+  }
+  
+  /**
+   * Configura il monitor di latenza per il socket
+   * @private
+   */
+  _setupLatencyMonitor() {
+    // Ferma eventuali monitoraggi precedenti
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+    }
+    
+    // Imposta un intervallo per verificare la latenza
+    this.pingInterval = setInterval(() => {
+      if (this.socket && this.connected) {
+        const startTime = Date.now();
+        
+        this.socket.emit('ping_test', {}, () => {
+          const endTime = Date.now();
+          this.latency = endTime - startTime;
+          
+          // Stampa la latenza solo in sviluppo
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`Latenza WebSocket: ${this.latency}ms`);
+          }
+        });
+      }
+    }, 30000); // Verifica ogni 30 secondi
   }
   
   /**
@@ -165,9 +227,19 @@ class SocketService {
       console.error('Errore connessione WebSocket:', err.message, err);
       this.packetStats.errors++;
       
+      // Implementa una strategia di backoff esponenziale
       if (this.connectionRetries < this.maxConnectionRetries) {
         this.connectionRetries++;
-        console.log(`Tentativo di riconnessione ${this.connectionRetries}/${this.maxConnectionRetries}...`);
+        const delay = Math.min(1000 * Math.pow(1.5, this.connectionRetries), 30000);
+        console.log(`Tentativo di riconnessione ${this.connectionRetries}/${this.maxConnectionRetries} fra ${delay}ms...`);
+        
+        // Impostiamo un timer per il prossimo tentativo con backoff esponenziale
+        this.reconnectTimer = setTimeout(() => {
+          if (!this.connected && this.socket) {
+            console.log('Tentativo di riconnessione...');
+            this.socket.connect();
+          }
+        }, delay);
       } else {
         console.error('Numero massimo di tentativi raggiunto');
         this.connected = false;
@@ -184,12 +256,54 @@ class SocketService {
       
       // Pulisci tutte le richieste in sospeso
       this.cleanupPendingRequests('Socket disconnesso: ' + reason);
+      
+      // Avvia automaticamente la riconnessione per alcuni tipi di disconnessione
+      if (reason === 'io server disconnect' || reason === 'io client disconnect') {
+        // Disconnessione esplicita, non tentare la riconnessione
+        console.log('Disconnessione esplicita, non tento la riconnessione');
+      } else {
+        // Per altri tipi di disconnessione (transport close, ping timeout), tenta la riconnessione
+        console.log(`Disconnessione imprevista (${reason}), pianificazione riconnessione...`);
+        this.reconnecting = true;
+        
+        // Imposta un piccolo ritardo prima di riconnettere
+        setTimeout(() => {
+          if (!this.connected && this.socket) {
+            console.log('Tentativo di riconnessione dopo disconnessione imprevista...');
+            this.socket.connect();
+          }
+        }, 1000);
+      }
     });
 
     // Gestione errori generici
     this.socket.on('error', (err) => {
       console.error('Errore WebSocket:', err);
       this.packetStats.errors++;
+    });
+    
+    // Gestione eventi di riconnessione
+    this.socket.on('reconnect', (attemptNumber) => {
+      console.log(`Socket riconnesso con successo dopo ${attemptNumber} tentativi`);
+      this.reconnecting = false;
+    });
+    
+    this.socket.on('reconnect_attempt', (attemptNumber) => {
+      console.log(`Tentativo di riconnessione #${attemptNumber}`);
+      // Verifica se abbiamo informazioni sullo stato per sincronizzare correttamente
+      if (this.socket.io && this.socket.io.opts && this.socket.io.opts.query) {
+        this.socket.io.opts.query.stateVersion = this.stateVersion;
+        this.socket.io.opts.query.reconnect = 'true';
+      }
+    });
+    
+    this.socket.on('reconnect_error', (err) => {
+      console.error('Errore durante la riconnessione:', err);
+    });
+    
+    this.socket.on('reconnect_failed', () => {
+      console.error('Riconnessione fallita dopo tutti i tentativi');
+      this.reconnecting = false;
     });
     
     // Intercetta tutti i messaggi ricevuti per statistiche
