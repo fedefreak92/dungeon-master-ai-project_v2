@@ -1,0 +1,137 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Schema NPC",
+  "description": "Schema per la validazione delle entità NPC",
+  "type": "object",
+  "additionalProperties": {
+    "type": "object",
+    "required": [
+      "nome",
+      "descrizione",
+      "professione",
+      "livello",
+      "hp",
+      "hp_max",
+      "token",
+      "inventario",
+      "oro",
+      "amichevole"
+    ],
+    "properties": {
+      "nome": {
+        "type": "string",
+        "description": "Nome dell'NPC"
+      },
+      "descrizione": {
+        "type": "string",
+        "description": "Descrizione dell'NPC"
+      },
+      "professione": {
+        "type": "string",
+        "description": "Professione o ruolo dell'NPC"
+      },
+      "livello": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Livello dell'NPC"
+      },
+      "hp": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Punti vita attuali dell'NPC"
+      },
+      "hp_max": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Punti vita massimi dell'NPC"
+      },
+      "forza": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Valore di forza dell'NPC"
+      },
+      "destrezza": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Valore di destrezza dell'NPC"
+      },
+      "costituzione": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Valore di costituzione dell'NPC"
+      },
+      "intelligenza": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Valore di intelligenza dell'NPC"
+      },
+      "saggezza": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Valore di saggezza dell'NPC"
+      },
+      "carisma": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Valore di carisma dell'NPC"
+      },
+      "token": {
+        "type": "string",
+        "maxLength": 1,
+        "description": "Carattere usato per rappresentare l'NPC nella mappa"
+      },
+      "inventario": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["nome", "tipo", "valore", "descrizione"],
+          "properties": {
+            "nome": {
+              "type": "string",
+              "description": "Nome dell'oggetto"
+            },
+            "tipo": {
+              "type": "string",
+              "description": "Tipo dell'oggetto (arma, armatura, pozione, ecc.)"
+            },
+            "effetto": {
+              "type": "object",
+              "description": "Effetti dell'oggetto quando utilizzato"
+            },
+            "valore": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Valore in oro dell'oggetto"
+            },
+            "descrizione": {
+              "type": "string",
+              "description": "Descrizione dell'oggetto"
+            }
+          }
+        },
+        "description": "Oggetti posseduti dall'NPC"
+      },
+      "oro": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Quantità di oro posseduta dall'NPC"
+      },
+      "amichevole": {
+        "type": "boolean",
+        "description": "Indica se l'NPC è amichevole o ostile"
+      },
+      "id": {
+        "type": "string",
+        "description": "Identificatore univoco dell'NPC"
+      },
+      "_version": {
+        "type": "string",
+        "description": "Versione del formato dati"
+      },
+      "_last_modified": {
+        "type": "number",
+        "description": "Timestamp dell'ultima modifica"
+      }
+    }
+  }
+} 

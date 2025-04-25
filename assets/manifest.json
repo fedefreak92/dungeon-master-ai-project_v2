@@ -1,9 +1,128 @@
 {
   "version": "1.0.0",
-  "last_updated": 1744549371.871163,
-  "sprites": {},
-  "tiles": {},
+  "last_updated": 1745598437.084502,
+  "sprites": {
+    "chest": {
+      "id": "chest",
+      "name": "Chest",
+      "file": "sprites\\chest.png",
+      "dimensions": null,
+      "offset": null,
+      "tags": []
+    },
+    "enemy_goblin": {
+      "id": "enemy_goblin",
+      "name": "Enemy_goblin",
+      "file": "sprites\\enemy_goblin.png",
+      "dimensions": null,
+      "offset": null,
+      "tags": []
+    },
+    "npc_merchant": {
+      "id": "npc_merchant",
+      "name": "Npc_merchant",
+      "file": "sprites\\npc_merchant.png",
+      "dimensions": null,
+      "offset": null,
+      "tags": []
+    },
+    "player": {
+      "id": "player",
+      "name": "Player",
+      "file": "sprites\\player.png",
+      "dimensions": null,
+      "offset": null,
+      "tags": []
+    }
+  },
+  "tiles": {
+    "door": {
+      "id": "door",
+      "name": "Door",
+      "file": "tiles\\door.png",
+      "dimensions": null,
+      "properties": {},
+      "tags": []
+    },
+    "floor": {
+      "id": "floor",
+      "name": "Floor",
+      "file": "tiles\\floor.png",
+      "dimensions": null,
+      "properties": {},
+      "tags": []
+    },
+    "wall": {
+      "id": "wall",
+      "name": "Wall",
+      "file": "tiles\\wall.png",
+      "dimensions": null,
+      "properties": {},
+      "tags": []
+    },
+    "bridge": {
+      "id": "bridge",
+      "name": "Bridge",
+      "file": "tiles\\bridge.png",
+      "dimensions": null,
+      "properties": {},
+      "tags": []
+    },
+    "grass": {
+      "id": "grass",
+      "name": "Grass",
+      "file": "tiles\\grass.png",
+      "dimensions": null,
+      "properties": {},
+      "tags": []
+    },
+    "lava": {
+      "id": "lava",
+      "name": "Lava",
+      "file": "tiles\\lava.png",
+      "dimensions": null,
+      "properties": {},
+      "tags": []
+    },
+    "road": {
+      "id": "road",
+      "name": "Road",
+      "file": "tiles\\road.png",
+      "dimensions": null,
+      "properties": {},
+      "tags": []
+    },
+    "stairs": {
+      "id": "stairs",
+      "name": "Stairs",
+      "file": "tiles\\stairs.png",
+      "dimensions": null,
+      "properties": {},
+      "tags": []
+    },
+    "water": {
+      "id": "water",
+      "name": "Water",
+      "file": "tiles\\water.png",
+      "dimensions": null,
+      "properties": {},
+      "tags": []
+    }
+  },
   "animations": {},
   "tilesets": {},
-  "ui_elements": {}
+  "ui_elements": {
+    "button": {
+      "id": "button",
+      "name": "Button",
+      "file": "button.png",
+      "path": "ui/button.png",
+      "type": "ui",
+      "dimensions": {
+        "width": 64,
+        "height": 32
+      },
+      "tags": []
+    }
+  }
 }

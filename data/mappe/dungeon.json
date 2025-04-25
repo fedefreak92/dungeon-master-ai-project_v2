@@ -1,0 +1,278 @@
+{
+  "nome": "dungeon",
+  "larghezza": 15,
+  "altezza": 10,
+  "tipo": "sotterraneo",
+  "descrizione": "Un dungeon oscuro e umido con pareti di pietra.",
+  "griglia": [
+    [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      1
+    ],
+    [
+      1,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      1
+    ],
+    [
+      1,
+      0,
+      0,
+      0,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      1
+    ],
+    [
+      1,
+      1,
+      0,
+      1,
+      1,
+      1,
+      1,
+      0,
+      1,
+      1,
+      1,
+      0,
+      0,
+      0,
+      1
+    ],
+    [
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1
+    ],
+    [
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1
+    ],
+    [
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1
+    ],
+    [
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ]
+  ],
+  "oggetti": {
+    "(13, 2)": {
+      "nome": "Forziere del Tesoro",
+      "tipo": "oggetto_interattivo",
+      "descrizione": "Un forziere decorato con simboli arcani.",
+      "stato": "chiuso",
+      "token": "C",
+      "descrizioni_stati": {
+        "chiuso": "Un forziere decorato con simboli arcani, è chiuso a chiave.",
+        "aperto": "Un forziere decorato con simboli arcani, è aperto."
+      },
+      "stati_possibili": {
+        "chiuso": [
+          "aperto"
+        ],
+        "aperto": [
+          "chiuso"
+        ]
+      },
+      "abilita_richieste": {
+        "furtività": "aperto"
+      },
+      "difficolta_abilita": {
+        "furtività": 12
+      },
+      "messaggi_interazione": {
+        "furtività": "Con pazienza e precisione, riesci a sbloccare il forziere."
+      },
+      "contenuto": [
+        {
+          "nome": "Spada Magica",
+          "tipo": "arma",
+          "rarità": "rara",
+          "danno": 10,
+          "effetto": "fuoco"
+        },
+        {
+          "nome": "Monete d'oro",
+          "tipo": "moneta",
+          "quantità": 100
+        }
+      ],
+      "sprite": "chest"
+    }
+  },
+  "npg": {
+    "(7, 2)": {
+      "nome": "Goblin",
+      "descrizione": "Un goblin armato di un pugnale arrugginito.",
+      "stato": "ostile",
+      "token": "G",
+      "dialogo": [
+        "Grrraaa! Intruso!",
+        "Morto tu, tesoro mio!",
+        "Nessuno esce vivo!"
+      ],
+      "statistiche": {
+        "hp": 15,
+        "hp_max": 15,
+        "forza": 8,
+        "difesa": 2,
+        "esperienza": 50,
+        "oro": 10,
+        "loot": [
+          {
+            "nome": "Pugnale Arrugginito",
+            "tipo": "arma",
+            "rarità": "comune",
+            "danno": 2
+          },
+          {
+            "nome": "Pozione di cura",
+            "tipo": "pozione",
+            "rarità": "comune",
+            "effetto": "cura",
+            "valore": 5,
+            "probabilità": 0.5
+          }
+        ]
+      },
+      "sprite": "enemy_goblin"
+    }
+  },
+  "porte": {
+    "(6, 8)": [
+      "villaggio",
+      10,
+      13
+    ],
+    "(4, 3)": [
+      "dungeon_livello2",
+      2,
+      2
+    ]
+  },
+  "pos_iniziale_giocatore": [
+    6,
+    7
+  ]
+}
