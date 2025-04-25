@@ -139,3 +139,35 @@ Il progetto utilizza un'architettura a strati:
 - **Persistenza**: File JSON per salvataggi e configurazioni
 
 L'architettura FSM garantisce transizioni fluide tra i diversi stati di gioco (menu, mappa, combattimento, dialogo, ecc.) mantenendo la coerenza dello stato. 
+
+## 🚀 Ottimizzazioni e Miglioramenti Tecnici
+
+### ⚡ WebSocket Ottimizzati
+- **Backend Eventlet**: Configurazione aggiornata per utilizzare Eventlet come backend WebSocket
+- **Parametri Ping/Pong**: Impostazione corretta dei parametri per evitare disconnessioni
+- **Gestione Connessione**: Meccanismi migliorati per la riconnessione e gestione client
+- **Directory**: `server/websocket/` 
+
+### 🖼️ Sistema di Sprite Sheet
+- **Consolidamento Immagini**: Riduzione delle richieste HTTP tramite l'uso di sprite sheet
+- **Generazione Dinamica**: Generazione e gestione automatica delle sprite sheet
+- **API Dedicata**: Endpoint per la creazione e il recupero dei dati delle sprite sheet
+- **File Principali**: `util/sprite_sheet_manager.py` e `server/routes/assets_routes.py`
+
+### 📦 Serializzazione MessagePack
+- **Formato Compatto**: Utilizzo di MessagePack per ridurre la dimensione dei dati trasmessi
+- **Integrazione Nativa**: Supporto migliorato in tutte le classi principali del gioco
+- **Sistema di Sessione**: Configurazione del sistema di sessione per l'uso di MessagePack
+- **File Rilevanti**: `server/utils/session.py` e classi con supporto alla serializzazione
+
+### 🛠️ API di Diagnostica
+- **Monitoraggio Risorse**: Endpoint per monitorare lo stato e le risorse del server
+- **Strumenti Analisi**: API per analizzare l'utilizzo delle risorse e ottimizzare le prestazioni
+- **Debug WebSocket**: Supporto al debug delle comunicazioni WebSocket
+- **File Rilevanti**: Nuovi endpoint nelle route del server
+
+### 📊 Vantaggi delle Ottimizzazioni
+- **Performance**: Riduzione significativa dei tempi di caricamento
+- **Stabilità**: Connessioni WebSocket più affidabili
+- **Efficienza**: Riduzione della banda utilizzata e dei tempi di risposta
+- **Manutenibilità**: Maggiore facilità di debug e monitoraggio 
