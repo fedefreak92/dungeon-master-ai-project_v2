@@ -12,8 +12,10 @@ document.head.appendChild(link);
 const root = ReactDOM.createRoot(document.getElementById('root'));
 
 // Renderizza l'app
+// Temporaneamente disabilitato StrictMode per evitare problemi con i WebSocket
+// in modalità sviluppo (doppio mounting/unmounting dei componenti)
 root.render(
-  <React.StrictMode>
+  // <React.StrictMode>
     <App />
-  </React.StrictMode>
+  // </React.StrictMode>
 ); 

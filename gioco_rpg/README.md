@@ -39,6 +39,31 @@ python main.py
 
 Il server sarà disponibile all'indirizzo `http://localhost:5000`.
 
+## Recenti miglioramenti (Giugno 2024)
+
+Nel recente aggiornamento sono state apportate importanti correzioni che migliorano significativamente la stabilità e le prestazioni del frontend:
+
+### 🔧 Ottimizzazioni React Hooks
+- **Corretti errori Hook**: Risolti problemi legati alla regola "React Hook cannot be called inside a callback"
+- **Gestione Context**: Migliorata l'estrazione delle funzioni dai context Socket.IO
+- **Dependency Arrays**: Corrette le dipendenze negli useEffect per prevenire cicli di rendering infiniti
+
+### ⚡ Miglioramenti WebSocket
+- **Lifecycle Management**: Perfezionata la gestione del ciclo di vita delle connessioni socket
+- **Event Handling**: Migliorato il sistema di gestione degli eventi con correzioni ai listener map_change_complete
+- **Context Distribution**: Ottimizzato l'uso del context Socket.IO in tutta l'applicazione  
+
+### 📋 File corretti
+- **App.jsx**: Corretta l'implementazione di useSocket per rispettare le regole dei React Hooks
+- **MapSelectState.jsx**: Rimosse variabili non utilizzate dal destructuring di useSocket
+- **MapContainer.jsx**: Rimosso useMemo dall'import e ottimizzato l'uso di emitWithAck
+
+### 📊 Vantaggi
+- **Stabilità**: Eliminati errori console e warnings ESLint
+- **Performance**: Ridotto il rischio di memory leaks e re-rendering non necessari
+- **Manutenibilità**: Codice più pulito e conforme alle best practices di React
+- **Compatibilità**: Migliore supporto a future versioni di React con strict mode
+
 ## API Endpoints
 
 - `GET /` - Informazioni sull'API
@@ -405,103 +430,6 @@ Questa modularizzazione offre diversi vantaggi:
 
 Per ulteriori dettagli sull'utilizzo del modulo mercato, consultare il file `states/mercato/README.md`.
 
-## Contribuire al Progetto
-
-Se desideri contribuire, segui questi passaggi:
-
-1. Fai un fork del repository
-2. Crea un branch per la tua feature (`git checkout -b feature/nome-feature`)
-3. Effettua i tuoi cambiamenti
-4. Esegui i test
-5. Fai commit dei tuoi cambiamenti (`git commit -m 'Aggiunge nuova feature'`)
-6. Effettua il push sul branch (`git push origin feature/nome-feature`)
-7. Apri una Pull Request
-
-## Licenza
-
-Questo progetto è rilasciato sotto licenza MIT.
-
-## Sistema di Prove di Abilità
-
-Il sistema implementa un meccanismo completo per eseguire prove di abilità, sia per il giocatore che per gli NPC, supportando anche confronti diretti tra entità.
-
-### API per Prove di Abilità
-
-#### Endpoints HTTP
-
-- **POST /prova_abilita/inizia**: Inizia una nuova prova di abilità.
-  - Parametri: `id_sessione`, `tipo_prova` (giocatore, npg, confronto)
-  - Risposta: Stato iniziale della prova
-
-- **GET /prova_abilita/abilita_disponibili**: Ottiene le abilità disponibili per un'entità.
-  - Parametri: `id_sessione`, `entita_id` (opzionale, default: giocatore)
-  - Risposta: Lista delle abilità disponibili
-
-- **POST /prova_abilita/esegui**: Esegue una prova di abilità.
-  - Parametri: `id_sessione`, `modalita` (semplice, avanzata), `abilita`, `entita_id`, `target_id`, `difficolta`
-  - Risposta: Risultato dettagliato della prova
-
-- **GET /prova_abilita/npg_vicini**: Ottiene la lista degli NPG vicini al giocatore.
-  - Parametri: `id_sessione`
-  - Risposta: Lista di NPG nelle vicinanze
-
-- **POST /prova_abilita/termina**: Termina una prova di abilità in corso.
-  - Parametri: `id_sessione`
-  - Risposta: Conferma di terminazione
-
-#### Eventi WebSocket
-
-- **prova_abilita_input**: Gestisce gli input dell'utente durante una prova.
-  - Parametri: `id_sessione`, `tipo_input`, `dati_input`
-  - Eventi emessi: `prova_abilita_update`
-
-- **prova_abilita_select_npc**: Seleziona un NPG per una prova.
-  - Parametri: `id_sessione`, `npg_id`
-  - Eventi emessi: `prova_abilita_update`
-
-- **prova_abilita_select_oggetto**: Seleziona un oggetto per interazione.
-  - Parametri: `id_sessione`, `oggetto_id`
-  - Eventi emessi: `prova_abilita_update`
-
-- **prova_abilita_imposta_difficolta**: Imposta la difficoltà di una prova.
-  - Parametri: `id_sessione`, `difficolta`
-  - Eventi emessi: `prova_abilita_update`, `prova_abilita_risultato`
-
-### Estensioni di Entity e World
-
-- La classe `Entity` è stata estesa per supportare abilità tramite il dizionario `abilita`.
-- I metodi `get_abilita()`, `get_bonus_abilita()`, `aggiungi_abilita()` e `rimuovi_abilita()` consentono di gestire le abilità delle entità.
-- La classe `World` ora supporta stati temporanei con i metodi `get_temporary_state()`, `set_temporary_state()` e `remove_temporary_state()`, utili per mantenere lo stato delle prove di abilità.
-
-### Uso del Sistema di Prove
-
-```python
-# Esempio: Inizia una prova di abilità per il giocatore
-response = requests.post("http://localhost:5000/prova_abilita/inizia", json={
-    "id_sessione": "sessione-123",
-    "tipo_prova": "giocatore"
-})
-
-# Verifica le abilità disponibili
-response = requests.get("http://localhost:5000/prova_abilita/abilita_disponibili?id_sessione=sessione-123")
-abilita = response.json()["abilita"]
-
-# Esegui una prova di abilità
-response = requests.post("http://localhost:5000/prova_abilita/esegui", json={
-    "id_sessione": "sessione-123",
-    "modalita": "avanzata",
-    "abilita": "forza",
-    "difficolta": 15
-})
-
-# Ottieni il risultato
-risultato = response.json()
-print(f"Risultato: {risultato['risultato_finale']}, Successo: {risultato['esito'] == 'successo'}")
-
-# Termina la prova
-requests.post("http://localhost:5000/prova_abilita/termina", json={"id_sessione": "sessione-123"})
-``` 
-
 ## Sistema di Combattimento
 
 Il sistema di combattimento implementa un meccanismo a turni per gestire i combattimenti tra giocatori e nemici, supportando diverse azioni e abilità.
@@ -622,3 +550,134 @@ requests.post("http://localhost:5000/combattimento/termina", json={
    - Il combattimento termina quando tutti i nemici sono sconfitti o il giocatore fugge/viene sconfitto
    - Il server emette l'evento `combattimento_terminato`
    - Il client viene informato dell'esito e delle ricompense 
+
+## Ottimizzazioni e miglioramenti
+
+### WebSocket ottimizzati
+- Configurazione aggiornata per utilizzare Eventlet come backend per WebSocket
+- Parametri ping/pong configurati correttamente per evitare timeout di connessione
+- Gestione migliorata della riconnessione client per maggiore stabilità
+- Riduzione del sovraccarico nella trasmissione dati
+
+### Sistema di sprite sheet
+- Implementato un sistema completo di sprite sheet per ridurre le richieste HTTP
+- Gestore dedicato per la generazione e il caricamento dinamico degli sprite sheet
+- API per la generazione degli sprite sheet al volo
+- Ottimizzazione del rendering lato client grazie al consolidamento delle immagini
+
+### Serializzazione MessagePack
+- Supporto migliorato per MessagePack in tutte le classi principali
+- Sistema di sessione configurato per utilizzare MessagePack di default
+- Riduzione della dimensione dei payload trasmessi tra client e server
+- Miglioramento della velocità di serializzazione/deserializzazione
+
+### API di diagnostica
+- Nuovi endpoint per monitorare le risorse del server
+- API per la generazione e la gestione degli sprite sheet
+- Strumenti di diagnostica per ottimizzare le prestazioni
+- Supporto per il debug delle comunicazioni WebSocket
+
+### Vantaggi delle ottimizzazioni
+- **Performance**: Caricamento più veloce grazie alla riduzione delle richieste HTTP
+- **Stabilità**: Connessioni WebSocket più affidabili con gestione corretta di ping/pong
+- **Efficienza**: Riduzione della banda utilizzata grazie a MessagePack
+- **Manutenibilità**: Migliore diagnostica e monitoraggio del sistema
+
+Per utilizzare queste nuove funzionalità, consultare la documentazione specifica nelle rispettive sezioni.
+
+## Contribuire al Progetto
+
+Se desideri contribuire, segui questi passaggi:
+
+1. Fai un fork del repository
+2. Crea un branch per la tua feature (`git checkout -b feature/nome-feature`)
+3. Effettua i tuoi cambiamenti
+4. Esegui i test
+5. Fai commit dei tuoi cambiamenti (`git commit -m 'Aggiunge nuova feature'`)
+6. Effettua il push sul branch (`git push origin feature/nome-feature`)
+7. Apri una Pull Request
+
+## Licenza
+
+Questo progetto è rilasciato sotto licenza MIT.
+
+## Sistema di Prove di Abilità
+
+Il sistema implementa un meccanismo completo per eseguire prove di abilità, sia per il giocatore che per gli NPC, supportando anche confronti diretti tra entità.
+
+### API per Prove di Abilità
+
+#### Endpoints HTTP
+
+- **POST /prova_abilita/inizia**: Inizia una nuova prova di abilità.
+  - Parametri: `id_sessione`, `tipo_prova` (giocatore, npg, confronto)
+  - Risposta: Stato iniziale della prova
+
+- **GET /prova_abilita/abilita_disponibili**: Ottiene le abilità disponibili per un'entità.
+  - Parametri: `id_sessione`, `entita_id` (opzionale, default: giocatore)
+  - Risposta: Lista delle abilità disponibili
+
+- **POST /prova_abilita/esegui**: Esegue una prova di abilità.
+  - Parametri: `id_sessione`, `modalita` (semplice, avanzata), `abilita`, `entita_id`, `target_id`, `difficolta`
+  - Risposta: Risultato dettagliato della prova
+
+- **GET /prova_abilita/npg_vicini**: Ottiene la lista degli NPG vicini al giocatore.
+  - Parametri: `id_sessione`
+  - Risposta: Lista di NPG nelle vicinanze
+
+- **POST /prova_abilita/termina**: Termina una prova di abilità in corso.
+  - Parametri: `id_sessione`
+  - Risposta: Conferma di terminazione
+
+#### Eventi WebSocket
+
+- **prova_abilita_input**: Gestisce gli input dell'utente durante una prova.
+  - Parametri: `id_sessione`, `tipo_input`, `dati_input`
+  - Eventi emessi: `prova_abilita_update`
+
+- **prova_abilita_select_npc**: Seleziona un NPG per una prova.
+  - Parametri: `id_sessione`, `npg_id`
+  - Eventi emessi: `prova_abilita_update`
+
+- **prova_abilita_select_oggetto**: Seleziona un oggetto per interazione.
+  - Parametri: `id_sessione`, `oggetto_id`
+  - Eventi emessi: `prova_abilita_update`
+
+- **prova_abilita_imposta_difficolta**: Imposta la difficoltà di una prova.
+  - Parametri: `id_sessione`, `difficolta`
+  - Eventi emessi: `prova_abilita_update`, `prova_abilita_risultato`
+
+### Estensioni di Entity e World
+
+- La classe `Entity` è stata estesa per supportare abilità tramite il dizionario `abilita`.
+- I metodi `get_abilita()`, `get_bonus_abilita()`, `aggiungi_abilita()` e `rimuovi_abilita()` consentono di gestire le abilità delle entità.
+- La classe `World` ora supporta stati temporanei con i metodi `get_temporary_state()`, `set_temporary_state()` e `remove_temporary_state()`, utili per mantenere lo stato delle prove di abilità.
+
+### Uso del Sistema di Prove
+
+```python
+# Esempio: Inizia una prova di abilità per il giocatore
+response = requests.post("http://localhost:5000/prova_abilita/inizia", json={
+    "id_sessione": "sessione-123",
+    "tipo_prova": "giocatore"
+})
+
+# Verifica le abilità disponibili
+response = requests.get("http://localhost:5000/prova_abilita/abilita_disponibili?id_sessione=sessione-123")
+abilita = response.json()["abilita"]
+
+# Esegui una prova di abilità
+response = requests.post("http://localhost:5000/prova_abilita/esegui", json={
+    "id_sessione": "sessione-123",
+    "modalita": "avanzata",
+    "abilita": "forza",
+    "difficolta": 15
+})
+
+# Ottieni il risultato
+risultato = response.json()
+print(f"Risultato: {risultato['risultato_finale']}, Successo: {risultato['esito'] == 'successo'}")
+
+# Termina la prova
+requests.post("http://localhost:5000/prova_abilita/termina", json={"id_sessione": "sessione-123"})
+``` 

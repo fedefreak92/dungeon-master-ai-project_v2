@@ -71,8 +71,8 @@ export const GameStateProvider = ({ children }) => {
   
   // Inizializza la connessione WebSocket
   useEffect(() => {
-    // URL del server WebSocket
-    const socketURL = process.env.REACT_APP_WS_URL || 'http://localhost:5000';
+    // URL del server WebSocket - usa l'origin corrente per evitare problemi CORS
+    const socketURL = process.env.REACT_APP_WS_URL || window.location.origin;
     
     // Crea una nuova connessione
     const newSocket = io(socketURL, {
@@ -166,8 +166,21 @@ export const GameStateProvider = ({ children }) => {
     // Cleanup alla disconnessione
     return () => {
       if (newSocket) {
-        console.log('Chiusura connessione WebSocket');
-        newSocket.disconnect();
+        console.log('Cleanup nel GameStateProvider');
+        
+        // In React.StrictMode, il componente potrebbe essere smontato e rimontato immediatamente
+        // Verifichiamo lo stato del socket prima di disconnetterlo
+        if (newSocket.connected) {
+          console.log('Chiusura connessione WebSocket (socket connesso)');
+          newSocket.disconnect();
+        } else if (newSocket.io && newSocket.io.readyState === 'opening') {
+          console.log('Socket ancora in apertura, non disconnetto');
+          // Non disconnettere un socket in fase di apertura
+        } else {
+          console.log('Chiusura socket in altro stato');
+          // Rimuovi comunque gli handler se necessario
+          newSocket.off();
+        }
       }
     };
   }, []);

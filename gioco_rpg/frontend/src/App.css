@@ -574,4 +574,58 @@ canvas {
   background-color: rgba(0, 0, 0, 0.9);
   transform: scale(1.1);
   box-shadow: 0 3px 8px rgba(0, 0, 0, 0.3);
+}
+
+.loading-map-container {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  background-color: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  text-align: center;
+}
+
+.loading-spinner {
+  border: 5px solid #333;
+  border-top: 5px solid #bd93f9;
+  border-radius: 50%;
+  width: 60px;
+  height: 60px;
+  animation: spin 1s linear infinite;
+  margin-bottom: 20px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.connection-error {
+  margin-top: 20px;
+  padding: 15px;
+  background-color: rgba(255, 85, 85, 0.2);
+  border: 1px solid #ff5555;
+  border-radius: 4px;
+  max-width: 90%;
+  width: 500px;
+}
+
+.connection-error p {
+  margin-bottom: 15px;
+}
+
+.connection-error button {
+  background-color: #ff5555;
+  color: #fff;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.connection-error button:hover {
+  background-color: #ff3333;
 } 

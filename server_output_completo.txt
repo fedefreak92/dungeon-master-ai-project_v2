@@ -1,0 +1,167 @@
+2025-04-25 17:02:09,997 - root - INFO - logging_config.py:88 - Sistema di logging inizializzato
+2025-04-25 17:02:10,875 - server.routes.combat_routes - INFO - combat_routes.py:22 - Inizializzazione del modulo combat_routes.py
+2025-04-25 17:02:10,903 - server.utils.route_config - INFO - route_config.py:44 - Blueprint base_routes configurato per supportare MessagePack
+2025-04-25 17:02:10,903 - server.utils.route_config - INFO - route_config.py:44 - Blueprint classes_routes configurato per supportare MessagePack
+2025-04-25 17:02:10,903 - server.utils.route_config - INFO - route_config.py:44 - Blueprint entity_routes configurato per supportare MessagePack
+2025-04-25 17:02:10,903 - server.utils.route_config - INFO - route_config.py:44 - Blueprint mappa_routes configurato per supportare MessagePack
+2025-04-25 17:02:10,904 - server.utils.route_config - INFO - route_config.py:44 - Blueprint scelta_mappa_routes configurato per supportare MessagePack
+2025-04-25 17:02:10,904 - server.utils.route_config - INFO - route_config.py:44 - Blueprint session_routes configurato per supportare MessagePack
+2025-04-25 17:02:10,904 - server.utils.route_config - INFO - route_config.py:44 - Blueprint combat_routes configurato per supportare MessagePack
+2025-04-25 17:02:10,904 - server.utils.route_config - INFO - route_config.py:44 - Blueprint dialogo_routes configurato per supportare MessagePack
+2025-04-25 17:02:10,904 - server.utils.route_config - INFO - route_config.py:44 - Blueprint inventory_routes configurato per supportare MessagePack
+2025-04-25 17:02:10,904 - server.utils.route_config - INFO - route_config.py:44 - Blueprint mercato_routes configurato per supportare MessagePack
+2025-04-25 17:02:10,905 - server.utils.route_config - INFO - route_config.py:44 - Blueprint save_routes configurato per supportare MessagePack
+2025-04-25 17:02:10,905 - server.utils.route_config - INFO - route_config.py:44 - Blueprint taverna_routes configurato per supportare MessagePack
+2025-04-25 17:02:10,905 - server.utils.route_config - INFO - route_config.py:44 - Blueprint skill_challenge_routes configurato per supportare MessagePack
+2025-04-25 17:02:10,905 - server.utils.route_config - INFO - route_config.py:44 - Blueprint entity_api configurato per supportare MessagePack
+2025-04-25 17:02:10,905 - server.utils.route_config - INFO - route_config.py:44 - Blueprint health_api configurato per supportare MessagePack
+2025-04-25 17:02:10,906 - server.utils.route_config - INFO - route_config.py:44 - Blueprint assets_routes configurato per supportare MessagePack
+2025-04-25 17:02:10,906 - server.utils.route_config - INFO - route_config.py:44 - Blueprint api_diagnostics configurato per supportare MessagePack
+2025-04-25 17:02:10,906 - server.utils.route_config - INFO - route_config.py:44 - Blueprint api_routes configurato per supportare MessagePack
+2025-04-25 17:02:10,906 - server.utils.route_config - INFO - route_config.py:44 - Blueprint assets_api configurato per supportare MessagePack
+2025-04-25 17:02:10,906 - server.utils.route_config - INFO - route_config.py:44 - Blueprint maps_api configurato per supportare MessagePack
+2025-04-25 17:02:10,907 - server.utils.route_config - INFO - route_config.py:44 - Blueprint sessions_api configurato per supportare MessagePack
+2025-04-25 17:02:10,907 - server.utils.route_config - INFO - route_config.py:44 - Blueprint entities_api configurato per supportare MessagePack
+2025-04-25 17:02:10,907 - server.utils.route_config - INFO - route_config.py:44 - Blueprint diagnostics_api configurato per supportare MessagePack
+2025-04-25 17:02:10,907 - server.utils.route_config - INFO - route_config.py:44 - Blueprint main_routes configurato per supportare MessagePack
+2025-04-25 17:02:10,908 - server.utils.route_config - INFO - route_config.py:44 - Blueprint character_creation_routes configurato per supportare MessagePack
+2025-04-25 17:02:10,908 - server.utils.route_config - INFO - route_config.py:44 - Blueprint auth_routes configurato per supportare MessagePack
+2025-04-25 17:02:10,908 - server.utils.route_config - INFO - route_config.py:44 - Blueprint main_blueprint configurato per supportare MessagePack
+2025-04-25 17:02:10,909 - server.utils.route_config - INFO - route_config.py:44 - Blueprint game_api configurato per supportare MessagePack
+2025-04-25 17:02:10,924 - server.websocket.session_auth - INFO - session_auth.py:59 - Nessun indice sessioni trovato
+2025-04-25 17:02:10,924 - server.websocket.session_auth - INFO - session_auth.py:41 - SessionAuthManager inizializzato
+2025-04-25 17:02:10,985 - server.app - INFO - app.py:377 - Blueprint legacy combat_routes_legacy registrato con successo su /combattimento
+2025-04-25 17:02:10,994 - server.websocket.websocket_manager - INFO - websocket_manager.py:42 - Creata nuova istanza SocketIO con configurazione: ping_timeout=60.0s, ping_interval=25.0s
+2025-04-25 17:02:10,997 - server.websocket.websocket_event_bridge - INFO - websocket_event_bridge.py:234 - Handler EventBus registrati con successo
+2025-04-25 17:02:10,997 - server.websocket.websocket_event_bridge - INFO - websocket_event_bridge.py:66 - WebSocketEventBridge inizializzato
+2025-04-25 17:02:10,998 - server.websocket.websocket_manager - INFO - websocket_manager.py:82 - EventBus handlers registrati per WebSocketManager
+2025-04-25 17:02:10,998 - server.routes - INFO - __init__.py:179 - Registrazione delle route nell'applicazione
+2025-04-25 17:02:11,049 - server.routes - WARNING - __init__.py:207 - api_map_bp non trovato, saltato
+2025-04-25 17:02:11,057 - server.utils.route_config - INFO - route_config.py:44 - Blueprint base_routes configurato per supportare MessagePack
+2025-04-25 17:02:11,057 - server.utils.route_config - INFO - route_config.py:44 - Blueprint session_routes configurato per supportare MessagePack
+2025-04-25 17:02:11,057 - server.utils.route_config - INFO - route_config.py:44 - Blueprint save_routes configurato per supportare MessagePack
+2025-04-25 17:02:11,058 - server.utils.route_config - INFO - route_config.py:44 - Blueprint skill_challenge_routes configurato per supportare MessagePack
+2025-04-25 17:02:11,058 - server.utils.route_config - INFO - route_config.py:44 - Blueprint combat_routes configurato per supportare MessagePack
+2025-04-25 17:02:11,058 - server.utils.route_config - INFO - route_config.py:44 - Blueprint taverna_routes configurato per supportare MessagePack
+2025-04-25 17:02:11,058 - server.utils.route_config - INFO - route_config.py:44 - Blueprint mercato_routes configurato per supportare MessagePack
+2025-04-25 17:02:11,059 - server.utils.route_config - INFO - route_config.py:44 - Blueprint scelta_mappa_routes configurato per supportare MessagePack
+2025-04-25 17:02:11,059 - server.utils.route_config - INFO - route_config.py:44 - Blueprint dialogo_routes configurato per supportare MessagePack
+2025-04-25 17:02:11,059 - server.utils.route_config - INFO - route_config.py:44 - Blueprint entity_routes configurato per supportare MessagePack
+2025-04-25 17:02:11,059 - server.utils.route_config - INFO - route_config.py:44 - Blueprint inventory_routes configurato per supportare MessagePack
+2025-04-25 17:02:11,059 - server.utils.route_config - INFO - route_config.py:44 - Blueprint mappa_routes configurato per supportare MessagePack
+2025-04-25 17:02:11,060 - server.utils.route_config - INFO - route_config.py:44 - Blueprint assets_routes configurato per supportare MessagePack
+2025-04-25 17:02:11,060 - server.utils.route_config - INFO - route_config.py:44 - Blueprint classes_routes configurato per supportare MessagePack
+2025-04-25 17:02:11,060 - server.utils.route_config - INFO - route_config.py:44 - Blueprint api_diagnostics configurato per supportare MessagePack
+2025-04-25 17:02:11,060 - server.utils.route_config - INFO - route_config.py:44 - Blueprint entity_api configurato per supportare MessagePack
+2025-04-25 17:02:11,060 - server.utils.route_config - INFO - route_config.py:44 - Blueprint api_map configurato per supportare MessagePack
+2025-04-25 17:02:11,061 - server.utils.route_config - INFO - route_config.py:44 - Blueprint health_api configurato per supportare MessagePack
+2025-04-25 17:02:11,061 - server.utils.route_config - INFO - route_config.py:44 - Blueprint combat_routes_legacy configurato per supportare MessagePack
+2025-04-25 17:02:11,061 - server.utils.route_config - INFO - route_config.py:44 - Blueprint game_api configurato per supportare MessagePack
+2025-04-25 17:02:11,061 - server.utils.route_config - INFO - route_config.py:44 - Blueprint assets_api configurato per supportare MessagePack
+2025-04-25 17:02:11,062 - server.utils.route_config - INFO - route_config.py:44 - Blueprint maps_api configurato per supportare MessagePack
+2025-04-25 17:02:11,062 - server.utils.route_config - INFO - route_config.py:44 - Blueprint sessions_api configurato per supportare MessagePack
+2025-04-25 17:02:11,062 - server.utils.route_config - INFO - route_config.py:44 - Blueprint entities_api configurato per supportare MessagePack
+2025-04-25 17:02:11,065 - server.utils.route_config - INFO - route_config.py:44 - Blueprint diagnostics_api configurato per supportare MessagePack
+2025-04-25 17:02:11,065 - server.utils.route_config - INFO - route_config.py:44 - Blueprint main_blueprint configurato per supportare MessagePack
+2025-04-25 17:02:11,065 - server.utils.route_config - INFO - route_config.py:44 - Blueprint main_routes configurato per supportare MessagePack
+2025-04-25 17:02:11,066 - server.utils.route_config - INFO - route_config.py:44 - Blueprint combat_routes configurato per supportare MessagePack
+2025-04-25 17:02:11,066 - server.utils.route_config - INFO - route_config.py:44 - Blueprint character_creation_routes configurato per supportare MessagePack
+2025-04-25 17:02:11,067 - server.utils.route_config - INFO - route_config.py:44 - Blueprint auth_routes configurato per supportare MessagePack
+2025-04-25 17:02:11,067 - server.utils.route_config - INFO - route_config.py:44 - Blueprint taverna_routes configurato per supportare MessagePack
+2025-04-25 17:02:11,067 - server.utils.route_config - INFO - route_config.py:44 - Blueprint skill_challenge_routes configurato per supportare MessagePack
+2025-04-25 17:02:11,067 - server.utils.route_config - INFO - route_config.py:44 - Blueprint api_diagnostics configurato per supportare MessagePack
+2025-04-25 17:02:11,067 - server.utils.route_config - INFO - route_config.py:44 - Blueprint health_api configurato per supportare MessagePack
+2025-04-25 17:02:11,068 - server.utils.route_config - INFO - route_config.py:44 - Blueprint base_routes configurato per supportare MessagePack
+2025-04-25 17:02:11,068 - server.utils.route_config - INFO - route_config.py:44 - Blueprint session_routes configurato per supportare MessagePack
+2025-04-25 17:02:11,068 - server.utils.route_config - INFO - route_config.py:44 - Blueprint save_routes configurato per supportare MessagePack
+2025-04-25 17:02:11,068 - server.utils.route_config - INFO - route_config.py:44 - Blueprint skill_challenge_routes configurato per supportare MessagePack
+2025-04-25 17:02:11,068 - server.utils.route_config - INFO - route_config.py:44 - Blueprint combat_routes configurato per supportare MessagePack
+2025-04-25 17:02:11,068 - server.utils.route_config - INFO - route_config.py:44 - Blueprint taverna_routes configurato per supportare MessagePack
+2025-04-25 17:02:11,069 - server.utils.route_config - INFO - route_config.py:44 - Blueprint mercato_routes configurato per supportare MessagePack
+2025-04-25 17:02:11,069 - server.utils.route_config - INFO - route_config.py:44 - Blueprint scelta_mappa_routes configurato per supportare MessagePack
+2025-04-25 17:02:11,069 - server.utils.route_config - INFO - route_config.py:44 - Blueprint dialogo_routes configurato per supportare MessagePack
+2025-04-25 17:02:11,069 - server.utils.route_config - INFO - route_config.py:44 - Blueprint entity_routes configurato per supportare MessagePack
+2025-04-25 17:02:11,069 - server.utils.route_config - INFO - route_config.py:44 - Blueprint inventory_routes configurato per supportare MessagePack
+2025-04-25 17:02:11,069 - server.utils.route_config - INFO - route_config.py:44 - Blueprint mappa_routes configurato per supportare MessagePack
+2025-04-25 17:02:11,070 - server.utils.route_config - INFO - route_config.py:44 - Blueprint classes_routes configurato per supportare MessagePack
+2025-04-25 17:02:11,070 - server.utils.route_config - INFO - route_config.py:44 - Blueprint entity_api configurato per supportare MessagePack
+2025-04-25 17:02:11,070 - server.utils.route_config - INFO - route_config.py:44 - Blueprint api_diagnostics configurato per supportare MessagePack
+2025-04-25 17:02:11,070 - server.utils.route_config - INFO - route_config.py:44 - Blueprint health_api configurato per supportare MessagePack
+2025-04-25 17:02:11,070 - server.utils.route_config - INFO - route_config.py:44 - Blueprint assets_routes configurato per supportare MessagePack
+2025-04-25 17:02:11,071 - server.utils.route_config - INFO - route_config.py:61 - Tutti i 51 blueprint configurati per supportare MessagePack
+2025-04-25 17:02:11,071 - server.utils.route_config - INFO - route_config.py:76 - Supporto MessagePack applicato a tutte le routes dell'applicazione
+2025-04-25 17:02:11,071 - server.routes - INFO - __init__.py:220 - Supporto MessagePack applicato a tutte le routes
+2025-04-25 17:02:11,071 - server.routes - INFO - __init__.py:224 - Route registrate con successo
+2025-04-25 17:02:11,072 - server.app - INFO - app.py:520 - Applicazione Flask inizializzata
+2025-04-25 17:02:11,073 - server.websocket.websocket_manager - INFO - websocket_manager.py:45 - Utilizzata istanza SocketIO esistente
+2025-04-25 17:02:11,074 - server.websocket.websocket_manager - INFO - websocket_manager.py:82 - EventBus handlers registrati per WebSocketManager
+2025-04-25 17:02:11,074 - server.app - INFO - app.py:571 - SocketIO configurato con successo utilizzando async_mode='eventlet', ping_interval=25.0s, ping_timeout=60.0s
+2025-04-25 17:02:11,074 - server.app - INFO - app.py:572 - CORS configurato per: ['http://localhost:3000', 'http://localhost:5000', 'http://127.0.0.1:3000', 'http://127.0.0.1:5000']
+2025-04-25 17:02:11,075 - server.websocket.session_auth - INFO - session_auth.py:59 - Nessun indice sessioni trovato
+2025-04-25 17:02:11,075 - server.websocket.session_auth - INFO - session_auth.py:41 - SessionAuthManager inizializzato
+2025-04-25 17:02:11,075 - server.websocket.websocket_event_bridge - INFO - websocket_event_bridge.py:130 - Istanza SocketIO impostata nel WebSocketEventBridge
+2025-04-25 17:02:11,075 - server.websocket.websocket_event_bridge - INFO - websocket_event_bridge.py:204 - Handler WebSocket inizializzati con successo
+2025-04-25 17:02:11,075 - server.app - INFO - app.py:620 - WebSocketEventBridge inizializzato correttamente 
+2025-04-25 17:02:11,076 - server.websocket.core - INFO - core.py:123 - Handler WebSocket core registrati
+2025-04-25 17:02:11,076 - server.websocket - INFO - __init__.py:33 - Handler WebSocket core registrati
+2025-04-25 17:02:11,077 - server.websocket.connection - INFO - connection.py:477 - Handler di connessione registrati
+2025-04-25 17:02:11,078 - server.websocket.connection - INFO - connection.py:502 - Task periodici di pulizia connessioni avviati
+2025-04-25 17:02:11,078 - server.websocket - INFO - __init__.py:40 - Handler WebSocket connection registrati
+2025-04-25 17:02:11,080 - server.websocket.game_events - INFO - game_events.py:133 - Handler degli eventi di gioco registrati
+2025-04-25 17:02:11,080 - server.websocket - INFO - __init__.py:47 - Handler WebSocket game_events registrati
+2025-04-25 17:02:11,082 - server.websocket.rendering - INFO - rendering.py:291 - Handler di rendering registrati
+2025-04-25 17:02:11,082 - server.websocket - INFO - __init__.py:54 - Handler WebSocket rendering registrati 
+2025-04-25 17:02:11,083 - server.websocket.audio - INFO - audio.py:76 - Handler audio registrati
+2025-04-25 17:02:11,084 - server.websocket - INFO - __init__.py:61 - Handler WebSocket audio registrati
+2025-04-25 17:02:11,085 - server.websocket.prova_abilita - INFO - prova_abilita.py:655 - Handler per prove di abilità registrati
+2025-04-25 17:02:11,085 - server.websocket - INFO - __init__.py:68 - Handler WebSocket prova_abilita registrati
+2025-04-25 17:02:11,086 - server.websocket.combattimento - INFO - combattimento.py:850 - Handler del combattimento registrati
+2025-04-25 17:02:11,087 - server.websocket.combattimento - INFO - combattimento.py:850 - Handler del combattimento registrati
+2025-04-25 17:02:11,087 - server.websocket - INFO - __init__.py:75 - Handler WebSocket combattimento registrati
+2025-04-25 17:02:11,088 - server.websocket.taverna - INFO - taverna.py:486 - Handler WebSocket della taverna registrati
+2025-04-25 17:02:11,088 - server.websocket - INFO - __init__.py:82 - Handler WebSocket taverna registrati
+2025-04-25 17:02:11,090 - server.websocket.mercato - INFO - mercato.py:584 - Handler WebSocket del mercato registrati
+2025-04-25 17:02:11,090 - server.websocket - INFO - __init__.py:89 - Handler WebSocket mercato registrati
+2025-04-25 17:02:11,092 - server.websocket.scelta_mappa - INFO - scelta_mappa.py:547 - Handler WebSocket della scelta mappa registrati
+2025-04-25 17:02:11,092 - server.websocket - INFO - __init__.py:96 - Handler WebSocket scelta_mappa registrati
+2025-04-25 17:02:11,094 - server.websocket.dialogo - INFO - dialogo.py:309 - Handler WebSocket del dialogo registrati
+2025-04-25 17:02:11,094 - server.websocket - INFO - __init__.py:103 - Handler WebSocket dialogo registrati
+2025-04-25 17:02:11,094 - server.websocket.assets - INFO - assets.py:33 - Registrazione degli handler per gli asset
+2025-04-25 17:02:11,094 - server.websocket - INFO - __init__.py:110 - Handler WebSocket assets registrati
+2025-04-25 17:02:11,095 - server.websocket - INFO - __init__.py:124 - Tutti gli handler WebSocket sono stati inizializzati
+2025-04-25 17:02:11,097 - util.sprite_sheet_manager - INFO - sprite_sheet_manager.py:64 - Caricati 0 sprite sheet con 0 sprite mappati
+2025-04-25 17:02:11,097 - util.sprite_sheet_manager - INFO - sprite_sheet_manager.py:50 - SpriteSheetManager inizializzato con percorso C:\Users\feder\OneDrive\Documenti\giochipreziosi\gioco_rpg_backend\gioco_rpg_backendonly\gioco_rpg\assets\spritesheets
+2025-04-25 17:02:11,097 - util.asset_manager - INFO - asset_manager.py:231 - Manifest caricato con successo: 4 sprites, 9 tiles
+2025-04-25 17:02:11,098 - util.asset_manager - INFO - asset_manager.py:179 - AssetManager inizializzato con percorso C:\Users\feder\OneDrive\Documenti\giochipreziosi\gioco_rpg_backend\gioco_rpg_backendonly\gioco_rpg\assets
+2025-04-25 17:02:11,098 - util.asset_manager - INFO - asset_manager.py:633 - Avvio scansione di tutti gli asset da C:\Users\feder\OneDrive\Documenti\giochipreziosi\gioco_rpg_backend\gioco_rpg_backendonly\gioco_rpg\assets
+2025-04-25 17:02:11,103 - util.asset_manager - INFO - asset_manager.py:544 - Scansione sprite completata: 4 sprite registrati da C:\Users\feder\OneDrive\Documenti\giochipreziosi\gioco_rpg_backend\gioco_rpg_backendonly\gioco_rpg\assets\sprites
+2025-04-25 17:02:11,105 - util.asset_manager - INFO - asset_manager.py:582 - Scansione tile completata: 9 tile registrati da C:\Users\feder\OneDrive\Documenti\giochipreziosi\gioco_rpg_backend\gioco_rpg_backendonly\gioco_rpg\assets\tiles
+2025-04-25 17:02:11,109 - util.asset_manager - INFO - asset_manager.py:282 - Manifest salvato con successo in C:\Users\feder\OneDrive\Documenti\giochipreziosi\gioco_rpg_backend\gioco_rpg_backendonly\gioco_rpg\assets\manifest.json
+2025-04-25 17:02:11,109 - util.asset_manager - INFO - asset_manager.py:620 - Scansione elementi UI completata: 1 elementi registrati da C:\Users\feder\OneDrive\Documenti\giochipreziosi\gioco_rpg_backend\gioco_rpg_backendonly\gioco_rpg\assets\ui
+2025-04-25 17:02:11,112 - util.asset_manager - INFO - asset_manager.py:282 - Manifest salvato con successo in C:\Users\feder\OneDrive\Documenti\giochipreziosi\gioco_rpg_backend\gioco_rpg_backendonly\gioco_rpg\assets\manifest.json
+2025-04-25 17:02:11,126 - util.asset_manager - INFO - asset_manager.py:675 - Aggiornamento completato: 14 asset totali registrati
+2025-04-25 17:02:11,126 - server.app - INFO - app.py:643 - Avvio server su 0.0.0.0:5000 (debug: True)
+2025-04-25 17:02:11,126 - server.app - INFO - app.py:647 - Utilizzando modalità asincrona: eventlet
+2025-04-25 17:02:11,127 - server.app - INFO - app.py:660 - Porta 5000 disponibile per l'uso
+2025-04-25 17:02:11,127 - werkzeug - WARNING - _internal.py:225 -  * Debugger is active!
+2025-04-25 17:02:11,132 - werkzeug - INFO - _internal.py:225 -  * Debugger PIN: 950-896-341
+(25220) wsgi starting up on http://0.0.0.0:5000
+(25220) accepted ('127.0.0.1', 53286)
+(25220) accepted ('127.0.0.1', 53287)
+2025-04-25 17:02:37,330 - server.routes.save_routes - WARNING - save_routes.py:73 - Errore nella lettura del salvataggio test_save_1coc29eb.json: 'TavernaState' object has no attribute '_handle_click_event'
+2025-04-25 17:02:37,334 - server.routes.save_routes - WARNING - save_routes.py:73 - Errore nella lettura del salvataggio test_save_71hq1slq.json: 'TavernaState' object has no attribute '_handle_click_event'
+2025-04-25 17:02:37,342 - util.data_manager - INFO - data_manager.py:122 - MessagePack disponibile e attivato per i dati di gioco
+127.0.0.1,127.0.0.1 - - [25/Apr/2025 17:02:37] "GET /game/save/elenco HTTP/1.1" 200 24067 0.146719
+2025-04-25 17:02:37,366 - server.app - INFO - app.py:394 - Route diretta /classes chiamata
+127.0.0.1,127.0.0.1 - - [25/Apr/2025 17:02:37] "GET /classes HTTP/1.1" 200 3350 0.002704
+(25220) accepted ('127.0.0.1', 53291)
+2025-04-25 17:02:37,448 - server.routes.save_routes - WARNING - save_routes.py:73 - Errore nella lettura del salvataggio test_save_1coc29eb.json: 'TavernaState' object has no attribute '_handle_click_event'
+2025-04-25 17:02:37,452 - server.routes.save_routes - WARNING - save_routes.py:73 - Errore nella lettura del salvataggio test_save_71hq1slq.json: 'TavernaState' object has no attribute '_handle_click_event'
+127.0.0.1,127.0.0.1 - - [25/Apr/2025 17:02:37] "GET /game/save/elenco HTTP/1.1" 200 24067 0.102308
+(25220) accepted ('127.0.0.1', 53295)
+(25220) accepted ('127.0.0.1', 53299)
+2025-04-25 17:02:38,333 - server.app - INFO - app.py:394 - Route diretta /classes chiamata
+127.0.0.1,127.0.0.1 - - [25/Apr/2025 17:02:38] "GET /classes HTTP/1.1" 200 3350 0.001356
+2025-04-25 17:02:38,340 - server.websocket.connection - INFO - connection.py:45 - Nuovo client connesso: cAK19v4i6peVEtVYAAAB
+2025-04-25 17:02:38,340 - server.websocket.connection - INFO - connection.py:50 - Dettagli connessione - Client: cAK19v4i6peVEtVYAAAB, Transport: Unknown, User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36
+2025-04-25 17:02:38,340 - server.websocket.connection - INFO - connection.py:69 - Socket.IO info: {"id": "cAK19v4i6peVEtVYAAAB", "async_mode": "eventlet", "transport": "Unknown", "protocol_version": "13"} 

@@ -537,43 +537,63 @@ def create_socketio(app):
     try:
         # Configurazione ottimizzata per WebSocket con Eventlet
         # I valori ping_timeout e ping_interval sono cruciali per evitare disconnessioni premature
-        ping_timeout = 60000  # Aumentato a 60 secondi
-        ping_interval = 25000 # Mantenuto a 25 secondi
+        ping_timeout = 60000  # 60 secondi
+        ping_interval = 25000 # 25 secondi
         
         # Configura CORS per supportare completamente WebSocket
-        cors_allowed = ["http://localhost:3000", "http://localhost:5000", "http://127.0.0.1:3000", "http://127.0.0.1:5000"]
+        cors_allowed = [
+            "http://localhost:3000", 
+            "http://localhost:3001", 
+            "http://localhost:5000", 
+            "http://127.0.0.1:3000", 
+            "http://127.0.0.1:3001",
+            "http://127.0.0.1:5000",
+            # Aggiungi qui altri domini consentiti se necessario
+        ]
         
-        socketio = SocketIO(
-            app, 
-            cors_allowed_origins=cors_allowed, 
-            async_mode='eventlet',  # Usa eventlet per supportare WebSocket nativo
-            ping_timeout=ping_timeout,       # 60 secondi di timeout per evitare disconnessioni premature
-            ping_interval=ping_interval,     # 25 secondi tra ping per un bilanciamento ottimale
-            always_connect=True,    # Tentativo di connessione immediato
-            manage_session=False,   # Gestisci le sessioni manualmente per maggior controllo
-            transports=['websocket', 'polling'],  # Preferisci WebSocket, fallback su polling
-            engineio_logger=True if app.debug else False,  # Log dettagliati solo in debug
-            logger=True if app.debug else False  # Logging di Flask-SocketIO
-        )
+        # Importazione ritardata per evitare importazioni circolari
+        from flask_socketio import SocketIO
+        
+        # Verifica se è già presente un'istanza globale
+        global_socketio = getattr(app, '_socketio_instance', None)
+        
+        if global_socketio:
+            logger.info("Riutilizzo istanza SocketIO globale esistente")
+            socketio = global_socketio
+        else:
+            logger.info("Creazione nuova istanza SocketIO globale con parametri ottimali")
+            socketio = SocketIO(
+                app, 
+                cors_allowed_origins=cors_allowed, 
+                async_mode='eventlet',
+                ping_timeout=ping_timeout,      
+                ping_interval=ping_interval,
+                always_connect=True,
+                manage_session=False,
+                transports=['websocket', 'polling'],
+                engineio_logger=True if app.debug else False,
+                logger=True if app.debug else False
+            )
+            
+            # Salva il riferimento globale
+            app._socketio_instance = socketio
         
         # Configura il websocket_manager nell'app per accesso futuro
+        from server.websocket.websocket_manager import WebSocketManager
         websocket_manager = WebSocketManager(app, socketio)
         app.websocket_manager = websocket_manager
         
-        # NON inizializzare gli handler websocket qui
-        # Gli handler verranno inizializzati nella funzione setup() dove è disponibile il renderer
-        
         # Configura il socketio nel modulo di sessione
+        from server.utils.session import set_socketio
         set_socketio(socketio)
         
         # Registra CORS per supportare WebSocket
         app.config['CORS_HEADERS'] = 'Content-Type, Authorization'
-        logger.info(f"SocketIO configurato con successo utilizzando async_mode='eventlet', ping_interval={ping_interval/1000}s, ping_timeout={ping_timeout/1000}s")
-        logger.info(f"CORS configurato per: {cors_allowed}")
+        
         return socketio
     except Exception as e:
-        logger.error(f"Errore nella configurazione di SocketIO: {str(e)}")
-        raise e
+        logger.error(f"Errore durante la creazione dell'istanza SocketIO: {e}")
+        raise
 
 def setup():
     """

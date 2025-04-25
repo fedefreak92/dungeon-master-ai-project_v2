@@ -6,6 +6,7 @@ import GameMapScreen from './game/screens/GameMapScreen';
 import { sessionApi, saveApi, classesApi, playerApi } from './api/gameApi';
 import { GameStateProvider } from './hooks/useGameState';
 import MapDebugTool from './components/game/MapDebugTool';
+import { SocketProvider, useSocket } from './contexts/SocketContext';
 import './App.css';
 
 // Componente interno che utilizza il contesto di gioco
@@ -18,8 +19,13 @@ function GameContent() {
     error 
   } = state;
   
+  // Accesso al contesto del socket
+  const { connectSocket, socketReady, connectionState, on, off } = useSocket();
+  
   // Stato per il debug tool
   const [showDebugTool, setShowDebugTool] = useState(false);
+  // Stato per indicare che la mappa è pronta e può essere visualizzata
+  const [mappaPronta, setMappaPronta] = useState(false);
   
   // Attiva il debug tool con combinazione di tasti (Ctrl + Alt + D)
   useEffect(() => {
@@ -62,6 +68,73 @@ function GameContent() {
     fetchClasses();
   }, [dispatch]);
   
+  // Inizializza la connessione socket quando cambia la sessione
+  useEffect(() => {
+    // Riferimento per controllare se la connessione è già stata tentata
+    const shouldConnect = sessionId && !socketReady && !connectionState.connecting;
+    
+    if (!shouldConnect) {
+      return; // Non tentare di connettersi se non necessario
+    }
+    
+    // Crea una funzione per tentare la connessione
+    const connectToSocket = async () => {
+      console.log('Tentativo di connessione al socket con sessionId:', sessionId);
+      
+      try {
+        // Tenta di connettersi con l'ID sessione
+        await connectSocket(sessionId);
+        console.log('Socket connesso con successo');
+      } catch (err) {
+        console.error('Errore nella connessione socket:', err);
+        dispatch({ 
+          type: 'SET_ERROR', 
+          payload: 'Errore di connessione al server: ' + (err.message || 'Errore sconosciuto') 
+        });
+      }
+    };
+    
+    // Esegui la connessione solo se necessario
+    connectToSocket();
+    
+  }, [sessionId, connectSocket, dispatch, socketReady, connectionState.connecting]);
+  
+  // Registra il listener per l'evento map_change_complete
+  useEffect(() => {
+    if (!socketReady) {
+      // Non registrare il listener se il socket non è pronto
+      console.log('Socket non pronto, non registro listener map_change_complete');
+      return;
+    }
+    
+    console.log('Registrazione listener map_change_complete sul socket (socket pronto)');
+    
+    // Handler per l'evento map_change_complete
+    function handleMapChangeComplete(data) {
+      console.log('Evento map_change_complete ricevuto:', data);
+      
+      // Aggiorna stato globale con la nuova mappa e posizione
+      if (data.mapId) {
+        dispatch({ type: 'SET_MAP', payload: data.mapId });
+      }
+      
+      // Segnala che la mappa è pronta
+      setMappaPronta(true);
+      
+      // Cambia lo stato del gioco a 'map'
+      dispatch({ type: 'SET_GAME_STATE', payload: 'map' });
+    };
+    
+    // Registra il listener sull'evento map_change_complete
+    on('map_change_complete', handleMapChangeComplete);
+    
+    // Cleanup
+    return () => {
+      console.log('Rimozione listener map_change_complete');
+      off('map_change_complete', handleMapChangeComplete);
+    };
+  }, [socketReady, dispatch, on, off]);
+  
   // Carica le informazioni sul giocatore quando cambia la sessione
   useEffect(() => {
     async function fetchPlayerInfo() {
@@ -94,7 +167,9 @@ function GameContent() {
   useEffect(() => {
     console.log('Stato corrente del gioco:', gameState);
     console.log('Session ID:', sessionId);
-  }, [gameState, sessionId]);
+    console.log('Socket pronto:', socketReady);
+    console.log('Stato connessione:', connectionState);
+  }, [gameState, sessionId, socketReady, connectionState]);
   
   // Gestisce l'avvio di una nuova partita
   const handleStartNewGame = async (playerName, playerClass) => {
@@ -191,6 +266,7 @@ function GameContent() {
   const handleBackToMainMenu = () => {
     dispatch({ type: 'SET_GAME_STATE', payload: 'start-screen' });
     dispatch({ type: 'CLEAR_ERROR' });
+    setMappaPronta(false);
   };
   
   // Rendering condizionale in base allo stato del gioco
@@ -204,7 +280,7 @@ function GameContent() {
         />
       ) : gameState === 'map-select' ? (
         <div className="map-select-wrapper">
-          <MapSelectState />
+          <MapSelectState socketReady={socketReady} />
           {loading && <div className="global-loading-overlay">Comunicazione con il server in corso...</div>}
           {error && (
             <div className="global-error-overlay">
@@ -217,10 +293,26 @@ function GameContent() {
           )}
         </div>
       ) : gameState === 'map' ? (
-        <GameMapScreen
-          onSaveGame={handleSaveGame}
-          onBackToMainMenu={handleBackToMainMenu}
-        />
+        <>
+          {(socketReady && mappaPronta) ? (
+            <GameMapScreen
+              onSaveGame={handleSaveGame}
+              onBackToMainMenu={handleBackToMainMenu}
+              socketReady={socketReady}
+            />
+          ) : (
+            <div className="loading-map-container">
+              <div className="loading-spinner"></div>
+              <p>Caricamento mappa in corso...</p>
+              {connectionState.error && (
+                <div className="connection-error">
+                  <p>Errore di connessione: {connectionState.error}</p>
+                  <button onClick={handleBackToMainMenu}>Torna al menu principale</button>
+                </div>
+              )}
+            </div>
+          )}
+        </>
       ) : (
         <div className="unknown-state">
           <h2>Stato non riconosciuto: {gameState}</h2>
@@ -255,13 +347,15 @@ function GameContent() {
  */
 function App() {
   return (
-    <GameStateProvider>
-      <GameProvider>
-        <div className="app-container">
-          <GameContent />
-        </div>
-      </GameProvider>
-    </GameStateProvider>
+    <SocketProvider>
+      <GameStateProvider>
+        <GameProvider>
+          <div className="app-container">
+            <GameContent />
+          </div>
+        </GameProvider>
+      </GameStateProvider>
+    </SocketProvider>
   );
 }
 
