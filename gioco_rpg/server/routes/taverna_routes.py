@@ -1,6 +1,8 @@
 from flask import Blueprint, request, jsonify
 from server.utils.session import get_session, salva_sessione
 import logging
+from core.event_bus import EventBus
+from core.events import EventType
 
 # Configura il logger
 logger = logging.getLogger(__name__)
@@ -53,7 +55,18 @@ def interagisci_oggetto():
     if oggetto_id not in taverna_state.oggetti_interattivi:
         return jsonify({"success": False, "error": "Oggetto non trovato"}), 404
     
-    # Esegui l'interazione con l'oggetto
+    # Ottieni EventBus
+    event_bus = EventBus.get_instance()
+    
+    # Emetti evento di interazione
+    event_bus.emit(EventType.PLAYER_INTERACT, 
+                  player_id=sessione.giocatore.id,
+                  target_id=oggetto_id,
+                  target_type="object",
+                  interaction_type="interact",
+                  map_id="taverna")
+    
+    # Per retrocompatibilità
     oggetto = taverna_state.oggetti_interattivi[oggetto_id]
     risultato = oggetto.interagisci()
     
@@ -89,16 +102,35 @@ def dialoga_npg():
     if npg_nome not in taverna_state.npg_presenti:
         return jsonify({"success": False, "error": "NPG non trovato"}), 404
     
-    # Accedi all'NPG e gestisci il dialogo
+    # Ottieni EventBus
+    event_bus = EventBus.get_instance()
+    
+    # Accedi all'NPG
     npg = taverna_state.npg_presenti[npg_nome]
     
     # Se è una nuova conversazione
     if not opzione_scelta:
+        # Emetti evento di dialogo aperto
+        event_bus.emit(EventType.DIALOG_OPEN, 
+                      player_id=sessione.giocatore.id,
+                      npc_id=npg_nome,
+                      dialog_type="taverna",
+                      map_id="taverna")
+        
+        # Per retrocompatibilità
         taverna_state.nome_npg_attivo = npg_nome
         taverna_state.stato_conversazione = "inizio"
         dialogo = npg.avvia_dialogo()
     else:
-        # Continua la conversazione con la scelta corrente
+        # Emetti evento di scelta dialogo
+        event_bus.emit(EventType.DIALOG_CHOICE, 
+                      player_id=sessione.giocatore.id,
+                      npc_id=npg_nome,
+                      choice=opzione_scelta,
+                      dialog_type="taverna",
+                      map_id="taverna")
+        
+        # Per retrocompatibilità
         dialogo = npg.continua_dialogo(opzione_scelta)
         taverna_state.ultimo_input = opzione_scelta
     
@@ -130,7 +162,18 @@ def gestisci_menu():
     if not taverna_state:
         return jsonify({"success": False, "error": "Stato taverna non disponibile"}), 404
     
-    # Gestisci l'interazione con il menu
+    # Ottieni EventBus
+    event_bus = EventBus.get_instance()
+    
+    # Emetti evento di interazione menu
+    event_bus.emit(EventType.UI_UPDATE, 
+                  player_id=sessione.giocatore.id,
+                  ui_element="menu",
+                  menu_id=menu_id,
+                  choice=scelta if scelta else None,
+                  map_id="taverna")
+    
+    # Per retrocompatibilità
     taverna_state.fase = menu_id
     
     if scelta:
@@ -175,6 +218,9 @@ def gestisci_movimento():
     if direzione not in taverna_state.direzioni:
         return jsonify({"success": False, "error": "Direzione non valida"}), 400
     
+    # Ottieni EventBus
+    event_bus = EventBus.get_instance()
+    
     # Ottieni la mappa della taverna e il giocatore
     mappa = sessione.gestore_mappe.ottieni_mappa("taverna")
     giocatore = sessione.giocatore
@@ -186,6 +232,16 @@ def gestisci_movimento():
     
     # Verifica se il movimento è valido
     if mappa.is_valid_position(nuova_x, nuova_y):
+        # Emetti evento di movimento
+        event_bus.emit(EventType.PLAYER_MOVE, 
+                      player_id=giocatore.id,
+                      entity_id=giocatore.id,
+                      entity_type="player",
+                      from_position=(x, y),
+                      position=(nuova_x, nuova_y),
+                      map_id="taverna")
+        
+        # Per retrocompatibilità
         giocatore.imposta_posizione("taverna", nuova_x, nuova_y)
         
         # Verifica se ci sono eventi nella nuova posizione
@@ -200,6 +256,14 @@ def gestisci_movimento():
             "evento": evento
         })
     else:
+        # Emetti evento di movimento bloccato
+        event_bus.emit(EventType.MOVEMENT_BLOCKED,
+                      player_id=giocatore.id,
+                      reason="obstacle",
+                      position=(x, y),
+                      direction=direzione,
+                      map_id="taverna")
+        
         return jsonify({
             "success": False, 
             "error": "Movimento non valido"
@@ -225,8 +289,20 @@ def transizione_stato():
     if not taverna_state:
         return jsonify({"success": False, "error": "Stato taverna non disponibile"}), 404
     
+    # Ottieni EventBus
+    event_bus = EventBus.get_instance()
+    
+    # Emetti evento di cambio stato
+    event_bus.emit(EventType.CHANGE_STATE, 
+                  session_id=id_sessione,
+                  player_id=sessione.giocatore.id,
+                  current_state="taverna",
+                  target_state=stato_destinazione,
+                  params=parametri)
+    
     # Esegui la transizione verso il nuovo stato
     try:
+        # Per retrocompatibilità
         sessione.change_state(stato_destinazione, parametri)
         
         # Salva la sessione aggiornata

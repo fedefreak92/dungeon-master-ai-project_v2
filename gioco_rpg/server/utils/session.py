@@ -7,6 +7,7 @@ from uuid import uuid4
 import json
 from datetime import datetime
 from pathlib import Path
+from data.mappe import get_mappa
 
 # Configura il logger
 logging.basicConfig(level=logging.INFO)
@@ -57,7 +58,9 @@ def get_session(id_sessione):
             # Tentativo di riparazione automatica se non ci sono giocatori
             if len(player_entities) == 0:
                 logger.warning(f"Sessione {id_sessione} senza entità giocatore, tentativo di riparazione automatica")
-                risolvi_problemi_sessione(id_sessione)
+                # Rimuovo la chiamata a risolvi_problemi_sessione per evitare la ricorsione infinita
+                # Implemento direttamente la logica di riparazione qui
+                riparazione_diretta(world)
                 # Verifica di nuovo
                 player_entities = world.find_entities_by_tag("player") if hasattr(world, "find_entities_by_tag") else []
                 logger.info(f"Entità con tag 'player' dopo riparazione: {len(player_entities)}")
@@ -83,7 +86,9 @@ def get_session(id_sessione):
             # Tentativo di riparazione automatica se non ci sono giocatori
             if len(player_entities) == 0:
                 logger.warning(f"Sessione caricata {id_sessione} senza entità giocatore, tentativo di riparazione automatica")
-                risolvi_problemi_sessione(id_sessione)
+                # Rimuovo la chiamata a risolvi_problemi_sessione per evitare la ricorsione infinita
+                # Implemento direttamente la logica di riparazione qui
+                riparazione_diretta(world)
                 # Verifica di nuovo
                 player_entities = world.find_entities_by_tag("player") if hasattr(world, "find_entities_by_tag") else []
                 logger.info(f"Entità con tag 'player' dopo riparazione: {len(player_entities)}")
@@ -101,6 +106,40 @@ def salva_sessione(id_sessione, world):
         if player_entities:
             logger.info(f"Giocatore presente con ID: {player_entities[0].id}, nome: {player_entities[0].name}")
         
+        # Ottieni percorsi come oggetti Path
+        session_path = Path(get_session_path(id_sessione))
+        msgpack_session_path = session_path.with_suffix('.msgpack')
+        temp_session_path = session_path.with_suffix(session_path.suffix + ".tmp")
+        temp_msgpack_session_path = msgpack_session_path.with_suffix(msgpack_session_path.suffix + ".tmp")
+        
+        # Crea la directory delle sessioni se non esiste
+        session_dir = session_path.parent
+        session_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Salvataggio usando MessagePack (più veloce)
+        try:
+            # Serializza il mondo ECS con MessagePack
+            world_data_msgpack = world.serialize_msgpack()
+            
+            # Scrivi i dati serializzati nel file temporaneo
+            with open(temp_msgpack_session_path, 'wb') as f:
+                f.write(world_data_msgpack)
+            
+            # Rinomina il file temporaneo per rendere l'operazione atomica
+            if os.path.exists(msgpack_session_path):
+                os.remove(msgpack_session_path)
+            os.rename(temp_msgpack_session_path, msgpack_session_path)
+            
+            logger.info(f"Sessione {id_sessione} salvata con MessagePack in {msgpack_session_path}")
+            return True
+        except Exception as e:
+            logger.error(f"Errore nel salvataggio MessagePack della sessione {id_sessione}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            
+            # Fallback su JSON in caso di errore con MessagePack
+            logger.warning(f"Tentativo di fallback su JSON per la sessione {id_sessione}")
+            
         # Serializza il mondo ECS
         world_data = world.serialize()
         
@@ -111,14 +150,6 @@ def salva_sessione(id_sessione, world):
                 if "tags" in entity_data and "player" in entity_data["tags"]:
                     player_ids.append(entity_id)
             logger.info(f"Giocatori nei dati serializzati: {len(player_ids)}")
-        
-        # Ottieni percorsi come oggetti Path
-        session_path = Path(get_session_path(id_sessione))
-        temp_session_path = session_path.with_suffix(session_path.suffix + ".tmp")
-        
-        # Crea la directory delle sessioni se non esiste
-        session_dir = session_path.parent
-        session_dir.mkdir(parents=True, exist_ok=True)
         
         # Verifica che il dizionario sia JSON-serializzabile
         try:
@@ -134,71 +165,20 @@ def salva_sessione(id_sessione, world):
                 "temporary_states": {}
             }
         
-        # Salva come JSON (più robusto di pickle)
-        try:
-            # Approccio diretto con Path
-            temp_session_path.write_text(json.dumps(world_data, indent=2, ensure_ascii=False), encoding='utf-8')
-        except Exception as write_error:
-            # Fallback all'approccio tradizionale
-            logger.warning(f"Errore con approccio Path: {write_error}, utilizzo metodo tradizionale")
-            with open(str(temp_session_path), 'w', encoding='utf-8') as f:
-                json.dump(world_data, f, indent=2, ensure_ascii=False)
-                f.flush()  # Assicura che i dati vengano scritti sul disco
+        # Scrivi i dati serializzati nel file temporaneo
+        with open(temp_session_path, 'w') as f:
+            json.dump(world_data, f)
         
-        logger.info(f"Dati serializzati salvati in {temp_session_path}")
+        # Rinomina il file temporaneo per rendere l'operazione atomica
+        if os.path.exists(session_path):
+            os.remove(session_path)
+        os.rename(temp_session_path, session_path)
         
-        # Verifica che il file temporaneo esista
-        if not temp_session_path.exists():
-            logger.error(f"File temporaneo {temp_session_path} non esiste dopo il salvataggio")
-            # Tenta un approccio alternativo
-            try:
-                with open(str(temp_session_path), 'w', encoding='utf-8') as f:
-                    json.dump(world_data, f, indent=2, ensure_ascii=False)
-                    f.flush()
-                logger.info(f"Secondo tentativo di salvataggio completato")
-            except Exception as e2:
-                logger.error(f"Anche il secondo tentativo di salvataggio è fallito: {e2}")
-                return False
-            
-            # Verifica di nuovo
-            if not os.path.exists(str(temp_session_path)):
-                logger.error(f"Impossibile creare il file temporaneo anche al secondo tentativo")
-                return False
+        logger.info(f"Sessione {id_sessione} salvata con successo")
+        return True
         
-        # Se il file principale esiste, creane un backup
-        if session_path.exists():
-            backup_path = session_path.with_suffix(session_path.suffix + ".bak")
-            try:
-                import shutil
-                shutil.copy2(str(session_path), str(backup_path))
-            except Exception as e:
-                logger.warning(f"Impossibile creare backup della sessione {id_sessione}: {e}")
-        
-        # Rinomina il file temporaneo nel file principale (operazione atomica)
-        try:
-            if os.name == 'nt':  # Windows
-                # Windows richiede di rimuovere il file di destinazione prima
-                if session_path.exists():
-                    session_path.unlink()
-                os.rename(str(temp_session_path), str(session_path))
-            else:  # Unix/Linux/Mac
-                os.rename(str(temp_session_path), str(session_path))
-            
-            logger.info(f"Sessione {id_sessione} salvata con successo")
-            return True
-        except Exception as rename_error:
-            logger.error(f"Errore nella rinomina del file temporaneo: {rename_error}")
-            # Tentativo di copia diretta se la rinomina fallisce
-            try:
-                import shutil
-                shutil.copy2(str(temp_session_path), str(session_path))
-                logger.info(f"Copia diretta del file riuscita come fallback")
-                return True
-            except Exception as copy_error:
-                logger.error(f"Anche la copia diretta è fallita: {copy_error}")
-                return False
     except Exception as e:
-        logger.error(f"Errore nel salvataggio della sessione {id_sessione}: {e}")
+        logger.error(f"Errore generale nel salvataggio della sessione {id_sessione}: {e}")
         import traceback
         logger.error(traceback.format_exc())
         return False
@@ -206,16 +186,29 @@ def salva_sessione(id_sessione, world):
 def carica_sessione(id_sessione):
     """Carica lo stato del mondo ECS"""
     try:
-        session_path = get_session_path(id_sessione)
-        if not os.path.exists(session_path):
-            # Verifica se esiste un backup
-            backup_path = f"{session_path}.bak"
-            if os.path.exists(backup_path):
-                logger.warning(f"Sessione {id_sessione} non trovata, uso il backup")
-                session_path = backup_path
-            else:
-                logger.warning(f"Sessione {id_sessione} non trovata")
-                return None
+        session_path = Path(get_session_path(id_sessione))
+        msgpack_session_path = session_path.with_suffix('.msgpack')
+        
+        # Tenta prima di caricare da MessagePack (più veloce)
+        if msgpack_session_path.exists():
+            try:
+                # Leggi il file MessagePack
+                with open(msgpack_session_path, 'rb') as f:
+                    data_bytes = f.read()
+                
+                # Deserializza il mondo ECS da MessagePack
+                world = World.deserialize_msgpack(data_bytes)
+                logger.info(f"Sessione {id_sessione} caricata da MessagePack con successo")
+                return world
+            except Exception as e:
+                logger.error(f"Errore nel caricamento MessagePack della sessione {id_sessione}: {e}")
+                logger.warning(f"Tentativo fallback su JSON per la sessione {id_sessione}")
+                # Continua con il caricamento da JSON in caso di errore
+        
+        # Caricamento tradizionale da JSON
+        if not session_path.exists():
+            logger.warning(f"File di sessione {session_path} non trovato")
+            return None
         
         # Prova prima con JSON (nuovo formato preferito)
         try:
@@ -424,6 +417,54 @@ def valida_input(valore, tipo_atteso, nome_campo=None, lunghezza_max=None, valor
     
     return valore 
 
+def riparazione_diretta(world):
+    """
+    Implementa direttamente la logica di riparazione per evitare la ricorsione
+    
+    Args:
+        world: Il mondo ECS da riparare
+    
+    Returns:
+        bool: True se la riparazione ha avuto successo, False altrimenti
+    """
+    giocatore_trovato = False
+    
+    # Cerca per nome
+    for entity in world.entities.values():
+        if entity.name.lower() in ["player", "giocatore"]:
+            logger.info(f"Trovata potenziale entità giocatore dal nome: {entity.name} (ID: {entity.id})")
+            entity.add_tag("player")
+            # Aggiorna anche il dizionario entities_by_tag
+            if "player" not in world.entities_by_tag:
+                world.entities_by_tag["player"] = set()
+            world.entities_by_tag["player"].add(entity)
+            giocatore_trovato = True
+            break
+    
+    # Cerca per attributi se non ancora trovato
+    if not giocatore_trovato:
+        for entity in world.entities.values():
+            # Controlla se ha attributi tipici del giocatore
+            if (hasattr(entity, "livello") or 
+                hasattr(entity, "classe") or 
+                hasattr(entity, "hp") or 
+                hasattr(entity, "mappa_corrente")):
+                logger.info(f"Trovata potenziale entità giocatore dagli attributi: {entity.name} (ID: {entity.id})")
+                entity.add_tag("player")
+                # Aggiorna anche il dizionario entities_by_tag
+                if "player" not in world.entities_by_tag:
+                    world.entities_by_tag["player"] = set()
+                world.entities_by_tag["player"].add(entity)
+                giocatore_trovato = True
+                break
+    
+    if giocatore_trovato:
+        logger.info("Riparazione diretta completata: entità giocatore recuperata e tag aggiunto")
+        return True
+    else:
+        logger.error("Riparazione diretta fallita: nessuna entità giocatore identificabile trovata")
+        return False
+
 def risolvi_problemi_sessione(id_sessione):
     """
     Analizza e risolve problemi comuni nelle sessioni, come l'entità giocatore mancante
@@ -436,13 +477,16 @@ def risolvi_problemi_sessione(id_sessione):
     """
     logger.info(f"Analisi e riparazione della sessione {id_sessione}")
     
-    # Ottieni la sessione
-    world = get_session(id_sessione)
+    # Ottieni la sessione SENZA utilizzare get_session per evitare ricorsione
+    world = sessioni_attive.get(id_sessione)
+    if not world:
+        world = carica_sessione(id_sessione)
+        if world:
+            sessioni_attive[id_sessione] = world
+    
     if not world:
         logger.error(f"Impossibile trovare la sessione {id_sessione}")
         return False
-    
-    riparazione_necessaria = False
     
     # Verifica se world contiene un giocatore
     player_entities = world.find_entities_by_tag("player") if hasattr(world, "find_entities_by_tag") else []
@@ -450,40 +494,12 @@ def risolvi_problemi_sessione(id_sessione):
     
     if not player_entities:
         logger.warning(f"Nessuna entità con tag 'player' trovata nella sessione {id_sessione}, avvio procedura di riparazione")
-        riparazione_necessaria = True
         
-        # Cerca entità che potrebbero essere il giocatore ma senza tag
-        giocatore_trovato = False
-        
-        # Cerca per nome
-        for entity in world.entities.values():
-            if entity.name.lower() in ["player", "giocatore"]:
-                logger.info(f"Trovata potenziale entità giocatore dal nome: {entity.name} (ID: {entity.id})")
-                entity.add_tag("player")
-                # Aggiorna anche il dizionario entities_by_tag
-                world.entities_by_tag["player"].add(entity)
-                giocatore_trovato = True
-                break
-        
-        # Cerca per attributi se non ancora trovato
-        if not giocatore_trovato:
-            for entity in world.entities.values():
-                # Controlla se ha attributi tipici del giocatore
-                if (hasattr(entity, "livello") or 
-                    hasattr(entity, "classe") or 
-                    hasattr(entity, "hp") or 
-                    hasattr(entity, "mappa_corrente")):
-                    logger.info(f"Trovata potenziale entità giocatore dagli attributi: {entity.name} (ID: {entity.id})")
-                    entity.add_tag("player")
-                    # Aggiorna anche il dizionario entities_by_tag
-                    world.entities_by_tag["player"].add(entity)
-                    giocatore_trovato = True
-                    break
+        # Utilizza la funzione di riparazione diretta
+        giocatore_trovato = riparazione_diretta(world)
         
         # Se la riparazione automatica ha avuto successo
         if giocatore_trovato:
-            logger.info("Riparazione automatica completata: entità giocatore recuperata e tag aggiunto")
-            
             # Verifica il risultato della riparazione
             player_entities_after = world.find_entities_by_tag("player")
             logger.info(f"Entità con tag 'player' dopo la riparazione: {len(player_entities_after)}")
@@ -500,8 +516,390 @@ def risolvi_problemi_sessione(id_sessione):
             return False
     
     # Se non era necessaria alcuna riparazione
-    if not riparazione_necessaria:
-        logger.info(f"Nessuna riparazione necessaria per la sessione {id_sessione}")
-        return True
+    logger.info(f"Nessuna riparazione necessaria per la sessione {id_sessione}")
+    return True 
+
+class SessionManager:
+    """
+    Manager centralizzato per le sessioni di gioco.
+    Supporta le richieste asincrone con ID univoci.
+    """
+    def __init__(self):
+        # Riferimento alle sessioni attive esistenti
+        self._sessioni = sessioni_attive
+    
+    def get_session(self, id_sessione):
+        """
+        Ottiene una sessione di gioco identificata dall'ID.
         
-    return False 
+        Args:
+            id_sessione (str): ID della sessione
+            
+        Returns:
+            SessionWrapper: Wrapper della sessione o None se non trovata
+        """
+        world = get_session(id_sessione)
+        if world:
+            return SessionWrapper(id_sessione, world)
+        return None
+    
+    def create_session(self):
+        """
+        Crea una nuova sessione di gioco.
+        
+        Returns:
+            SessionWrapper: Wrapper della nuova sessione
+        """
+        id_sessione = str(uuid4())
+        world = World()
+        sessioni_attive[id_sessione] = world
+        return SessionWrapper(id_sessione, world)
+    
+    def delete_session(self, id_sessione):
+        """
+        Elimina una sessione di gioco.
+        
+        Args:
+            id_sessione (str): ID della sessione da eliminare
+            
+        Returns:
+            bool: True se l'eliminazione è riuscita, False altrimenti
+        """
+        if id_sessione in sessioni_attive:
+            del sessioni_attive[id_sessione]
+            try:
+                # Elimina anche il file su disco
+                session_path = Path(get_session_path(id_sessione))
+                if session_path.exists():
+                    session_path.unlink()
+                return True
+            except Exception as e:
+                logger.error(f"Errore nell'eliminazione del file di sessione: {e}")
+                return False
+        return False
+    
+    def get_active_sessions(self):
+        """
+        Ottiene la lista delle sessioni attive.
+        
+        Returns:
+            list: Lista degli ID delle sessioni attive
+        """
+        return list(sessioni_attive.keys())
+
+
+class SessionWrapper:
+    """
+    Wrapper per una sessione di gioco che fornisce metodi di alto livello
+    per interagire con il mondo ECS e supportare le richieste asincrone.
+    """
+    def __init__(self, id_sessione, world):
+        self.id_sessione = id_sessione
+        self.world = world
+    
+    def get_map_data(self, map_id=None):
+        """
+        Ottiene i dati di una mappa.
+        
+        Args:
+            map_id (str, optional): ID della mappa. Se None, restituisce la mappa corrente.
+            
+        Returns:
+            dict: Dati della mappa
+        """
+        try:
+            # Se map_id è None, cerca la mappa corrente
+            if map_id is None:
+                # Cerca nel FSM lo stato corrente
+                if hasattr(self.world, "fsm") and self.world.fsm:
+                    current_state = self.world.fsm.current_state
+                    if hasattr(current_state, "map_id"):
+                        map_id = current_state.map_id
+                
+                # Se ancora non abbiamo un ID, prova a cercarlo nel giocatore
+                if not map_id:
+                    player_entities = self.world.find_entities_by_tag("player")
+                    if player_entities and hasattr(player_entities[0], "current_map"):
+                        map_id = player_entities[0].current_map
+            
+            # Se ancora non abbiamo trovato un ID, usa la mappa di default
+            if not map_id:
+                map_id = "taverna"  # Mappa predefinita
+            
+            # Carica i dati della mappa (adatta questo alla tua implementazione)
+            if hasattr(self.world, "get_map_data"):
+                # Usa il metodo del mondo se esiste
+                return self.world.get_map_data(map_id)
+            else:
+                # Implementazione di fallback
+                map_data = get_mappa(map_id)
+                
+                # Aggiungi le entità presenti sulla mappa
+                if map_data:
+                    map_data["entities"] = self._get_entities_for_map(map_id)
+                
+                return map_data
+                
+        except Exception as e:
+            logger.error(f"Errore nell'ottenimento dei dati della mappa {map_id}: {e}")
+            return {
+                "error": True,
+                "message": f"Errore nel caricamento della mappa: {str(e)}"
+            }
+    
+    def get_game_state(self):
+        """
+        Ottiene lo stato completo del gioco.
+        
+        Returns:
+            dict: Stato del gioco
+        """
+        try:
+            # Ottieni il giocatore
+            player_entities = self.world.find_entities_by_tag("player")
+            if not player_entities:
+                raise ValueError("Nessuna entità giocatore trovata nella sessione")
+            
+            player = player_entities[0]
+            
+            # Costruisci lo stato di gioco
+            game_state = {
+                "sessionId": self.id_sessione,
+                "player": {
+                    "id": str(player.id),
+                    "name": player.name if hasattr(player, "name") else "Giocatore",
+                    "level": player.level if hasattr(player, "level") else 1,
+                    "hp": player.hp if hasattr(player, "hp") else 100,
+                    "max_hp": player.max_hp if hasattr(player, "max_hp") else 100,
+                    "exp": player.exp if hasattr(player, "exp") else 0
+                },
+                "currentMap": player.current_map if hasattr(player, "current_map") else None,
+                "player_position": {
+                    "x": player.x if hasattr(player, "x") else 0,
+                    "y": player.y if hasattr(player, "y") else 0
+                },
+                "inventory": self._get_player_inventory(player),
+                "quests": self._get_player_quests(player),
+                "stats": self._get_player_stats(player),
+                "entities": self._get_visible_entities(player)
+            }
+            
+            # Aggiungi info sullo stato corrente FSM
+            if hasattr(self.world, "fsm") and self.world.fsm:
+                current_state = self.world.fsm.current_state
+                game_state["fsm"] = {
+                    "current_state": current_state.__class__.__name__ if current_state else None,
+                    "previous_state": self.world.fsm.previous_state.__class__.__name__ if self.world.fsm.previous_state else None,
+                    "state_stack": [s.__class__.__name__ for s in self.world.fsm.state_stack] if self.world.fsm.state_stack else []
+                }
+            
+            return game_state
+            
+        except Exception as e:
+            logger.error(f"Errore nell'ottenimento dello stato di gioco: {e}")
+            return {
+                "error": True,
+                "message": f"Errore nell'ottenimento dello stato di gioco: {str(e)}"
+            }
+    
+    def get_entities(self, map_id=None):
+        """
+        Ottiene le entità presenti nella sessione, opzionalmente filtrate per mappa.
+        
+        Args:
+            map_id (str, optional): ID della mappa. Se None, restituisce tutte le entità.
+            
+        Returns:
+            dict: Dizionario delle entità
+        """
+        try:
+            if map_id:
+                return self._get_entities_for_map(map_id)
+            else:
+                return self._get_all_entities()
+        except Exception as e:
+            logger.error(f"Errore nell'ottenimento delle entità: {e}")
+            return {
+                "error": True,
+                "message": f"Errore nell'ottenimento delle entità: {str(e)}"
+            }
+    
+    def _get_entities_for_map(self, map_id):
+        """
+        Ottiene le entità presenti su una specifica mappa.
+        
+        Args:
+            map_id (str): ID della mappa
+            
+        Returns:
+            dict: Dizionario delle entità sulla mappa
+        """
+        entities = {}
+        
+        # Cerca tutte le entità con il componente position e map_id corrispondente
+        for entity_id, entity in self.world.entities.items():
+            # Verifica se l'entità ha un componente di posizione e mappa
+            if (hasattr(entity, "current_map") and entity.current_map == map_id) or \
+               (hasattr(entity, "map_id") and entity.map_id == map_id):
+                # Serializza l'entità
+                entity_data = self._serialize_entity(entity)
+                entities[str(entity_id)] = entity_data
+        
+        return entities
+    
+    def _get_all_entities(self):
+        """
+        Ottiene tutte le entità presenti nella sessione.
+        
+        Returns:
+            dict: Dizionario di tutte le entità
+        """
+        entities = {}
+        
+        for entity_id, entity in self.world.entities.items():
+            # Serializza l'entità
+            entity_data = self._serialize_entity(entity)
+            entities[str(entity_id)] = entity_data
+        
+        return entities
+    
+    def _get_visible_entities(self, player):
+        """
+        Ottiene le entità visibili al giocatore (sulla stessa mappa).
+        
+        Args:
+            player: Entità giocatore
+            
+        Returns:
+            dict: Dizionario delle entità visibili
+        """
+        if not hasattr(player, "current_map"):
+            return {}
+        
+        return self._get_entities_for_map(player.current_map)
+    
+    def _serialize_entity(self, entity):
+        """
+        Serializza un'entità nel formato appropriato per il client.
+        
+        Args:
+            entity: Entità da serializzare
+            
+        Returns:
+            dict: Dati serializzati dell'entità
+        """
+        # Implementazione base, da estendere in base alle tue esigenze
+        entity_data = {
+            "id": str(entity.id),
+            "type": getattr(entity, "type", "generic"),
+            "tags": list(entity.tags) if hasattr(entity, "tags") else []
+        }
+        
+        # Aggiungi posizione se disponibile
+        if hasattr(entity, "x") and hasattr(entity, "y"):
+            entity_data["position"] = {
+                "x": entity.x,
+                "y": entity.y
+            }
+        
+        # Aggiungi nome se disponibile
+        if hasattr(entity, "name"):
+            entity_data["name"] = entity.name
+        
+        # Aggiungi sprite se disponibile
+        if hasattr(entity, "sprite"):
+            entity_data["sprite"] = entity.sprite
+        
+        # Aggiungi stato interattivo se disponibile
+        if hasattr(entity, "interactive") and entity.interactive:
+            entity_data["interactive"] = True
+        
+        return entity_data
+    
+    def _get_player_inventory(self, player):
+        """
+        Ottiene l'inventario del giocatore.
+        
+        Args:
+            player: Entità giocatore
+            
+        Returns:
+            list: Lista degli oggetti nell'inventario
+        """
+        if not hasattr(player, "inventory"):
+            return []
+        
+        inventory = []
+        for item in player.inventory:
+            item_data = {
+                "id": str(item.id) if hasattr(item, "id") else None,
+                "name": item.name if hasattr(item, "name") else "Oggetto",
+                "quantity": item.quantity if hasattr(item, "quantity") else 1,
+                "type": item.type if hasattr(item, "type") else "generic",
+                "icon": item.icon if hasattr(item, "icon") else None
+            }
+            inventory.append(item_data)
+        
+        return inventory
+    
+    def _get_player_quests(self, player):
+        """
+        Ottiene le missioni del giocatore.
+        
+        Args:
+            player: Entità giocatore
+            
+        Returns:
+            list: Lista delle missioni
+        """
+        if not hasattr(player, "quests"):
+            return []
+        
+        quests = []
+        for quest in player.quests:
+            quest_data = {
+                "id": str(quest.id) if hasattr(quest, "id") else None,
+                "title": quest.title if hasattr(quest, "title") else "Missione",
+                "description": quest.description if hasattr(quest, "description") else "",
+                "completed": quest.completed if hasattr(quest, "completed") else False,
+                "progress": quest.progress if hasattr(quest, "progress") else 0
+            }
+            quests.append(quest_data)
+        
+        return quests
+    
+    def _get_player_stats(self, player):
+        """
+        Ottiene le statistiche del giocatore.
+        
+        Args:
+            player: Entità giocatore
+            
+        Returns:
+            dict: Statistiche del giocatore
+        """
+        stats = {
+            "strength": getattr(player, "strength", 0),
+            "dexterity": getattr(player, "dexterity", 0),
+            "intelligence": getattr(player, "intelligence", 0),
+            "constitution": getattr(player, "constitution", 0),
+            "luck": getattr(player, "luck", 0)
+        }
+        
+        return stats
+
+
+# Singleton per il SessionManager
+_session_manager_instance = None
+
+def get_session_manager():
+    """
+    Ottiene l'istanza singleton del SessionManager.
+    
+    Returns:
+        SessionManager: Istanza del manager
+    """
+    global _session_manager_instance
+    if _session_manager_instance is None:
+        _session_manager_instance = SessionManager()
+    return _session_manager_instance 

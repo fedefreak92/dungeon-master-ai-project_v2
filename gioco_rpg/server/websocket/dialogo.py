@@ -6,6 +6,8 @@ from flask_socketio import emit, join_room
 from server.utils.session import get_session, salva_sessione
 from . import socketio, graphics_renderer
 from . import core
+from core.event_bus import EventBus
+import core.events as Events
 
 # Configura il logger
 logger = logging.getLogger(__name__)
@@ -57,6 +59,14 @@ def handle_dialogo_inizializza(data):
             'dialogo': dati_conversazione
         }
         
+        # Emetti anche evento attraverso EventBus
+        event_bus = EventBus.get_instance()
+        event_bus.emit(Events.UI_DIALOG_OPEN, 
+                      dialog_id="dialogo_principale",
+                      npc_id=npg.id if hasattr(npg, "id") else None,
+                      session_id=id_sessione,
+                      dialog_data=dati_conversazione)
+        
         emit('dialogo_inizializzato', risposta)
     else:
         emit('error', {'message': 'NPG non trovato nel dialogo'})
@@ -79,33 +89,68 @@ def handle_dialogo_scelta(data):
     room_id = f"session_{id_sessione}"
     
     try:
-        # Usa l'endpoint per gestire la scelta
-        response = requests.post(
-            "http://localhost:5000/game/dialogo/scelta",
-            json={
-                "id_sessione": id_sessione,
-                "scelta_indice": scelta_indice
-            }
-        )
+        # Ottieni la sessione
+        sessione = core.get_session(id_sessione)
+        if not sessione:
+            emit('error', {'message': 'Sessione non trovata'})
+            return
+            
+        # Ottieni lo stato dialogo
+        dialogo_state = sessione.get_state("dialogo")
+        if not dialogo_state:
+            emit('error', {'message': 'Stato dialogo non disponibile'})
+            return
+            
+        # Ottieni i dati della conversazione per lo stato corrente
+        npg = dialogo_state.npg
+        stato_corrente = dialogo_state.stato_corrente
+        dati_conversazione = npg.ottieni_conversazione(stato_corrente)
         
-        if response.status_code == 200:
-            result_data = response.json()
-            
-            # Emetti evento per aggiornare l'interfaccia
-            emit('dialogo_aggiornato', {
-                'success': True,
-                'dialogo': result_data.get('dialogo'),
-                'terminato': result_data.get('terminato', False)
-            })
-            
-            # Se il dialogo è terminato, emetti un evento di cambio stato
-            if result_data.get('terminato', False):
-                socketio.emit('cambio_stato', {
-                    'stato': 'precedente',
-                    'parametri': {}
-                }, room=room_id)
+        if dati_conversazione and "opzioni" in dati_conversazione:
+            opzioni = dati_conversazione["opzioni"]
+            if scelta_indice < len(opzioni):
+                testo_opzione, destinazione = opzioni[scelta_indice]
+                
+                # Emetti evento attraverso EventBus
+                event_bus = EventBus.get_instance()
+                event_bus.emit(Events.DIALOG_CHOICE, 
+                              choice=testo_opzione,
+                              dialog_id=stato_corrente,
+                              destination=destinazione,
+                              session_id=id_sessione)
+                
+                # Se la destinazione è None, termina il dialogo
+                if destinazione is None:
+                    event_bus.emit(Events.UI_DIALOG_CLOSE, session_id=id_sessione)
+                    socketio.emit('cambio_stato', {
+                        'stato': 'precedente',
+                        'parametri': {}
+                    }, room=room_id)
+                    emit('dialogo_aggiornato', {
+                        'success': True,
+                        'terminato': True
+                    })
+                else:
+                    # Aggiorna lo stato corrente del dialogo
+                    dialogo_state.stato_corrente = destinazione
+                    dialogo_state.dati_contestuali["mostrato_dialogo_corrente"] = False
+                    
+                    # Ottieni i dati della nuova conversazione
+                    dati_nuova_conversazione = npg.ottieni_conversazione(destinazione)
+                    
+                    # Salva la sessione aggiornata
+                    salva_sessione(id_sessione, sessione)
+                    
+                    # Emetti evento per aggiornare l'interfaccia
+                    emit('dialogo_aggiornato', {
+                        'success': True,
+                        'dialogo': dati_nuova_conversazione,
+                        'terminato': False
+                    })
+            else:
+                emit('error', {'message': 'Indice scelta non valido'})
         else:
-            emit('error', {'message': 'Errore nella scelta del dialogo'})
+            emit('error', {'message': 'Opzioni dialogo non disponibili'})
     except Exception as e:
         logger.error(f"Errore nella gestione della scelta: {e}")
         emit('error', {'message': f'Errore interno: {str(e)}'})
@@ -125,22 +170,37 @@ def handle_dialogo_effetto(data):
     effetto = data['effetto']
     
     try:
-        # Usa l'endpoint per gestire l'effetto
-        response = requests.post(
-            "http://localhost:5000/game/dialogo/effetto",
-            json={
-                "id_sessione": id_sessione,
-                "effetto": effetto
-            }
-        )
+        # Ottieni la sessione
+        sessione = core.get_session(id_sessione)
+        if not sessione:
+            emit('error', {'message': 'Sessione non trovata'})
+            return
+            
+        # Ottieni lo stato dialogo
+        dialogo_state = sessione.get_state("dialogo")
+        if not dialogo_state:
+            emit('error', {'message': 'Stato dialogo non disponibile'})
+            return
+            
+        # Applica l'effetto
+        dialogo_state._gestisci_effetto(effetto, sessione)
         
-        if response.status_code == 200:
-            emit('dialogo_effetto_applicato', {
-                'success': True,
-                'effetto': effetto
-            })
-        else:
-            emit('error', {'message': 'Errore nell\'applicazione dell\'effetto'})
+        # Emetti evento attraverso EventBus
+        event_bus = EventBus.get_instance()
+        npg = dialogo_state.npg
+        event_bus.emit(Events.INVENTORY_ITEM_USED, 
+                      effect_type=effetto if isinstance(effetto, str) else effetto.get("tipo", ""),
+                      source_entity=npg.id if hasattr(npg, "id") else None,
+                      target_entity=sessione.giocatore.id if hasattr(sessione, "giocatore") else None,
+                      session_id=id_sessione)
+        
+        # Salva la sessione aggiornata
+        salva_sessione(id_sessione, sessione)
+        
+        emit('dialogo_effetto_applicato', {
+            'success': True,
+            'effetto': effetto
+        })
     except Exception as e:
         logger.error(f"Errore nella gestione dell'effetto: {e}")
         emit('error', {'message': f'Errore interno: {str(e)}'})
@@ -170,8 +230,16 @@ def handle_dialogo_menu_action(data):
         emit('error', {'message': 'Stato dialogo non disponibile'})
         return
     
-    # Simula l'azione del menu
+    # Ottieni l'EventBus
+    event_bus = EventBus.get_instance()
+    
+    # Gestisci l'azione del menu
     if action == "Info Personaggio":
+        # Emetti evento per mostrare info del personaggio
+        event_bus.emit(Events.UI_DIALOG_OPEN, 
+                      dialog_id="info_npg",
+                      session_id=id_sessione)
+        
         # Mostra info del personaggio
         npg = dialogo_state.npg
         if npg:
@@ -182,6 +250,11 @@ def handle_dialogo_menu_action(data):
             }
             emit('dialogo_info_npg', info)
     elif action == "Mostra Inventario":
+        # Emetti evento per mostrare inventario dell'NPG
+        event_bus.emit(Events.UI_DIALOG_OPEN, 
+                      dialog_id="inventario_npg",
+                      session_id=id_sessione)
+        
         # Mostra inventario dell'NPG
         npg = dialogo_state.npg
         if npg and hasattr(npg, 'inventario'):
@@ -197,6 +270,9 @@ def handle_dialogo_menu_action(data):
                 'items': items
             })
     elif action == "Termina Dialogo":
+        # Emetti evento per terminare il dialogo
+        event_bus.emit(Events.UI_DIALOG_CLOSE, session_id=id_sessione)
+        
         # Termina il dialogo
         sessione.pop_stato()
         salva_sessione(id_sessione, sessione)
@@ -222,4 +298,40 @@ def register_handlers(socketio_instance):
     socketio_instance.on_event('dialogo_effetto', handle_dialogo_effetto)
     socketio_instance.on_event('dialogo_menu_action', handle_dialogo_menu_action)
     
-    logger.info("Handler WebSocket del dialogo registrati") 
+    # Ottieni il WebSocketEventBridge per registrare ulteriori handler
+    from server.websocket.websocket_event_bridge import WebSocketEventBridge
+    bridge = WebSocketEventBridge.get_instance()
+    
+    # Aggiungi handler per eventi specifici del dialogo
+    bridge.on('dialog_choice', handle_dialog_choice_ws)
+    bridge.on('dialog_menu_action', handle_dialog_menu_action_ws)
+    
+    logger.info("Handler WebSocket del dialogo registrati")
+    
+def handle_dialog_choice_ws(client_id, data):
+    """
+    Handler per le scelte di dialogo inviate tramite WebSocket
+    
+    Args:
+        client_id: ID del client
+        data: Dati dell'evento
+    """
+    # Simula formato dati per il handler esistente
+    handle_dialogo_scelta({
+        'id_sessione': data.get('session_id'),
+        'scelta_indice': data.get('choice_index', 0)
+    })
+    
+def handle_dialog_menu_action_ws(client_id, data):
+    """
+    Handler per le azioni del menu contestuale inviate tramite WebSocket
+    
+    Args:
+        client_id: ID del client
+        data: Dati dell'evento
+    """
+    # Simula formato dati per il handler esistente
+    handle_dialogo_menu_action({
+        'id_sessione': data.get('session_id'),
+        'action': data.get('action')
+    }) 

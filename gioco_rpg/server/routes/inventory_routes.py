@@ -2,6 +2,8 @@ from flask import Blueprint, jsonify, request
 from core.ecs.component import InventoryComponent
 from server.utils.session import sessioni_attive, salva_sessione
 from flask_cors import cross_origin
+from core.event_bus import EventBus
+from core.events import EventType
 
 # Crea un blueprint per le route dell'inventario
 inventory_routes = Blueprint('inventory_routes', __name__)
@@ -43,6 +45,14 @@ def list_inventory():
             "errore": "Sessione non valida o scaduta"
         }), 403
     
+    # Ottieni EventBus
+    event_bus = EventBus.get_instance()
+    
+    # Emetti evento di richiesta inventario
+    event_bus.emit(EventType.INVENTORY_LIST_REQUEST, 
+                  session_id=data['id_sessione'],
+                  entity_id=data['entity_id'])
+    
     # La sessione stessa è il world
     world = sessione
     if not world:
@@ -77,6 +87,13 @@ def list_inventory():
         else:
             # Fallback se l'item non ha un metodo to_dict
             items.append({"id": getattr(item, "id", "unknown"), "name": str(item)})
+    
+    # Emetti evento di risposta inventario
+    event_bus.emit(EventType.UI_UPDATE, 
+                  ui_element="inventory",
+                  entity_id=data['entity_id'],
+                  items=items,
+                  capacity=inventory_component.capacity)
     
     # Restituisci l'inventario
     return jsonify({
@@ -128,6 +145,9 @@ def add_item():
             "errore": "Sessione non valida o scaduta"
         }), 403
     
+    # Ottieni EventBus
+    event_bus = EventBus.get_instance()
+    
     # La sessione stessa è il world
     world = sessione
     if not world:
@@ -156,7 +176,12 @@ def add_item():
     # dovrebbe gestire la creazione di oggetti specifici in base al tipo.
     item_data = data['item_data']
     
-    # Aggiungi l'item all'inventario
+    # Emetti evento di aggiunta item
+    event_bus.emit(EventType.ITEM_ADDED, 
+                  entity_id=data['entity_id'],
+                  item_data=item_data)
+    
+    # Aggiungi l'item all'inventario (per retrocompatibilità)
     success = inventory_component.add_item(item_data)
     
     # Salva la sessione
@@ -168,6 +193,11 @@ def add_item():
             "messaggio": "Item aggiunto all'inventario"
         })
     else:
+        # Emetti evento di inventario pieno
+        event_bus.emit(EventType.INVENTORY_FULL, 
+                      entity_id=data['entity_id'],
+                      item_data=item_data)
+        
         return jsonify({
             "successo": False,
             "errore": "Impossibile aggiungere l'item all'inventario (capacità massima raggiunta)"
@@ -216,6 +246,9 @@ def remove_item():
             "errore": "Sessione non valida o scaduta"
         }), 403
     
+    # Ottieni EventBus
+    event_bus = EventBus.get_instance()
+    
     # La sessione stessa è il world
     world = sessione
     if not world:
@@ -239,6 +272,11 @@ def remove_item():
             "successo": False,
             "errore": f"L'entità non ha un componente inventario"
         }), 404
+    
+    # Emetti evento di rimozione item
+    event_bus.emit(EventType.ITEM_REMOVED, 
+                  entity_id=data['entity_id'],
+                  item_id=data['item_id'])
     
     # Cerca l'item da rimuovere
     found = False
@@ -311,6 +349,14 @@ def update_inventory_capacity():
             "successo": False,
             "errore": "Sessione non valida o scaduta"
         }), 403
+    
+    # Ottieni EventBus
+    event_bus = EventBus.get_instance()
+    
+    # Emetti evento di aggiornamento capacità
+    event_bus.emit(EventType.INVENTORY_CAPACITY_UPDATED, 
+                  entity_id=data['entity_id'],
+                  capacity=data['capacity'])
     
     # La sessione stessa è il world
     world = sessione

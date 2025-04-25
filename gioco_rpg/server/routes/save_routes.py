@@ -6,9 +6,10 @@ import time
 import logging
 from uuid import uuid4
 import json
+import msgpack
 from pathlib import Path
 
-from util.config import SAVE_DIR, get_save_path, list_save_files, delete_save_file, normalize_save_data
+from util.config import SAVE_DIR, get_save_path, list_save_files, delete_save_file, normalize_save_data, USE_MSGPACK
 from server.utils.session import sessioni_attive, salva_sessione, valida_input
 from core.ecs.world import World
 
@@ -32,7 +33,8 @@ def elenca_salvataggi():
                 save_path = get_save_path(nome_salvataggio)
                 
                 # Determina il formato del file
-                is_json_format = str(save_path).endswith('.json') or not (str(save_path).endswith('.dat') or str(save_path).endswith('.pickle'))
+                is_json_format = str(save_path).endswith('.json')
+                is_msgpack_format = str(save_path).endswith('.msgpack')
                 
                 # Leggi il file in base al formato
                 if is_json_format:
@@ -43,28 +45,43 @@ def elenca_salvataggi():
                         # Fallback a pickle se il file non è JSON valido
                         with open(save_path, 'rb') as f:
                             save_data = pickle.load(f)
+                elif is_msgpack_format:
+                    try:
+                        with open(save_path, 'rb') as f:
+                            save_data = msgpack.unpack(f, raw=False)
+                    except Exception as msgpack_error:
+                        logger.warning(f"Errore nella lettura MessagePack del salvataggio {nome_salvataggio}: {msgpack_error}")
+                        with open(save_path, 'rb') as f:
+                            save_data = pickle.load(f)
                 else:
                     with open(save_path, 'rb') as f:
                         save_data = pickle.load(f)
                 
-                # Rimuovi l'estensione .json dal nome del salvataggio
-                nome_senza_estensione = nome_salvataggio.replace('.json', '')
+                # Rimuovi l'estensione dal nome del salvataggio
+                nome_senza_estensione = nome_salvataggio
+                for ext in ['.json', '.msgpack', '.dat', '.pickle']:
+                    nome_senza_estensione = nome_senza_estensione.replace(ext, '')
                 
                 metadata = save_data.get("metadata", {})
                 risultati.append({
                     "nome": nome_senza_estensione,
                     "data": metadata.get("data", ""),
-                    "versione": metadata.get("versione", "")
+                    "versione": metadata.get("versione", ""),
+                    "formato": "msgpack" if is_msgpack_format else "json" if is_json_format else "pickle"
                 })
             except Exception as e:
                 logger.warning(f"Errore nella lettura del salvataggio {nome_salvataggio}: {e}")
                 # Se c'è un errore nel leggere un salvataggio, includi solo il nome
-                # Rimuovi l'estensione .json dal nome del salvataggio
-                nome_senza_estensione = nome_salvataggio.replace('.json', '')
+                # Rimuovi l'estensione dal nome del salvataggio
+                nome_senza_estensione = nome_salvataggio
+                for ext in ['.json', '.msgpack', '.dat', '.pickle']:
+                    nome_senza_estensione = nome_senza_estensione.replace(ext, '')
+                    
                 risultati.append({
                     "nome": nome_senza_estensione,
                     "data": "",
-                    "versione": ""
+                    "versione": "",
+                    "formato": "sconosciuto"
                 })
         
         return jsonify({
@@ -115,6 +132,7 @@ def salva_mondo_ecs():
     data = request.json or {}
     id_sessione = data.get("id_sessione")
     nome_salvataggio = data.get("nome_salvataggio", f"Salvataggio_{int(time.time())}")
+    use_msgpack = data.get("use_msgpack", USE_MSGPACK)  # Usa la configurazione predefinita se non specificato
     
     # Validazione dei parametri
     nome_salvataggio = valida_input(nome_salvataggio, str, "nome_salvataggio", 200)
@@ -130,38 +148,17 @@ def salva_mondo_ecs():
         # Ottieni il mondo dalla sessione
         world = sessioni_attive[id_sessione]
         
-        # Serializza il mondo
-        try:
-            world_data = world.serialize()
-            
-            # Prova a verificare che il dizionario sia JSON-compatibile
-            try:
-                # Questo test è per verificare la compatibilità
-                json.dumps(world_data)
-            except (TypeError, OverflowError, ValueError) as je:
-                logger.error(f"I dati del mondo non sono JSON-compatibili: {je}")
-                return jsonify({
-                    "successo": False, 
-                    "errore": f"Errore nella serializzazione: il mondo contiene dati non serializzabili"
-                }), 500
-        except Exception as e:
-            logger.error(f"Errore nella serializzazione del mondo: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-            return jsonify({
-                "successo": False, 
-                "errore": f"Errore nella serializzazione del mondo: {str(e)}"
-            }), 500
-        
-        # Aggiungi metadati
-        save_data = {
-            "metadata": {
-                "nome": nome_salvataggio,
-                "data": datetime.datetime.now().isoformat(),
-                "versione": "2.0.0"
-            },
-            "world": world_data
-        }
+        # Aggiungiamo l'estensione corretta se non presente
+        if use_msgpack and not nome_salvataggio.endswith('.msgpack'):
+            if nome_salvataggio.endswith('.json'):
+                nome_salvataggio = nome_salvataggio[:-5] + '.msgpack'
+            else:
+                nome_salvataggio = nome_salvataggio + '.msgpack'
+        elif not use_msgpack and not nome_salvataggio.endswith('.json'):
+            if nome_salvataggio.endswith('.msgpack'):
+                nome_salvataggio = nome_salvataggio[:-8] + '.json'
+            else:
+                nome_salvataggio = nome_salvataggio + '.json'
         
         # Salva su file usando pathlib
         save_path = Path(get_save_path(nome_salvataggio))
@@ -182,58 +179,83 @@ def salva_mondo_ecs():
             except Exception as e:
                 logger.warning(f"Impossibile creare backup del salvataggio: {e}")
         
+        # Aggiungi metadati
+        metadata = {
+            "nome": nome_salvataggio,
+            "data": datetime.datetime.now().isoformat(),
+            "versione": "2.0.0",
+            "formato": "msgpack" if use_msgpack else "json"
+        }
+        
         # Salvataggio usando diversi metodi in caso di errore
         save_success = False
         error_messages = []
         
-        # Metodo 1: Usando pathlib.write_text direttamente
-        try:
-            json_str = json.dumps(save_data, indent=2, ensure_ascii=False)
-            temp_save_path.write_text(json_str, encoding='utf-8')
-            logger.info(f"File temporaneo creato con metodo Path.write_text: {temp_save_path}")
-            if temp_save_path.exists() and temp_save_path.stat().st_size > 0:
-                save_success = True
-            else:
-                error_messages.append("File creato con write_text ma non esiste o è vuoto")
-        except Exception as e1:
-            error_messages.append(f"Errore con metodo file temporaneo: {str(e1)}")
-            logger.warning(f"Errore con metodo file temporaneo: {str(e1)}")
-            
-            # Metodo 2: Usando open tradizionale
-            if not save_success:
-                try:
-                    with open(str(temp_save_path), 'w', encoding='utf-8') as f:
-                        json.dump(save_data, f, indent=2, ensure_ascii=False)
-                        f.flush()  # Forza la scrittura su disco
-                    logger.info(f"File temporaneo creato con metodo open tradizionale: {temp_save_path}")
-                    if os.path.exists(str(temp_save_path)) and os.path.getsize(str(temp_save_path)) > 0:
-                        save_success = True
-                    else:
-                        error_messages.append("File creato con open ma non esiste o è vuoto")
-                except Exception as e2:
-                    error_messages.append(f"Errore con metodo diretto: {str(e2)}")
-                    logger.warning(f"Errore con metodo diretto: {str(e2)}")
-                    
-                    # Metodo 3: Salvataggio diretto senza file temporaneo
-                    if not save_success:
-                        try:
-                            save_path.write_text(json.dumps(save_data, indent=2, ensure_ascii=False), encoding='utf-8')
-                            logger.info(f"File salvato direttamente con Path (ultimo tentativo): {save_path}")
-                            if save_path.exists() and save_path.stat().st_size > 0:
-                                save_success = True
-                                # In questo caso abbiamo già salvato direttamente, quindi usciamo
-                                logger.info(f"Mondo salvato come '{nome_salvataggio}' (metodo diretto)")
-                                return jsonify({
-                                    "successo": True,
-                                    "nome_salvataggio": nome_salvataggio,
-                                    "messaggio": "Mondo salvato con successo (metodo diretto)"
-                                })
-                            else:
-                                error_messages.append("File salvato direttamente ma non esiste o è vuoto")
-                        except Exception as e3:
-                            error_messages.append(f"Errore con metodo Path per salvataggio manifest (ultimo tentativo): {str(e3)}")
-                            logger.warning(f"Usando metodo Path per salvataggio manifest (ultimo tentativo)")
-                            
+        if use_msgpack:
+            try:
+                # Serializza il mondo con MessagePack
+                world_data_msgpack = world.serialize_msgpack()
+                
+                # Preparazione dati con metadati
+                save_data_msgpack = {
+                    "metadata": metadata,
+                    "world": msgpack.unpackb(world_data_msgpack, raw=False)
+                }
+                
+                # Scrittura su file
+                with open(temp_save_path, 'wb') as f:
+                    msgpack.pack(save_data_msgpack, f, use_bin_type=True)
+                
+                logger.info(f"File temporaneo MessagePack creato: {temp_save_path}")
+                
+                if temp_save_path.exists() and temp_save_path.stat().st_size > 0:
+                    # Rinomina il file temporaneo per rendere l'operazione atomica
+                    if save_path.exists():
+                        save_path.unlink()
+                    temp_save_path.rename(save_path)
+                    save_success = True
+                    logger.info(f"Salvataggio MessagePack completato: {save_path}")
+                else:
+                    error_messages.append("File temporaneo MessagePack creato ma non esiste o è vuoto")
+            except Exception as e_msgpack:
+                error_messages.append(f"Errore nel salvataggio MessagePack: {str(e_msgpack)}")
+                logger.warning(f"Errore nel salvataggio MessagePack: {str(e_msgpack)}")
+                # Fallback su JSON
+                use_msgpack = False
+        
+        if not use_msgpack:
+            try:
+                # Serializza il mondo con JSON
+                world_data = world.serialize()
+                
+                # Aggiungi metadati
+                save_data = {
+                    "metadata": metadata,
+                    "world": world_data
+                }
+                
+                # Scrivi su file JSON
+                json_str = json.dumps(save_data, indent=2, ensure_ascii=False)
+                temp_save_path = Path(get_save_path(nome_salvataggio.replace('.msgpack', '.json')))
+                temp_save_path = temp_save_path.with_suffix(temp_save_path.suffix + ".tmp")
+                
+                temp_save_path.write_text(json_str, encoding='utf-8')
+                logger.info(f"File temporaneo JSON creato: {temp_save_path}")
+                
+                if temp_save_path.exists() and temp_save_path.stat().st_size > 0:
+                    # Rinomina il file temporaneo per rendere l'operazione atomica
+                    save_path = Path(get_save_path(nome_salvataggio.replace('.msgpack', '.json')))
+                    if save_path.exists():
+                        save_path.unlink()
+                    temp_save_path.rename(save_path)
+                    save_success = True
+                    logger.info(f"Salvataggio JSON completato: {save_path}")
+                else:
+                    error_messages.append("File temporaneo JSON creato ma non esiste o è vuoto")
+            except Exception as e_json:
+                error_messages.append(f"Errore nel salvataggio JSON: {str(e_json)}")
+                logger.error(f"Errore nel salvataggio JSON: {str(e_json)}")
+
         # Verifica che il file temporaneo sia stato creato correttamente
         if not save_success:
             logger.error(f"File temporaneo {temp_save_path} non è stato creato correttamente. Errori: {'; '.join(error_messages)}")
@@ -297,95 +319,83 @@ def carica_mondo_ecs():
     id_sessione = data.get("id_sessione")
     nome_salvataggio = data.get("nome_salvataggio")
     
-    # Verifica che il nome del salvataggio sia fornito
-    if not nome_salvataggio:
+    # Validazione dei parametri
+    nome_salvataggio = valida_input(nome_salvataggio, str, "nome_salvataggio", 200, is_required=True)
+    
+    if nome_salvataggio is None:
         return jsonify({
             "successo": False,
             "errore": "Nome salvataggio non fornito"
         }), 400
     
+    # Verifica che la sessione esista
+    if id_sessione not in sessioni_attive:
+        return jsonify({
+            "successo": False,
+            "errore": "Sessione non trovata"
+        }), 404
+    
     try:
-        # Verifica che il file di salvataggio esista
-        save_path = get_save_path(nome_salvataggio)
-        if not os.path.exists(save_path):
-            # Prova a controllare se esiste un file con estensione .json, .dat o nessuna estensione
-            alternative_paths = [
-                f"{save_path}.json",
-                f"{save_path}.dat"
-            ]
-            found = False
-            for alt_path in alternative_paths:
-                if os.path.exists(alt_path):
-                    save_path = alt_path
-                    found = True
-                    break
-            
-            if not found:
+        # Ottieni il percorso del file
+        save_path = Path(get_save_path(nome_salvataggio))
+        
+        # Verifica se è necessario provare diverse estensioni
+        if not save_path.exists():
+            # Prova con estensione .msgpack se non specificata
+            if not (nome_salvataggio.endswith('.json') or nome_salvataggio.endswith('.msgpack')):
+                msgpack_path = Path(get_save_path(nome_salvataggio + '.msgpack'))
+                json_path = Path(get_save_path(nome_salvataggio + '.json'))
+                
+                if msgpack_path.exists():
+                    save_path = msgpack_path
+                    logger.info(f"Trovato file MessagePack: {save_path}")
+                elif json_path.exists():
+                    save_path = json_path
+                    logger.info(f"Trovato file JSON: {save_path}")
+                else:
+                    return jsonify({
+                        "successo": False,
+                        "errore": f"Salvataggio '{nome_salvataggio}' non trovato"
+                    }), 404
+            else:
                 return jsonify({
                     "successo": False,
-                    "errore": "Salvataggio non trovato"
+                    "errore": f"Salvataggio '{nome_salvataggio}' non trovato"
                 }), 404
         
-        # Determina il formato del file in base all'estensione
-        is_json_format = str(save_path).endswith('.json') or not (str(save_path).endswith('.dat') or str(save_path).endswith('.pickle'))
+        # Determina il formato del file
+        is_msgpack = save_path.suffix.lower() == '.msgpack'
         
-        # Carica i dati del salvataggio
-        try:
-            if is_json_format:
-                with open(save_path, 'r', encoding='utf-8') as f:
-                    try:
-                        save_data = json.load(f)
-                    except json.JSONDecodeError as e:
-                        logger.error(f"Errore nella decodifica JSON: {e}")
-                        return jsonify({
-                            "successo": False,
-                            "errore": f"File di salvataggio JSON non valido: {str(e)}"
-                        }), 500
-            else:
-                # Fallback a pickle per vecchi file
-                with open(save_path, 'rb') as f:
-                    try:
-                        save_data = pickle.load(f)
-                    except Exception as e:
-                        logger.error(f"Errore durante la deserializzazione pickle: {e}")
-                        return jsonify({
-                            "successo": False,
-                            "errore": f"File di salvataggio corrotto: {str(e)}"
-                        }), 500
-        except Exception as e:
-            logger.error(f"Errore durante l'apertura del file di salvataggio: {e}")
-            return jsonify({
-                "successo": False,
-                "errore": f"Impossibile aprire il file di salvataggio: {str(e)}"
-            }), 500
+        # Carica i dati dal file
+        if is_msgpack:
+            with open(save_path, 'rb') as f:
+                try:
+                    save_data = msgpack.unpack(f, raw=False)
+                except Exception as e:
+                    logger.error(f"Errore nella decodifica MessagePack: {e}")
+                    return jsonify({
+                        "successo": False,
+                        "errore": f"Errore nella decodifica MessagePack: {str(e)}"
+                    }), 500
+        else:
+            with open(save_path, 'r', encoding='utf-8') as f:
+                try:
+                    save_data = json.load(f)
+                except json.JSONDecodeError as e:
+                    logger.error(f"Errore nella decodifica JSON: {e}")
+                    return jsonify({
+                        "successo": False,
+                        "errore": f"Errore nella decodifica JSON: {str(e)}"
+                    }), 500
         
-        # Normalizza il formato dei dati del salvataggio
-        try:
-            normalized_save_data = normalize_save_data(save_data)
-            logger.info(f"Dati del salvataggio normalizzati")
-        except Exception as e:
-            logger.error(f"Errore durante la normalizzazione dei dati: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-            return jsonify({
-                "successo": False,
-                "errore": f"Errore durante la normalizzazione dei dati: {str(e)}"
-            }), 500
-            
-        # Estrai i dati del mondo normalizzati
-        world_data = normalized_save_data.get("world", {})
+        # Estrai i dati del mondo
+        world_data = save_data.get("world", {})
         
-        # Deserializza il mondo
-        try:
+        # Crea un nuovo mondo usando il deserializzatore appropriato
+        if is_msgpack:
+            world = World.deserialize_msgpack(msgpack.packb(world_data, use_bin_type=True))
+        else:
             world = World.deserialize(world_data)
-        except Exception as e:
-            logger.error(f"Errore durante la deserializzazione del mondo: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-            return jsonify({
-                "successo": False,
-                "errore": f"Errore durante la deserializzazione del mondo: {str(e)}"
-            }), 500
         
         # Se l'ID sessione non è fornito, generane uno nuovo
         if not id_sessione:

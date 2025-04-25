@@ -5,7 +5,7 @@ Utility per il caricamento e la gestione degli asset.
 import os
 import logging
 import sys
-from server.asset_manager import cleanup_assets
+from util.asset_manager import cleanup_assets
 
 # Aggiungi il percorso necessario per importare i moduli di util
 current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

@@ -2,17 +2,108 @@
   "type": "object",
   "properties": {
     "nome": {
-      "type": "string"
+      "type": "string",
+      "description": "Nome dell'oggetto interattivo"
+    },
+    "tipo": {
+      "type": "string",
+      "description": "Tipo dell'oggetto (oggetto_interattivo, baule, porta, leva, trappola, oggetto_rompibile)",
+      "enum": ["oggetto_interattivo", "baule", "porta", "leva", "trappola", "oggetto_rompibile", "oggetto_generico"]
+    },
+    "descrizione": {
+      "type": "string",
+      "description": "Descrizione dell'oggetto"
+    },
+    "stato": {
+      "type": "string",
+      "description": "Stato attuale dell'oggetto (es. chiuso, aperto, attivo, rotto)"
     },
     "posizione": {
-      "type": "array"
+      "type": "array",
+      "description": "Coordinate [x, y] dell'oggetto sulla mappa",
+      "items": {
+        "type": "integer"
+      },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "token": {
+      "type": "string",
+      "description": "Token (carattere) per la rappresentazione sulla mappa",
+      "maxLength": 1
+    },
+    "descrizioni_stati": {
+      "type": "object",
+      "description": "Descrizioni associate a ciascuno stato dell'oggetto",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "stati_possibili": {
+      "type": "object",
+      "description": "Transizioni possibili tra stati",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "contenuto": {
+      "type": "array",
+      "description": "Oggetti contenuti (per bauli o oggetti contenitori)",
+      "items": {
+        "type": "object"
+      }
+    },
+    "richiede_chiave": {
+      "type": "boolean",
+      "description": "Se richiede una chiave per essere aperto (per porte o bauli)"
+    },
+    "posizione_destinazione": {
+      "type": "string",
+      "description": "Nome della mappa di destinazione (per porte)"
+    },
+    "danno": {
+      "type": "integer",
+      "description": "Punti danno inflitti (per trappole)"
+    },
+    "difficolta_salvezza": {
+      "type": "integer",
+      "description": "Difficoltà del tiro salvezza (per trappole)"
+    },
+    "abilita_richieste": {
+      "type": "object",
+      "description": "Abilità richieste per interagire, con stato risultante",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "difficolta_abilita": {
+      "type": "object",
+      "description": "Difficoltà per le abilità richieste",
+      "additionalProperties": {
+        "type": "integer"
+      }
+    },
+    "forza_richiesta": {
+      "type": "integer",
+      "description": "Forza richiesta per rompere l'oggetto (per oggetto_rompibile)"
+    },
+    "materiali": {
+      "type": "array",
+      "description": "Materiali ottenuti rompendo l'oggetto (per oggetto_rompibile)",
+      "items": {
+        "type": "object"
+      }
     }
   },
   "required": [
     "nome",
     "posizione"
   ],
+  "additionalProperties": true,
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Oggetto Schema",
-  "description": "Schema per la validazione di oggetto"
+  "title": "Schema Oggetto Interattivo",
+  "description": "Schema per la validazione di oggetti interattivi"
 }

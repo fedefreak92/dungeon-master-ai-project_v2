@@ -13,6 +13,9 @@ import traceback
 import atexit
 from pathlib import Path
 
+# Importa il gestore degli sprite sheet
+from util.sprite_sheet_manager import get_sprite_sheet_manager
+
 logger = logging.getLogger(__name__)
 
 # Singleton globale
@@ -162,6 +165,9 @@ class AssetManager:
             "tilesets": self.tilesets,
             "ui_elements": self.ui_elements
         }
+        
+        # Inizializza il gestore degli sprite sheet
+        self.sprite_sheet_manager = get_sprite_sheet_manager(os.path.join(self.base_path, "spritesheets"))
         
         # Registra questo manager
         AssetManager._open_managers.append(self)
@@ -710,7 +716,35 @@ class AssetManager:
         Returns:
             dict: Le informazioni sullo sprite o None se non trovato.
         """
-        return self.sprites.get(sprite_id)
+        # Prima verifica se è nel registro standard degli sprite
+        sprite_info = self.sprites.get(sprite_id)
+        if sprite_info:
+            return sprite_info
+            
+        # Se non trovato, verifica se è in uno sprite sheet
+        return self.sprite_sheet_manager.get_sprite_info(sprite_id)
+    
+    def get_sprite_path(self, sprite_id):
+        """
+        Ottiene il percorso completo di uno sprite.
+        
+        Args:
+            sprite_id (str): L'ID dello sprite.
+            
+        Returns:
+            str or dict: Il percorso completo dello sprite o un dizionario con le informazioni dello sprite sheet
+        """
+        # Prima verifica se è nel registro standard degli sprite
+        sprite_info = self.sprites.get(sprite_id)
+        if sprite_info:
+            return os.path.join(self.base_path, sprite_info.get("file", ""))
+            
+        # Se non trovato, verifica se è in uno sprite sheet
+        sprite_data = self.sprite_sheet_manager.get_sprite_data_url(sprite_id)
+        if sprite_data:
+            return sprite_data
+            
+        return None
     
     def get_tile_info(self, tile_id):
         """
@@ -782,6 +816,43 @@ class AssetManager:
             return os.path.join(self.base_path, asset_info["path"])
         
         return None
+
+    def generate_sprite_sheets(self):
+        """
+        Genera sprite sheet da varie directory di asset.
+        Questo metodo analizza la directory degli asset e crea sprite sheet
+        per ottimizzare il caricamento.
+        
+        Returns:
+            bool: True se almeno uno sprite sheet è stato creato, False altrimenti
+        """
+        success = False
+        
+        # Directory da includere negli sprite sheet
+        sprite_directories = [
+            os.path.join(self.base_path, "sprites"),
+            os.path.join(self.base_path, "tiles"),
+            os.path.join(self.base_path, "ui"),
+            os.path.join(self.base_path, "entities")
+        ]
+        
+        # Crea sprite sheet per ciascuna directory
+        for directory in sprite_directories:
+            if os.path.exists(directory) and os.path.isdir(directory):
+                # Genera uno sprite sheet per la directory principale
+                sheet_id = os.path.basename(directory)
+                if self.sprite_sheet_manager.generate_sprite_sheet_from_directory(directory, sheet_id):
+                    success = True
+                
+                # Controlla le sottodirectory
+                for subdir in os.listdir(directory):
+                    subdir_path = os.path.join(directory, subdir)
+                    if os.path.isdir(subdir_path):
+                        subsheet_id = f"{sheet_id}_{subdir}"
+                        if self.sprite_sheet_manager.generate_sprite_sheet_from_directory(subdir_path, subsheet_id):
+                            success = True
+        
+        return success
 
 # Registra la pulizia globale all'uscita
 atexit.register(AssetManager.close_all) 

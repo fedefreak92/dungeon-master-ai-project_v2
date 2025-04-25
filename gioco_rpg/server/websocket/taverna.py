@@ -7,6 +7,8 @@ from flask_socketio import emit, join_room
 from server.utils.session import get_session, salva_sessione
 from . import socketio, graphics_renderer
 from . import core
+from core.event_bus import EventBus
+import core.events as Events
 
 # Configura il logger
 logger = logging.getLogger(__name__)
@@ -85,38 +87,62 @@ def handle_taverna_interagisci(data):
     room_id = f"session_{id_sessione}"
     
     try:
-        # Usa l'endpoint per interagire con l'oggetto
-        response = requests.post(
-            "http://localhost:5000/game/taverna/interagisci",
-            json={
-                "id_sessione": id_sessione,
-                "oggetto_id": oggetto_id
-            }
-        )
-        
-        if response.status_code == 200:
-            result_data = response.json()
+        # Ottieni la sessione
+        sessione = core.get_session(id_sessione)
+        if not sessione:
+            emit('error', {'message': 'Sessione non trovata'})
+            return
             
+        # Ottieni lo stato taverna
+        taverna_state = sessione.get_state("taverna")
+        if not taverna_state:
+            emit('error', {'message': 'Stato taverna non disponibile'})
+            return
+        
+        # Verifica se lo stato supporta EventBus
+        if hasattr(taverna_state, 'event_bus'):
+            # Usa l'EventBus per emettere l'evento di interazione
+            taverna_state.emit_event(Events.PLAYER_INTERACT, 
+                                    interaction_type="object", 
+                                    entity_id=oggetto_id)
+                                    
             # Emetti evento per aggiornare l'interfaccia
             emit('taverna_oggetto_interagito', {
                 'oggetto_id': oggetto_id,
-                'risultato': result_data.get('risultato')
+                'risultato': "Interazione avviata"
             })
             
-            # Emetti anche un evento per tutti i client nella stessa sessione
-            socketio.emit('taverna_oggetto_interagito', {
-                'oggetto_id': oggetto_id,
-                'risultato': result_data.get('risultato')
-            }, room=room_id)
-            
-            # Aggiorna il renderer se necessario
-            sessione = core.get_session(id_sessione)
-            if sessione:
-                taverna_state = sessione.get_state("taverna")
-                if taverna_state:
-                    graphics_renderer.render_taverna(taverna_state, sessione)
+            # Aggiorna il renderer
+            graphics_renderer.render_taverna(taverna_state, sessione)
         else:
-            emit('error', {'message': 'Errore nell\'interazione con l\'oggetto'})
+            # Fallback al vecchio metodo REST
+            response = requests.post(
+                "http://localhost:5000/game/taverna/interagisci",
+                json={
+                    "id_sessione": id_sessione,
+                    "oggetto_id": oggetto_id
+                }
+            )
+            
+            if response.status_code == 200:
+                result_data = response.json()
+                
+                # Emetti evento per aggiornare l'interfaccia
+                emit('taverna_oggetto_interagito', {
+                    'oggetto_id': oggetto_id,
+                    'risultato': result_data.get('risultato')
+                })
+                
+                # Emetti anche un evento per tutti i client nella stessa sessione
+                socketio.emit('taverna_oggetto_interagito', {
+                    'oggetto_id': oggetto_id,
+                    'risultato': result_data.get('risultato')
+                }, room=room_id)
+                
+                # Aggiorna il renderer
+                graphics_renderer.render_taverna(taverna_state, sessione)
+            else:
+                emit('error', {'message': 'Errore nell\'interazione con l\'oggetto'})
     except Exception as e:
         logger.error(f"Errore nell'interazione con l'oggetto: {e}")
         emit('error', {'message': f'Errore interno: {str(e)}'})
@@ -140,32 +166,65 @@ def handle_taverna_dialoga(data):
     room_id = f"session_{id_sessione}"
     
     try:
-        # Usa l'endpoint per dialogare con l'NPG
-        response = requests.post(
-            "http://localhost:5000/game/taverna/dialoga",
-            json={
-                "id_sessione": id_sessione,
-                "npg_nome": npg_nome,
-                "opzione_scelta": opzione_scelta
-            }
-        )
+        # Ottieni la sessione
+        sessione = core.get_session(id_sessione)
+        if not sessione:
+            emit('error', {'message': 'Sessione non trovata'})
+            return
+            
+        # Ottieni lo stato taverna
+        taverna_state = sessione.get_state("taverna")
+        if not taverna_state:
+            emit('error', {'message': 'Stato taverna non disponibile'})
+            return
         
-        if response.status_code == 200:
-            result_data = response.json()
+        # Verifica se lo stato supporta EventBus
+        if hasattr(taverna_state, 'event_bus'):
+            # Usa l'EventBus per emettere l'evento di dialogo
+            taverna_state.emit_event("TAVERNA_DIALOGO_INIZIATO", 
+                                   npg_id=npg_nome)
+                                   
+            # Se c'è un'opzione scelta, emetti anche l'evento di selezione dialogo
+            if opzione_scelta:
+                taverna_state.emit_event(Events.DIALOG_CHOICE, 
+                                       npg_id=npg_nome,
+                                       choice=opzione_scelta)
             
             # Emetti evento per aggiornare l'interfaccia
             emit('taverna_dialogo_aggiornato', {
                 'npg_nome': npg_nome,
-                'dialogo': result_data.get('dialogo')
+                'dialogo': "Dialogo avviato"
             })
             
-            # Emetti anche un evento per tutti i client nella stessa sessione
-            socketio.emit('taverna_dialogo_aggiornato', {
-                'npg_nome': npg_nome,
-                'dialogo': result_data.get('dialogo')
-            }, room=room_id)
+            # Aggiorna il renderer
+            graphics_renderer.render_taverna(taverna_state, sessione)
         else:
-            emit('error', {'message': 'Errore nel dialogo con l\'NPG'})
+            # Fallback al vecchio metodo REST
+            response = requests.post(
+                "http://localhost:5000/game/taverna/dialoga",
+                json={
+                    "id_sessione": id_sessione,
+                    "npg_nome": npg_nome,
+                    "opzione_scelta": opzione_scelta
+                }
+            )
+            
+            if response.status_code == 200:
+                result_data = response.json()
+                
+                # Emetti evento per aggiornare l'interfaccia
+                emit('taverna_dialogo_aggiornato', {
+                    'npg_nome': npg_nome,
+                    'dialogo': result_data.get('dialogo')
+                })
+                
+                # Emetti anche un evento per tutti i client nella stessa sessione
+                socketio.emit('taverna_dialogo_aggiornato', {
+                    'npg_nome': npg_nome,
+                    'dialogo': result_data.get('dialogo')
+                }, room=room_id)
+            else:
+                emit('error', {'message': 'Errore nel dialogo con l\'NPG'})
     except Exception as e:
         logger.error(f"Errore nel dialogo con l'NPG: {e}")
         emit('error', {'message': f'Errore interno: {str(e)}'})
@@ -189,39 +248,67 @@ def handle_taverna_menu(data):
     room_id = f"session_{id_sessione}"
     
     try:
-        # Usa l'endpoint per gestire il menu
-        response = requests.post(
-            "http://localhost:5000/game/taverna/menu",
-            json={
-                "id_sessione": id_sessione,
-                "menu_id": menu_id,
-                "scelta": scelta
-            }
-        )
+        # Ottieni la sessione
+        sessione = core.get_session(id_sessione)
+        if not sessione:
+            emit('error', {'message': 'Sessione non trovata'})
+            return
+            
+        # Ottieni lo stato taverna
+        taverna_state = sessione.get_state("taverna")
+        if not taverna_state:
+            emit('error', {'message': 'Stato taverna non disponibile'})
+            return
         
-        if response.status_code == 200:
-            result_data = response.json()
+        # Verifica se lo stato supporta EventBus
+        if hasattr(taverna_state, 'event_bus'):
+            # Usa l'EventBus per emettere l'evento di cambio menu
+            taverna_state.emit_event(Events.MENU_CHANGED, menu_id=menu_id)
+            
+            # Se c'è una scelta, emetti anche l'evento di selezione menu
+            if scelta:
+                taverna_state.emit_event(Events.MENU_SELECTION, 
+                                       menu_id=menu_id,
+                                       selection=scelta)
             
             # Emetti evento per aggiornare l'interfaccia
             emit('taverna_menu_aggiornato', {
                 'menu_id': menu_id,
-                'risultato': result_data.get('risultato')
+                'risultato': "Menu aggiornato"
             })
             
-            # Emetti anche un evento per tutti i client nella stessa sessione
-            socketio.emit('taverna_menu_aggiornato', {
-                'menu_id': menu_id,
-                'risultato': result_data.get('risultato')
-            }, room=room_id)
-            
-            # Aggiorna il renderer se necessario
-            sessione = core.get_session(id_sessione)
-            if sessione:
-                taverna_state = sessione.get_state("taverna")
-                if taverna_state:
-                    graphics_renderer.render_taverna(taverna_state, sessione)
+            # Aggiorna il renderer
+            graphics_renderer.render_taverna(taverna_state, sessione)
         else:
-            emit('error', {'message': 'Errore nella gestione del menu'})
+            # Fallback al vecchio metodo REST
+            response = requests.post(
+                "http://localhost:5000/game/taverna/menu",
+                json={
+                    "id_sessione": id_sessione,
+                    "menu_id": menu_id,
+                    "scelta": scelta
+                }
+            )
+            
+            if response.status_code == 200:
+                result_data = response.json()
+                
+                # Emetti evento per aggiornare l'interfaccia
+                emit('taverna_menu_aggiornato', {
+                    'menu_id': menu_id,
+                    'risultato': result_data.get('risultato')
+                })
+                
+                # Emetti anche un evento per tutti i client nella stessa sessione
+                socketio.emit('taverna_menu_aggiornato', {
+                    'menu_id': menu_id,
+                    'risultato': result_data.get('risultato')
+                }, room=room_id)
+                
+                # Aggiorna il renderer
+                graphics_renderer.render_taverna(taverna_state, sessione)
+            else:
+                emit('error', {'message': 'Errore nella gestione del menu'})
     except Exception as e:
         logger.error(f"Errore nella gestione del menu: {e}")
         emit('error', {'message': f'Errore interno: {str(e)}'})
@@ -244,91 +331,142 @@ def handle_taverna_movimento(data):
     room_id = f"session_{id_sessione}"
     
     try:
-        # Usa l'endpoint per gestire il movimento
-        response = requests.post(
-            "http://localhost:5000/game/taverna/movimento",
-            json={
-                "id_sessione": id_sessione,
-                "direzione": direzione
-            }
-        )
+        # Ottieni la sessione
+        sessione = core.get_session(id_sessione)
+        if not sessione:
+            emit('error', {'message': 'Sessione non trovata'})
+            return
+            
+        # Ottieni lo stato taverna
+        taverna_state = sessione.get_state("taverna")
+        if not taverna_state:
+            emit('error', {'message': 'Stato taverna non disponibile'})
+            return
         
-        if response.status_code == 200:
-            result_data = response.json()
+        # Verifica se lo stato supporta EventBus
+        if hasattr(taverna_state, 'event_bus'):
+            # Usa l'EventBus per emettere l'evento di movimento
+            taverna_state.emit_event(Events.PLAYER_MOVE, direction=direzione)
+            
+            # Recupera la nuova posizione del giocatore
+            giocatore = sessione.giocatore
+            posizione = giocatore.get_posizione("taverna")
             
             # Emetti evento per aggiornare l'interfaccia
-            emit('taverna_movimento_eseguito', {
+            emit('taverna_movimento_effettuato', {
                 'direzione': direzione,
-                'posizione': result_data.get('posizione'),
-                'evento': result_data.get('evento')
+                'posizione': {'x': posizione[0], 'y': posizione[1]}
             })
             
-            # Emetti anche un evento per tutti i client nella stessa sessione
-            socketio.emit('taverna_movimento_eseguito', {
-                'direzione': direzione,
-                'posizione': result_data.get('posizione'),
-                'evento': result_data.get('evento')
-            }, room=room_id)
-            
-            # Aggiorna il renderer se necessario
-            sessione = core.get_session(id_sessione)
-            if sessione:
-                taverna_state = sessione.get_state("taverna")
-                if taverna_state:
-                    graphics_renderer.render_taverna(taverna_state, sessione)
+            # Aggiorna il renderer
+            graphics_renderer.render_taverna(taverna_state, sessione)
         else:
-            emit('error', {'message': 'Errore nel movimento'})
+            # Fallback al vecchio metodo REST
+            response = requests.post(
+                "http://localhost:5000/game/taverna/movimento",
+                json={
+                    "id_sessione": id_sessione,
+                    "direzione": direzione
+                }
+            )
+            
+            if response.status_code == 200:
+                result_data = response.json()
+                
+                # Emetti evento per aggiornare l'interfaccia
+                emit('taverna_movimento_effettuato', {
+                    'direzione': direzione,
+                    'posizione': result_data.get('posizione')
+                })
+                
+                # Emetti anche un evento per tutti i client nella stessa sessione
+                socketio.emit('taverna_movimento_effettuato', {
+                    'direzione': direzione,
+                    'posizione': result_data.get('posizione')
+                }, room=room_id)
+                
+                # Aggiorna il renderer
+                graphics_renderer.render_taverna(taverna_state, sessione)
+            else:
+                emit('error', {'message': 'Errore nel movimento'})
     except Exception as e:
         logger.error(f"Errore nel movimento: {e}")
         emit('error', {'message': f'Errore interno: {str(e)}'})
 
 def handle_taverna_transizione(data):
     """
-    Gestisce le transizioni tra la taverna e altri stati
+    Gestisce la transizione da/verso la taverna
     
     Args:
-        data (dict): Contiene id_sessione, stato_destinazione e parametri
+        data (dict): Contiene id_sessione, destinazione e eventuali parametri
     """
     # Valida i dati richiesti
-    if not core.validate_request_data(data, ['id_sessione', 'stato_destinazione']):
+    if not core.validate_request_data(data, ['id_sessione', 'destinazione']):
         return
         
     id_sessione = data['id_sessione']
-    stato_destinazione = data['stato_destinazione']
+    destinazione = data['destinazione']
     parametri = data.get('parametri', {})
     
     # Crea il room_id per questa sessione
     room_id = f"session_{id_sessione}"
     
     try:
-        # Usa l'endpoint per gestire la transizione
-        response = requests.post(
-            "http://localhost:5000/game/taverna/transizione",
-            json={
-                "id_sessione": id_sessione,
-                "stato_destinazione": stato_destinazione,
-                "parametri": parametri
-            }
-        )
+        # Ottieni la sessione
+        sessione = core.get_session(id_sessione)
+        if not sessione:
+            emit('error', {'message': 'Sessione non trovata'})
+            return
+            
+        # Ottieni lo stato taverna
+        taverna_state = sessione.get_state("taverna")
+        if not taverna_state:
+            emit('error', {'message': 'Stato taverna non disponibile'})
+            return
         
-        if response.status_code == 200:
-            result_data = response.json()
+        # Verifica se lo stato supporta EventBus
+        if hasattr(taverna_state, 'event_bus'):
+            # Usa l'EventBus per emettere l'evento di transizione
+            if destinazione.lower() == "esci":
+                taverna_state.emit_event(Events.POP_STATE)
+            else:
+                taverna_state.emit_event(Events.PUSH_STATE, 
+                                       state_class=destinazione,
+                                       **parametri)
             
             # Emetti evento per aggiornare l'interfaccia
-            emit('taverna_transizione_completata', {
-                'stato_destinazione': stato_destinazione,
-                'success': True
+            emit('taverna_transizione_effettuata', {
+                'destinazione': destinazione
             })
-            
-            # Emetti anche un evento per tutti i client nella stessa sessione
-            socketio.emit('taverna_transizione_completata', {
-                'stato_destinazione': stato_destinazione,
-                'success': True
-            }, room=room_id)
         else:
-            emit('error', {'message': 'Errore nella transizione di stato'})
+            # Fallback al vecchio metodo REST
+            response = requests.post(
+                "http://localhost:5000/game/taverna/transizione",
+                json={
+                    "id_sessione": id_sessione,
+                    "destinazione": destinazione,
+                    "parametri": parametri
+                }
+            )
+            
+            if response.status_code == 200:
+                result_data = response.json()
+                
+                # Emetti evento per aggiornare l'interfaccia
+                emit('taverna_transizione_effettuata', {
+                    'destinazione': destinazione,
+                    'risultato': result_data.get('risultato')
+                })
+                
+                # Emetti anche un evento per tutti i client nella stessa sessione
+                socketio.emit('taverna_transizione_effettuata', {
+                    'destinazione': destinazione,
+                    'risultato': result_data.get('risultato')
+                }, room=room_id)
+            else:
+                emit('error', {'message': 'Errore nella transizione'})
     except Exception as e:
-        logger.error(f"Errore nella transizione di stato: {e}")
+        logger.error(f"Errore nella transizione: {e}")
         emit('error', {'message': f'Errore interno: {str(e)}'})
 
 def register_handlers(socketio_instance):

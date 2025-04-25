@@ -2,6 +2,8 @@ from flask import request, jsonify, Blueprint
 import logging
 import datetime
 import os
+from core.event_bus import EventBus
+from core.events import EventType
 
 from server.utils.session import sessioni_attive, salva_sessione, valida_input
 
@@ -82,6 +84,9 @@ def inizia_combattimento():
         }), 404
     
     try:
+        # Ottieni EventBus
+        event_bus = EventBus.get_instance()
+        
         # Ottieni il mondo dalla sessione
         world = sessioni_attive[id_sessione]
         logger.info(f"Mondo ottenuto dalla sessione {id_sessione}")
@@ -124,6 +129,13 @@ def inizia_combattimento():
             salva_sessione(id_sessione, world)
             
         logger.info(f"Giocatore trovato: {giocatore.id}")
+        
+        # Emetti evento di inizializzazione combattimento
+        event_bus.emit(EventType.COMBAT_INIT, 
+                      player_id=giocatore.id,
+                      session_id=id_sessione,
+                      enemy_ids=nemici_ids,
+                      encounter_type=tipo_incontro)
         
         # Qui andiamo a gestire diversi casi per la generazione dei nemici
         nemici = []
@@ -350,6 +362,9 @@ def ottieni_stato_combattimento():
         }), 404
     
     try:
+        # Ottieni EventBus
+        event_bus = EventBus.get_instance()
+        
         # Ottieni il mondo dalla sessione
         world = sessioni_attive[id_sessione]
         
@@ -360,6 +375,11 @@ def ottieni_stato_combattimento():
                 "successo": False,
                 "errore": "Nessun combattimento in corso"
             }), 404
+            
+        # Emetti evento di richiesta stato combattimento
+        event_bus.emit(EventType.COMBAT_STATE_REQUEST, 
+                      session_id=id_sessione,
+                      player_id=world.get_player_entity().id if world.get_player_entity() else None)
             
         # Deserializza lo stato
         try:
@@ -416,7 +436,8 @@ def ottieni_stato_combattimento():
                     "azioni_disponibili": state.get_azioni_disponibili(p_id)
                 })
         
-        return jsonify({
+        # Prepara i dati di risposta
+        response_data = {
             "successo": True,
             "in_corso": state.in_corso,
             "round": state.round_corrente,
@@ -424,7 +445,15 @@ def ottieni_stato_combattimento():
             "fase": state.fase_corrente,
             "partecipanti": partecipanti_info,
             "messaggi": state.messaggi[-10:] if hasattr(state, "messaggi") else []
-        })
+        }
+        
+        # Emetti evento di UI update per il combattimento
+        event_bus.emit(EventType.UI_UPDATE, 
+                      ui_element="combat",
+                      player_id=world.get_player_entity().id if world.get_player_entity() else None,
+                      combat_state=response_data)
+        
+        return jsonify(response_data)
     except Exception as e:
         logger.error(f"Errore durante l'ottenimento dello stato del combattimento: {e}")
         return jsonify({
@@ -458,6 +487,9 @@ def esegui_azione_combattimento():
         }), 404
     
     try:
+        # Ottieni EventBus
+        event_bus = EventBus.get_instance()
+        
         # Ottieni il mondo dalla sessione
         world = sessioni_attive[id_sessione]
         
@@ -500,6 +532,29 @@ def esegui_azione_combattimento():
                 "errore": "Non è il turno di questa entità"
             }), 400
         
+        # Emetti evento di azione combattimento
+        combat_action_params = {
+            "combat_id": state.id if hasattr(state, "id") else id_sessione,
+            "action_type": tipo_azione,
+            "player_id": world.get_player_entity().id if world.get_player_entity() else None,
+            "entity_id": parametri_azione.get("attaccante_id"),
+        }
+        
+        # Aggiungi parametri specifici dell'azione
+        if tipo_azione == "attacco":
+            combat_action_params.update({
+                "target_id": parametri_azione.get("target_id"),
+                "weapon": parametri_azione.get("arma", "default")
+            })
+        elif tipo_azione in ["incantesimo", "oggetto"]:
+            combat_action_params.update({
+                "target_ids": parametri_azione.get("target_ids", []),
+                tipo_azione: parametri_azione.get(tipo_azione)
+            })
+        
+        # Emetti evento
+        event_bus.emit(EventType.COMBAT_ACTION, **combat_action_params)
+        
         # Esegui l'azione in base al tipo
         risultato = None
         
@@ -520,7 +575,7 @@ def esegui_azione_combattimento():
                     "errore": "Attaccante o target non trovato"
                 }), 404
                 
-            # Esegui l'attacco
+            # Esegui l'attacco (retrocompatibilità)
             risultato = state.esegui_attacco(attaccante_id, target_id, arma)
             
         elif tipo_azione == "incantesimo":
@@ -537,7 +592,7 @@ def esegui_azione_combattimento():
                     "errore": "Incantatore o target non trovato"
                 }), 404
                 
-            # Lancia l'incantesimo
+            # Lancia l'incantesimo (retrocompatibilità)
             risultato = state.lancia_incantesimo(incantatore_id, incantesimo, target_ids)
             
         elif tipo_azione == "oggetto":
@@ -554,7 +609,7 @@ def esegui_azione_combattimento():
                     "errore": "Utilizzatore non trovato"
                 }), 404
                 
-            # Usa l'oggetto
+            # Usa l'oggetto (retrocompatibilità)
             risultato = state.usa_oggetto(utilizzatore_id, oggetto, target_ids)
             
         elif tipo_azione == "movimento":
@@ -569,7 +624,7 @@ def esegui_azione_combattimento():
                     "errore": "Entità non trovata"
                 }), 404
                 
-            # Esegui il movimento
+            # Esegui il movimento (retrocompatibilità)
             risultato = state.muovi(entita_id, destinazione)
             
         elif tipo_azione == "passa":
@@ -591,6 +646,14 @@ def esegui_azione_combattimento():
             # Il combattimento è terminato, determina il vincitore
             vincitore = state.determina_vincitore()
             
+            # Emetti evento di fine combattimento
+            event_bus.emit(EventType.COMBAT_END, 
+                          combat_id=state.id if hasattr(state, "id") else id_sessione,
+                          session_id=id_sessione,
+                          player_id=world.get_player_entity().id if world.get_player_entity() else None,
+                          winner=vincitore,
+                          reason="combat_resolution")
+            
             # Gestisci la fine del combattimento (ricompense, esperienza, ecc.)
             state.gestisci_fine_combattimento(vincitore)
             
@@ -610,6 +673,15 @@ def esegui_azione_combattimento():
             # Ottieni l'azione dell'IA
             azione_ia = state.determina_azione_ia(state.turno_corrente)
             
+            # Emetti evento di azione IA
+            enemy_entity = world.get_entity(state.turno_corrente)
+            event_bus.emit(EventType.COMBAT_AI_ACTION, 
+                          combat_id=state.id if hasattr(state, "id") else id_sessione,
+                          entity_id=state.turno_corrente,
+                          entity_type="enemy",
+                          entity_name=enemy_entity.name if enemy_entity else "Unknown Enemy",
+                          action=azione_ia)
+            
             # Esegui l'azione dell'IA
             risultato_ia = state.esegui_azione_ia(azione_ia)
             
@@ -619,6 +691,15 @@ def esegui_azione_combattimento():
             # Controlla di nuovo se il combattimento è terminato
             if state.controlla_fine_combattimento():
                 vincitore = state.determina_vincitore()
+                
+                # Emetti evento di fine combattimento
+                event_bus.emit(EventType.COMBAT_END, 
+                              combat_id=state.id if hasattr(state, "id") else id_sessione,
+                              session_id=id_sessione,
+                              player_id=world.get_player_entity().id if world.get_player_entity() else None,
+                              winner=vincitore,
+                              reason="combat_resolution")
+                
                 state.gestisci_fine_combattimento(vincitore)
                 
                 # Salva lo stato del combattimento
@@ -633,6 +714,12 @@ def esegui_azione_combattimento():
                     "combattimento_terminato": True,
                     "vincitore": vincitore
                 })
+        
+        # Emetti evento cambio turno
+        event_bus.emit(EventType.COMBAT_TURN, 
+                      combat_id=state.id if hasattr(state, "id") else id_sessione,
+                      entity_id=state.turno_corrente,
+                      round=state.round_corrente)
         
         # Salva lo stato aggiornato del combattimento
         world.set_temporary_state("combattimento", state.to_dict())
@@ -671,8 +758,16 @@ def ottieni_azioni_disponibili():
         }), 404
     
     try:
+        # Ottieni EventBus
+        event_bus = EventBus.get_instance()
+        
         # Ottieni il mondo dalla sessione
         world = sessioni_attive[id_sessione]
+        
+        # Emetti evento di richiesta azioni disponibili
+        event_bus.emit(EventType.COMBAT_ACTIONS_REQUEST, 
+                      session_id=id_sessione,
+                      entity_id=entita_id)
         
         # Ottieni lo stato del combattimento
         stato_combattimento = world.get_temporary_state("combattimento")
@@ -697,12 +792,22 @@ def ottieni_azioni_disponibili():
         # Ottieni le azioni disponibili per l'entità
         azioni = state.get_azioni_disponibili(entita_id)
         
-        return jsonify({
+        # Prepara i dati di risposta
+        response_data = {
             "successo": True,
             "entita_id": entita_id,
             "è_turno_corrente": entita_id == state.turno_corrente,
             "azioni_disponibili": azioni
-        })
+        }
+        
+        # Emetti evento di UI update per le azioni
+        event_bus.emit(EventType.UI_UPDATE, 
+                      ui_element="combat_actions",
+                      entity_id=entita_id,
+                      actions=azioni,
+                      is_current_turn=entita_id == state.turno_corrente)
+        
+        return jsonify(response_data)
     except Exception as e:
         logger.error(f"Errore durante l'ottenimento delle azioni disponibili: {e}")
         return jsonify({
@@ -731,6 +836,9 @@ def termina_combattimento():
         }), 404
     
     try:
+        # Ottieni EventBus
+        event_bus = EventBus.get_instance()
+        
         # Ottieni il mondo dalla sessione
         world = sessioni_attive[id_sessione]
         
@@ -752,6 +860,13 @@ def termina_combattimento():
                 "successo": False,
                 "errore": "Il combattimento è ancora in corso e non può essere terminato"
             }), 400
+        
+        # Emetti evento di fine combattimento forzata
+        event_bus.emit(EventType.COMBAT_END, 
+                      session_id=id_sessione,
+                      player_id=world.get_player_entity().id if world.get_player_entity() else None,
+                      combat_id=state.id if hasattr(state, "id") else "unknown",
+                      reason="forced_termination" if forzato else "normal_termination")
         
         # Termina il combattimento
         state.termina_combattimento(forzato)
@@ -792,6 +907,9 @@ def ottieni_nemici_vicini():
         }), 404
     
     try:
+        # Ottieni EventBus
+        event_bus = EventBus.get_instance()
+        
         # Ottieni il mondo dalla sessione
         world = sessioni_attive[id_sessione]
         
@@ -802,6 +920,12 @@ def ottieni_nemici_vicini():
                 "successo": False,
                 "errore": "Giocatore non trovato"
             }), 404
+            
+        # Emetti evento di ricerca nemici vicini
+        event_bus.emit(EventType.NEARBY_ENEMIES_REQUEST, 
+                      session_id=id_sessione,
+                      player_id=player.id,
+                      radius=10)  # Raggio di ricerca standard
             
         # Ottieni la posizione del giocatore
         position = player.get_component("position")
@@ -830,6 +954,13 @@ def ottieni_nemici_vicini():
                             "livello": getattr(entity, "livello", 1),
                             "distanza": round(distanza, 1)
                         })
+        
+        # Emetti evento risposta con nemici trovati
+        event_bus.emit(EventType.UI_UPDATE, 
+                      ui_element="nearby_enemies",
+                      player_id=player.id,
+                      enemies=nemici_vicini,
+                      map_id=position.map_name)
         
         return jsonify({
             "successo": True,

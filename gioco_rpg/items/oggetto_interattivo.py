@@ -1,5 +1,6 @@
 from util.dado import Dado
 from util.data_manager import get_data_manager
+import json
 
 class OggettoInterattivo:
     def __init__(self, nome, descrizione="", stato="chiuso", contenuto=None, posizione=None, token="O"):
@@ -45,6 +46,10 @@ class OggettoInterattivo:
         if 'eventi' in state:
             del state['eventi']
         
+        # Rimuove oggetti collegati che potrebbero causare riferimenti circolari
+        if 'oggetti_collegati' in state:
+            del state['oggetti_collegati']
+        
         # Rimuove altri elementi non serializzabili
         non_serializzabili = []
         for key, value in state.items():
@@ -66,8 +71,40 @@ class OggettoInterattivo:
         # Inizializza eventi vuoti
         state['eventi'] = {}
         
+        # Inizializza oggetti collegati vuoti
+        if 'oggetti_collegati' not in state:
+            state['oggetti_collegati'] = {}
+        
         # Aggiorna lo stato dell'oggetto
         self.__dict__.update(state)
+    
+    def __str__(self):
+        """
+        Restituisce una rappresentazione stringa dell'oggetto.
+        
+        Returns:
+            str: Rappresentazione dell'oggetto come stringa
+        """
+        return f"{self.nome} [{self.stato}]"
+    
+    def __repr__(self):
+        """
+        Restituisce una rappresentazione debug dell'oggetto.
+        
+        Returns:
+            str: Rappresentazione debug dell'oggetto come stringa
+        """
+        return f"{self.__class__.__name__}(nome='{self.nome}', stato='{self.stato}')"
+    
+    # Implementazione della serializzazione JSON
+    def to_json(self):
+        """
+        Converte l'oggetto in formato JSON.
+        
+        Returns:
+            str: Rappresentazione JSON dell'oggetto
+        """
+        return json.dumps(self.to_dict(), ensure_ascii=False)
     
     def interagisci(self, giocatore, gioco=None):
         """
@@ -206,7 +243,25 @@ class OggettoInterattivo:
         
         # Aggiungi il contenuto se presente
         if self.contenuto:
-            result["contenuto"] = [obj.to_dict() if hasattr(obj, 'to_dict') else {"nome": obj.nome} for obj in self.contenuto]
+            result["contenuto"] = []
+            for obj in self.contenuto:
+                if hasattr(obj, 'to_dict') and callable(getattr(obj, 'to_dict')):
+                    result["contenuto"].append(obj.to_dict())
+                elif hasattr(obj, 'nome'):
+                    result["contenuto"].append({"nome": obj.nome})
+                elif isinstance(obj, str):
+                    result["contenuto"].append({"nome": obj})
+                else:
+                    result["contenuto"].append({"nome": str(obj)})
+        
+        # Aggiungi riferimento agli oggetti collegati (solo nomi per evitare riferimenti circolari)
+        if self.oggetti_collegati:
+            result["oggetti_collegati"] = {}
+            for key, obj in self.oggetti_collegati.items():
+                if hasattr(obj, 'nome'):
+                    result["oggetti_collegati"][key] = obj.nome
+                else:
+                    result["oggetti_collegati"][key] = str(obj)
         
         return result
     
@@ -249,12 +304,22 @@ class OggettoInterattivo:
         """
         from items.oggetto import Oggetto
         
+        # Verifica che i dati siano validi
+        if not isinstance(data, dict):
+            return cls("Oggetto Sconosciuto")
+            
+        nome = data.get("nome", "")
+        descrizione = data.get("descrizione", "")
+        stato = data.get("stato", "chiuso")
+        posizione = data.get("posizione")
+        token = data.get("token", "O")
+        
         oggetto = cls(
-            nome=data.get("nome", ""),
-            descrizione=data.get("descrizione", ""),
-            stato=data.get("stato", "chiuso"),
-            posizione=data.get("posizione"),
-            token=data.get("token", "O")
+            nome=nome,
+            descrizione=descrizione,
+            stato=stato,
+            posizione=posizione,
+            token=token
         )
         
         # Imposta il tipo
@@ -266,7 +331,12 @@ class OggettoInterattivo:
         
         for item in contenuto_raw:
             if isinstance(item, dict):
-                contenuto.append(Oggetto.from_dict(item))
+                try:
+                    contenuto.append(Oggetto.from_dict(item))
+                except Exception as e:
+                    # In caso di errore, crea un oggetto generico con il nome
+                    nome_item = item.get("nome", "Oggetto Sconosciuto")
+                    contenuto.append(Oggetto(nome_item, "comune"))
             elif isinstance(item, str):
                 # Crea un oggetto generico se solo il nome è disponibile
                 contenuto.append(Oggetto(item, "comune"))
@@ -322,26 +392,31 @@ class OggettoInterattivo:
         Returns:
             bool: True se il salvataggio è avvenuto con successo, False altrimenti.
         """
-        data_manager = get_data_manager()
-        oggetti = data_manager.get_interactive_objects()
-        
-        # Converti l'oggetto in dizionario
-        oggetto_dict = self.to_dict()
-        
-        # Cerca se l'oggetto esiste già e aggiornalo
-        oggetto_esistente = False
-        for i, oggetto in enumerate(oggetti):
-            if oggetto.get("nome") == self.nome:
-                oggetti[i] = oggetto_dict
-                oggetto_esistente = True
-                break
-                
-        # Se l'oggetto non esiste, aggiungilo
-        if not oggetto_esistente:
-            oggetti.append(oggetto_dict)
+        try:
+            data_manager = get_data_manager()
+            oggetti = data_manager.get_interactive_objects()
             
-        # Salva gli oggetti aggiornati
-        return data_manager.save_interactive_objects(oggetti)
+            # Converti l'oggetto in dizionario
+            oggetto_dict = self.to_dict()
+            
+            # Cerca se l'oggetto esiste già e aggiornalo
+            oggetto_esistente = False
+            for i, oggetto in enumerate(oggetti):
+                if isinstance(oggetto, dict) and oggetto.get("nome") == self.nome:
+                    oggetti[i] = oggetto_dict
+                    oggetto_esistente = True
+                    break
+                    
+            # Se l'oggetto non esiste, aggiungilo
+            if not oggetto_esistente:
+                oggetti.append(oggetto_dict)
+                
+            # Salva gli oggetti aggiornati
+            return data_manager.save_interactive_objects(oggetti)
+        except Exception as e:
+            import logging
+            logging.error(f"Errore nel salvataggio dell'oggetto {self.nome}: {e}")
+            return False
 
 
 class Baule(OggettoInterattivo):

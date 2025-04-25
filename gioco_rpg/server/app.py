@@ -1,4 +1,16 @@
-from flask import Flask, jsonify, request, send_file
+# Assicurati che eventlet sia configurato correttamente
+# Se eventlet è già stato patched in main.py, non farà nulla qui
+try:
+    import eventlet
+    # Applica il monkey patching di Eventlet
+    print("Applicazione monkey patching di Eventlet...")
+    eventlet.monkey_patch(socket=True, select=True)
+    print("Eventlet configurato correttamente per WebSocket")
+except ImportError:
+    print("ATTENZIONE: Eventlet non disponibile, le prestazioni WebSocket potrebbero essere ridotte")
+    pass
+
+from flask import Flask, jsonify, request, send_file, send_from_directory
 from flask_cors import CORS
 from flask_socketio import SocketIO
 import os
@@ -7,6 +19,11 @@ import json
 import sys
 from werkzeug.exceptions import BadRequest
 import datetime
+import time
+from server.routes import register_routes
+from server.websocket.websocket_manager import WebSocketManager
+from server.websocket.session_auth import SessionAuthManager
+from server.utils.session import get_session_manager
 
 # Aggiungi il percorso della directory principale al sys.path per assicurarsi che tutti i moduli siano importabili
 current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -23,18 +40,68 @@ from server.utils.session import set_socketio
 from util.config import SESSIONS_DIR, SAVE_DIR, BACKUPS_DIR
 from util.asset_manager import get_asset_manager
 from core.graphics_renderer import GraphicsRenderer
+# Importa i moduli di diagnostica
+from server.routes.api_diagnostics import api_diagnostics
+# Importa il nostro nuovo WebSocketManager
+from server.websocket.websocket_manager import WebSocketManager
+
+# Importa i blueprint API con gestione degli errori
+try:
+    from server.routes.entity_api import entity_api
+except ImportError:
+    # Crea un blueprint vuoto se il modulo non esiste
+    from flask import Blueprint
+    entity_api = Blueprint('entity_api', __name__)
+    logger.warning("Impossibile importare entity_api, utilizzando un blueprint vuoto")
+
+try:  
+    from server.routes.api_map import api_map
+except ImportError:
+    # Crea un blueprint vuoto se il modulo non esiste
+    from flask import Blueprint
+    api_map = Blueprint('api_map', __name__)
+    logger.warning("Impossibile importare api_map, utilizzando un blueprint vuoto")
+
+try:
+    from server.routes.health_api import health_api
+except ImportError:
+    # Crea un blueprint vuoto se il modulo non esiste
+    from flask import Blueprint
+    health_api = Blueprint('health_api', __name__)
+    logger.warning("Impossibile importare health_api, utilizzando un blueprint vuoto")
 
 # Configura il logger
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
-def create_app():
-    """Crea e configura l'app Flask"""
-    app = Flask(__name__)
+def create_app(config=None):
+    """
+    Crea e configura l'applicazione Flask
+    
+    Args:
+        config (dict, optional): Configurazione personalizzata
+        
+    Returns:
+        Flask: Istanza dell'applicazione configurata
+    """
+    app = Flask(__name__, static_folder=None)
+    
+    # Configurazione di base
+    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'chiave_segreta_per_dev')
+    app.config['CORS_HEADERS'] = 'Content-Type'
+    app.config['JSON_AS_ASCII'] = False
+    app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16 MB
+    
+    # Applica configurazione personalizzata
+    if config:
+        app.config.update(config)
     
     # Configurazione CORS più dettagliata
     cors_config = {
-        "origins": ["http://localhost:3000"],
+        "origins": ["http://localhost:3000", "http://localhost:5000", "*"],
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         "allow_headers": [
             "Content-Type", 
@@ -194,77 +261,58 @@ def create_app():
     # Aggiungi una route esplicita per la root che restituisca uno stato OK
     @app.route('/', methods=['GET'])
     def root_handler():
+        logger.info("Richiesta route root")
         return jsonify({
-            "status": "online",
-            "message": "Server del gioco RPG funzionante"
-        }), 200
+            "status": "ok",
+            "message": "Server del gioco RPG in esecuzione",
+            "versione": "1.0.0"
+        })
     
-    # Registra middleware per la validazione del JSON
+    # Validazione JSON per le richieste POST/PUT
     @app.before_request
     def validate_json():
-        if request.method == 'POST' and request.is_json:
+        if request.method in ('POST', 'PUT') and request.content_type == 'application/json':
             try:
-                # Verifica che il JSON sia valido
-                _ = request.get_json(force=True)
+                _ = request.json
             except BadRequest:
-                return jsonify({
-                    "successo": False,
-                    "errore": "Il formato JSON fornito non è valido"
-                }), 400
+                logger.warning(f"Ricevuti dati JSON non validi nella richiesta: {request.data}")
+                return jsonify({"successo": False, "errore": "JSON non valido"}), 400
     
-    # Registra error handler specifico per BadRequest
+    # Gestione degli errori
     @app.errorhandler(BadRequest)
     def handle_bad_request(e):
-        logger.warning(f"Richiesta non valida: {str(e)}")
+        logger.warning(f"Bad request: {e}")
         return jsonify({
             "successo": False,
-            "errore": "Richiesta non valida o malformata"
+            "errore": "Richiesta non valida"
         }), 400
     
-    # Gestore specifico per gli errori 404 (Not Found)
+    # Gestione errore 404
     @app.errorhandler(404)
     def handle_not_found(e):
-        logger.warning(f"Risorsa non trovata: {request.path}")
+        # Ottieni il percorso richiesto
+        path = request.path if request else "Unknown"
+        logger.warning(f"Risorsa non trovata: {path}")
         
-        # Controlla se sembra un tentativo di path traversal
-        if '..' in request.path or '../' in request.path or '/..' in request.path:
-            logger.warning(f"Possibile tentativo di path traversal bloccato: {request.path}")
-            return jsonify({
-                "successo": False,
-                "errore": "Accesso non autorizzato"
-            }), 403
-            
         return jsonify({
             "successo": False,
-            "errore": "La risorsa richiesta non è stata trovata"
+            "errore": "File non trovato"
         }), 404
     
-    # Registra error handler per le eccezioni generiche
+    # Gestione generica degli errori
     @app.errorhandler(Exception)
     def handle_exception(e):
-        logger.error(f"Errore non gestito: {str(e)}")
-        import traceback
-        logger.error(traceback.format_exc())
-        
-        # Controlla se è un tentativo di path traversal
-        if request and hasattr(request, 'path'):
-            if '..' in request.path or '../' in request.path or '/..' in request.path:
-                logger.warning(f"Possibile tentativo di path traversal bloccato: {request.path}")
-                return jsonify({
-                    "successo": False,
-                    "errore": "Accesso non autorizzato"
-                }), 403
-                
+        """
+        Gestisce le eccezioni generiche in modo centralizzato
+        """
+        logger.error(f"Errore non gestito: {str(e)}", exc_info=True)
         return jsonify({
-            "successo": False,
-            "errore": "Si è verificato un errore interno"
+            'status': 'error',
+            'message': f"Si è verificato un errore: {str(e)}"
         }), 500
     
     # Registra i blueprint delle route
     app.register_blueprint(base_routes, url_prefix='/game')
-    
-    # NOTA: Sembra che registrare sia tramite game_routes che direttamente stia causando problemi
-    # Non utilizziamo register_game_routes, ma registriamo direttamente i blueprint necessari
     
     # Import esplicito dei blueprint necessari
     from server.routes.session_routes import session_routes
@@ -294,6 +342,24 @@ def create_app():
     app.register_blueprint(mappa_routes, url_prefix='/mappa')
     app.register_blueprint(assets_routes)
     app.register_blueprint(classes_routes, url_prefix='/game/classes')
+    
+    # Registra i blueprint per le API
+    app.register_blueprint(api_diagnostics, url_prefix='/api')
+    
+    # Registra i blueprint per le API REST che falliscono nei test
+    app.register_blueprint(entity_api, url_prefix='/api')
+    app.register_blueprint(api_map, url_prefix='/api/map')
+    app.register_blueprint(health_api, url_prefix='/api')
+    
+    # Aggiungi route per ping - ridefiniamo per avere consistenza
+    @app.route('/ping', methods=['GET'])
+    def ping():
+        logger.info("Richiesta ping")
+        return jsonify({
+            "status": "ok",
+            "message": "pong",
+            "timestamp": datetime.datetime.now().isoformat()
+        })
     
     # Supporto per le URL legacy (combattimento)
     try:
@@ -344,84 +410,120 @@ def create_app():
                         "error": "File delle classi non trovato"
                     }), 404
             
-            # Carica il file JSON
+            # Leggi il file
             with open(classes_file, 'r', encoding='utf-8') as f:
-                classes_data = json.load(f)
+                classi_data = json.load(f)
             
-            # Formatta i dati per il frontend
-            classes_list = []
-            for class_id, class_info in classes_data.items():
-                classes_list.append({
-                    "id": class_id,
-                    "nome": class_id.capitalize(),
-                    "descrizione": class_info.get("descrizione", "")
-                })
-            
+            # Trasforma i dati nel formato atteso dal frontend
+            classi_formattate = []
+            for classe_id, classe_info in classi_data.items():
+                classe_info["id"] = classe_id
+                classi_formattate.append(classe_info)
+                
             return jsonify({
                 "success": True,
-                "classi": classes_list
+                "classi": classi_formattate
             })
         except Exception as e:
-            logger.error(f"Errore nel caricamento delle classi: {str(e)}")
+            logger.error(f"Errore nel recupero delle classi: {e}")
             return jsonify({
                 "success": False,
-                "error": f"Impossibile caricare le classi: {str(e)}"
+                "error": str(e)
             }), 500
     
-    # Route diretta per le classi (con prefisso game)
     @app.route("/game/classes", methods=["GET"])
     def get_game_classes_direct():
         logger.info("Route diretta /game/classes chiamata")
         return get_classes_direct()
     
-    # Route diretta per il test di combat
-    @app.route("/game/combat/test_direct", methods=["GET"])
-    def test_combat_direct():
-        logger.info("Route di test combat diretta chiamata")
-        return jsonify({
-            "successo": True,
-            "messaggio": "Test combat diretto funziona correttamente"
-        })
-    
-    # Debug delle route
-    logger.info("Route registrate nell'applicazione:")
-    for rule in app.url_map.iter_rules():
-        logger.info(f"Route: {rule.rule} [metodi: {', '.join(rule.methods)}]")
-    
-    # Stampa dettagliata delle route di combattimento
-    logger.info("=== ROUTE DI COMBATTIMENTO ===")
-    for rule in app.url_map.iter_rules():
-        if 'combat' in rule.rule or 'combattimento' in rule.rule:
-            logger.info(f"Combat route: {rule.rule} [endpoint: {rule.endpoint}] [metodi: {', '.join(rule.methods)}]")
-    
-    # Sovrascrivi la route /status esistente con una versione più robusta
+    # Route per verifica status
     @app.route('/status', methods=['GET', 'OPTIONS'])
     def check_status():
         """
-        Endpoint semplice per verificare lo stato del server
-        Usato dal frontend per controllare la disponibilità
+        Verifica lo stato del server e restituisce info sul sistema
         """
-        if request.method == 'OPTIONS':
-            # Gestisci le richieste CORS OPTIONS
-            response = app.make_default_options_response()
-        else:
-            # Restituisci lo stato del server come JSON
-            response = jsonify({
-                'status': 'online',
-                'version': '1.0.0',
-                'message': 'Server disponibile',
-                'timestamp': str(datetime.datetime.now())
-            })
+        try:
+            # Ottieni informazioni base sul sistema
+            import platform
+            import psutil
             
-        # Configura gli header CORS per consentire richieste da qualsiasi origine
-        response.headers.add('Access-Control-Allow-Origin', '*')
-        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-        response.headers.add('Access-Control-Allow-Methods', 'GET,OPTIONS')
-        
-        return response, 200
+            system_info = {
+                "platform": platform.platform(),
+                "python_version": sys.version,
+                "memory_usage": psutil.virtual_memory().percent,
+                "cpu_usage": psutil.cpu_percent(interval=0.1)
+            }
+            
+            # Verifica presenza asset manager
+            asset_manager = get_asset_manager()
+            assets_count = 0
+            if asset_manager:
+                try:
+                    assets_count = len(asset_manager.get_all_sprites()) + len(asset_manager.get_all_tiles()) + len(asset_manager.get_all_ui_elements())
+                except:
+                    pass
+            
+            status_info = {
+                "status": "ok",
+                "uptime": time.time() - SERVER_START_TIME if 'SERVER_START_TIME' in globals() else 0,
+                "system": system_info,
+                "assets_loaded": assets_count,
+                "timestamp": datetime.datetime.now().isoformat()
+            }
+            
+            return jsonify(status_info)
+        except Exception as e:
+            logger.error(f"Errore durante check_status: {e}")
+            return jsonify({
+                "status": "error",
+                "error": str(e),
+                "timestamp": datetime.datetime.now().isoformat()
+            }), 500
     
+    # Aggiunta del socket manager per WebSocket
+    socket_manager = WebSocketManager(app)
+    # Flask-SocketIO non ha un metodo middleware ma integra automaticamente con Flask
+    # Salva il riferimento al socket_manager per usarlo altrove
+    app.socket_manager = socket_manager
+    
+    # Registra le route
+    register_routes(app)
+    
+    # Stato di salute
+    @app.route('/health')
+    def health():
+        """
+        Endpoint di health check
+        """
+        session_manager = get_session_manager()
+        active_sessions = len(session_manager.get_active_sessions()) if session_manager else 0
+        
+        return jsonify({
+            'status': 'ok',
+            'websocket_connections': app.websocket_connections,
+            'active_sessions': active_sessions,
+            'authenticated_sessions': app.session_auth_manager.get_active_sessions_count()
+        })
+    
+    # Esegui pulizia sessioni scadute periodicamente
+    @app.before_request
+    def cleanup_expired_sessions():
+        """
+        Pulisce le sessioni JWT scadute prima di ogni richiesta
+        """
+        if hasattr(app, 'session_auth_manager') and app.session_auth_manager:
+            # Esegui pulizia solo ogni 100 richieste (valore approssimativo)
+            import random
+            if random.random() < 0.01:  # 1% delle richieste
+                app.session_auth_manager.cleanup_expired_sessions()
+    
+    logger.info("Applicazione Flask inizializzata")
     return app
 
+# Memorizza il tempo di avvio del server
+SERVER_START_TIME = time.time()
+
+# Funzione per inizializzare le directory necessarie
 def init_directories():
     """Crea le directory necessarie se non esistono"""
     os.makedirs(SESSIONS_DIR, exist_ok=True)
@@ -429,40 +531,107 @@ def init_directories():
     os.makedirs(BACKUPS_DIR, exist_ok=True)
 
 def create_socketio(app):
-    """Crea e configura l'istanza SocketIO"""
-    socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
-    return socketio
+    """
+    Crea e configura l'oggetto SocketIO per le comunicazioni WebSocket
+    """
+    try:
+        # Configurazione ottimizzata per WebSocket con Eventlet
+        # I valori ping_timeout e ping_interval sono cruciali per evitare disconnessioni premature
+        ping_timeout = 60000  # Aumentato a 60 secondi
+        ping_interval = 25000 # Mantenuto a 25 secondi
+        
+        # Configura CORS per supportare completamente WebSocket
+        cors_allowed = ["http://localhost:3000", "http://localhost:5000", "http://127.0.0.1:3000", "http://127.0.0.1:5000"]
+        
+        socketio = SocketIO(
+            app, 
+            cors_allowed_origins=cors_allowed, 
+            async_mode='eventlet',  # Usa eventlet per supportare WebSocket nativo
+            ping_timeout=ping_timeout,       # 60 secondi di timeout per evitare disconnessioni premature
+            ping_interval=ping_interval,     # 25 secondi tra ping per un bilanciamento ottimale
+            always_connect=True,    # Tentativo di connessione immediato
+            manage_session=False,   # Gestisci le sessioni manualmente per maggior controllo
+            transports=['websocket', 'polling'],  # Preferisci WebSocket, fallback su polling
+            engineio_logger=True if app.debug else False,  # Log dettagliati solo in debug
+            logger=True if app.debug else False  # Logging di Flask-SocketIO
+        )
+        
+        # Configura il websocket_manager nell'app per accesso futuro
+        websocket_manager = WebSocketManager(app, socketio)
+        app.websocket_manager = websocket_manager
+        
+        # NON inizializzare gli handler websocket qui
+        # Gli handler verranno inizializzati nella funzione setup() dove è disponibile il renderer
+        
+        # Configura il socketio nel modulo di sessione
+        set_socketio(socketio)
+        
+        # Registra CORS per supportare WebSocket
+        app.config['CORS_HEADERS'] = 'Content-Type, Authorization'
+        logger.info(f"SocketIO configurato con successo utilizzando async_mode='eventlet', ping_interval={ping_interval/1000}s, ping_timeout={ping_timeout/1000}s")
+        logger.info(f"CORS configurato per: {cors_allowed}")
+        return socketio
+    except Exception as e:
+        logger.error(f"Errore nella configurazione di SocketIO: {str(e)}")
+        raise e
 
 def setup():
-    """Configurazione iniziale del server"""
-    # Crea le directory necessarie
-    init_directories()
+    """
+    Configurazione completa dell'applicazione e del server WebSocket
     
-    # Crea l'app Flask
+    Returns:
+        tuple: (app, socketio)
+    """
+    # Crea app Flask
     app = create_app()
     
-    # Crea l'istanza SocketIO
+    # Verifica e crea directory richieste
+    init_directories()
+    
+    # Crea istanza SocketIO
     socketio = create_socketio(app)
     
-    # Imposta il riferimento socketio nel modulo session
+    # Configura SessionAuthManager se supporta set_socketio
+    try:
+        from server.websocket.session_auth import SessionAuthManager
+        session_auth_manager = SessionAuthManager()
+        if hasattr(session_auth_manager, 'set_socketio'):
+            session_auth_manager.set_socketio(socketio)
+            logger.info("SessionAuthManager configurato con socketio")
+    except Exception as e:
+        logger.warning(f"Impossibile configurare SessionAuthManager: {e}")
+    
+    # Imposta l'istanza socketio nel modulo utils.session
+    from server.utils.session import set_socketio
     set_socketio(socketio)
     
-    # Crea il renderer grafico
-    graphics_renderer = GraphicsRenderer(socketio)
+    # Configura il renderer grafico
+    from core.graphics_renderer import GraphicsRenderer
+    graphics_renderer = GraphicsRenderer()
+    
+    # Importa WebSocketEventBridge dopo aver creato socketio
+    try:
+        from server.websocket.websocket_event_bridge import WebSocketEventBridge
+        # Ottieni l'istanza esistente o creane una nuova
+        websocket_bridge = WebSocketEventBridge.get_instance()
+        # Imposta l'istanza SocketIO solo se non è stata già impostata
+        if websocket_bridge.socketio is None:
+            websocket_bridge.set_socketio(socketio)
+        logger.info("WebSocketEventBridge inizializzato correttamente")
+    except Exception as e:
+        logger.error(f"Errore durante inizializzazione WebSocketEventBridge: {e}")
     
     # Inizializza gli handler WebSocket
+    from server.websocket import init_websocket_handlers
     init_websocket_handlers(socketio, graphics_renderer)
     
-    # Inizializza il gestore degli asset
-    asset_manager = get_asset_manager()
-    asset_manager.update_all()
-    
-    # Importa e chiama la funzione di inizializzazione degli asset esterni
-    from server.utils.asset_loader import init_assets
-    init_assets()
-    
-    # Configura il renderer grafico
-    graphics_renderer.set_socket_io(socketio)
+    # Inizializza l'asset manager
+    try:
+        from util.asset_manager import get_asset_manager
+        asset_manager = get_asset_manager()
+        asset_manager.update_all()
+    except Exception as e:
+        logger.warning(f"Impossibile inizializzare asset manager: {e}")
     
     return app, socketio
 
@@ -471,7 +640,106 @@ app, socketio = setup()
 
 def run_server(debug=True, host="0.0.0.0", port=5000):
     """Avvia il server"""
-    socketio.run(app, debug=debug, host=host, port=port)
+    logger.info(f"Avvio server su {host}:{port} (debug: {debug})")
+    
+    # Ottieni la modalità asincrona in uso
+    async_mode = socketio.async_mode
+    logger.info(f"Utilizzando modalità asincrona: {async_mode}")
+    
+    # Verifica se la porta è già in uso e prova porte alternative
+    original_port = port
+    max_port_attempts = 10
+    port_attempts = 0
+    
+    while port_attempts < max_port_attempts:
+        try:
+            import socket
+            test_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            test_socket.bind((host, port))
+            test_socket.close()
+            logger.info(f"Porta {port} disponibile per l'uso")
+            break
+        except OSError:
+            port_attempts += 1
+            port = original_port + port_attempts
+            logger.warning(f"Porta {port-1} già in uso, provo con la porta {port}")
+            if port_attempts >= max_port_attempts:
+                logger.error(f"Impossibile trovare una porta disponibile dopo {max_port_attempts} tentativi")
+                raise RuntimeError(f"Tutte le porte da {original_port} a {port-1} sono occupate")
+    
+    try:
+        # Con Flask-SocketIO, usare sempre socketio.run() che gestisce autonomamente
+        # l'integrazione con i vari backends come eventlet o gevent
+        socketio.run(app, host=host, port=port, debug=debug)
+    except Exception as e:
+        logger.error(f"Errore durante l'avvio del server: {e}")
+        raise e
 
 if __name__ == "__main__":
     run_server()
+
+def setup_diagnostics_routes(app):
+    """
+    Configura le route per la diagnostica dopo che il blueprint è stato registrato
+    
+    Args:
+        app: L'istanza dell'applicazione Flask
+    """
+    from flask import jsonify, request
+    import json
+    
+    # Definisci variabili globali per viewport_info
+    app.viewport_info = {}
+    
+    # Aggiungi la funzione di gestione per /api/diagnostics/frontend
+    @app.route('/api/diagnostics/frontend', methods=['GET'])
+    def get_frontend_diagnostics():
+        """
+        Restituisce dati diagnostici sul frontend, incluso il viewport.
+        
+        Returns:
+            JSON: Dati diagnostici frontend
+        """
+        # Ottieni i dati dal frontend se presenti nella richiesta
+        if request.args.get('update') and request.args.get('viewport_data'):
+            try:
+                new_viewport = json.loads(request.args.get('viewport_data'))
+                app.viewport_info.update(new_viewport)
+                logger.info(f"Viewport info aggiornate: {app.viewport_info}")
+            except Exception as e:
+                logger.error(f"Errore nell'aggiornamento del viewport: {e}")
+        
+        # Restituisci i dati diagnostici
+        return jsonify({
+            'viewport': app.viewport_info,
+            'browser': request.user_agent.string,
+            'timestamp': request.args.get('timestamp', 0)
+        })
+
+    # Aggiungi una route POST per frontend diagnostics
+    @app.route('/api/diagnostics/frontend', methods=['POST'])
+    def post_frontend_diagnostics():
+        """
+        Riceve dati diagnostici dal frontend.
+        
+        Returns:
+            JSON: Conferma ricezione
+        """
+        try:
+            data = request.json
+            logger.info(f"Ricevuti dati diagnostici dal frontend: {data}")
+            
+            # Aggiorna info viewport se presenti
+            if 'viewport' in data:
+                app.viewport_info.update(data['viewport'])
+                
+            return jsonify({
+                'success': True,
+                'message': 'Dati diagnostici frontend ricevuti correttamente'
+            })
+        except Exception as e:
+            logger.error(f"Errore nell'elaborazione dei dati diagnostici: {e}")
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            }), 500

@@ -3,6 +3,8 @@ from server.utils.session import get_session
 import logging
 import os
 import json
+from core.event_bus import EventBus
+from core.events import EventType
 
 # Configura il logger
 logger = logging.getLogger(__name__)
@@ -28,6 +30,9 @@ def get_stato_mappa():
     if not sessione:
         return jsonify({"successo": False, "errore": "Sessione non trovata"}), 404
     
+    # Ottieni EventBus
+    event_bus = EventBus.get_instance()
+    
     try:
         # Ottieni il world dalla sessione
         world = sessione
@@ -52,6 +57,12 @@ def get_stato_mappa():
             "x": getattr(world.giocatore, 'x', 0),
             "y": getattr(world.giocatore, 'y', 0)
         }
+        
+        # Emetti evento di richiesta stato mappa
+        event_bus.emit(EventType.MAP_STATE_REQUEST, 
+                      session_id=id_sessione,
+                      player_id=world.giocatore.id if hasattr(world, 'giocatore') and world.giocatore else None,
+                      map_id=mappa_corrente)
         
         # Trova entità visibili sulla mappa
         entita_visibili = []
@@ -84,6 +95,13 @@ def get_stato_mappa():
             "posizione_giocatore": posizione_giocatore,
             "entita_visibili": entita_visibili
         }
+        
+        # Emetti evento di risposta stato mappa
+        event_bus.emit(EventType.UI_UPDATE, 
+                      ui_element="map",
+                      player_id=world.giocatore.id if hasattr(world, 'giocatore') and world.giocatore else None,
+                      map_id=mappa_corrente,
+                      map_state=stato_mappa)
         
         return jsonify({
             "successo": True,
@@ -124,7 +142,16 @@ def get_dati_mappa():
         logger.warning(f"Sessione non trovata: {id_sessione}")
         return jsonify({"successo": False, "errore": "Sessione non trovata"}), 404
     
+    # Ottieni EventBus
+    event_bus = EventBus.get_instance()
+    
     try:
+        # Emetti evento di richiesta dati mappa
+        event_bus.emit(EventType.MAP_DATA_REQUEST, 
+                      session_id=id_sessione,
+                      player_id=sessione.giocatore.id if hasattr(sessione, 'giocatore') and sessione.giocatore else None,
+                      map_id=id_mappa)
+        
         # Percorso del file della mappa
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         maps_dir = os.path.join(base_dir, "data", "mappe")
@@ -151,6 +178,12 @@ def get_dati_mappa():
             map_data = json.load(f)
         
         logger.info(f"Dati mappa '{id_mappa}' caricati con successo")
+        
+        # Emetti evento mappa caricata
+        event_bus.emit(EventType.MAP_DATA_LOADED, 
+                      session_id=id_sessione,
+                      player_id=sessione.giocatore.id if hasattr(sessione, 'giocatore') and sessione.giocatore else None,
+                      map_id=id_mappa)
         
         # Verifica le autorizzazioni per accedere alla mappa
         # TODO: Implementare il controllo degli accessi basato sulla progressione del gioco

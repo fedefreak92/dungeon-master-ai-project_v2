@@ -1,6 +1,8 @@
 from flask import Blueprint, request, jsonify
 from server.utils.session import get_session, salva_sessione
 import logging
+from core.event_bus import EventBus
+from core.events import EventType
 
 # Configura il logger
 logger = logging.getLogger(__name__)
@@ -53,6 +55,17 @@ def interagisci_dialogo():
     if not dialogo_state.npg or dialogo_state.npg.id != npg_id:
         return jsonify({"success": False, "error": "NPG non trovato"}), 404
     
+    # Ottieni EventBus
+    event_bus = EventBus.get_instance()
+    
+    # Emetti evento di dialogo aperto
+    event_bus.emit(EventType.DIALOG_OPEN, 
+                  player_id=sessione.giocatore.id,
+                  npc_id=npg_id,
+                  dialog_type="dialogo",
+                  dialog_state=dialogo_state.stato_corrente)
+    
+    # Per retrocompatibilità
     # Avvia o continua il dialogo
     dialogo_corrente = dialogo_state.npg.ottieni_conversazione(dialogo_state.stato_corrente)
     
@@ -83,6 +96,9 @@ def gestisci_scelta_dialogo():
     if not dialogo_state:
         return jsonify({"success": False, "error": "Stato dialogo non disponibile"}), 404
     
+    # Ottieni EventBus
+    event_bus = EventBus.get_instance()
+    
     # Ottieni i dati della conversazione
     dati_conversazione = dialogo_state.npg.ottieni_conversazione(dialogo_state.stato_corrente)
     
@@ -91,14 +107,30 @@ def gestisci_scelta_dialogo():
         return jsonify({"success": False, "error": "Scelta non valida"}), 400
         
     # Ottieni la destinazione
-    _, destinazione = dati_conversazione["opzioni"][scelta_indice]
+    testo_opzione, destinazione = dati_conversazione["opzioni"][scelta_indice]
+    
+    # Emetti evento di scelta dialogo
+    event_bus.emit(EventType.DIALOG_CHOICE, 
+                  player_id=sessione.giocatore.id,
+                  npc_id=dialogo_state.npg.id,
+                  choice_index=scelta_indice,
+                  choice_text=testo_opzione,
+                  destination=destinazione)
     
     # Gestisci la destinazione
     if destinazione is None:
+        # Emetti evento di chiusura dialogo
+        event_bus.emit(EventType.DIALOG_CLOSE, 
+                      player_id=sessione.giocatore.id,
+                      npc_id=dialogo_state.npg.id,
+                      reason="choice_ended")
+                      
+        # Per retrocompatibilità
         # Termina il dialogo
         sessione.pop_stato()
         dialogo_corrente = None
     else:
+        # Per retrocompatibilità
         # Aggiorna lo stato del dialogo
         dialogo_state.stato_corrente = destinazione
         dialogo_state.dati_contestuali["mostrato_dialogo_corrente"] = False
@@ -134,6 +166,16 @@ def gestisci_effetto_dialogo():
     if not dialogo_state:
         return jsonify({"success": False, "error": "Stato dialogo non disponibile"}), 404
     
+    # Ottieni EventBus
+    event_bus = EventBus.get_instance()
+    
+    # Emetti evento di effetto dialogo
+    event_bus.emit(EventType.DIALOG_EFFECT, 
+                  player_id=sessione.giocatore.id,
+                  npc_id=dialogo_state.npg.id if dialogo_state.npg else None,
+                  effect_type=effetto)
+    
+    # Per retrocompatibilità
     # Gestisci l'effetto
     dialogo_state._gestisci_effetto(effetto, sessione)
     

@@ -7,6 +7,8 @@ import traceback
 # Import moduli locali
 from util.asset_manager import get_asset_manager
 from server.websocket.assets import notify_asset_update
+from util.sprite_sheet_manager import get_sprite_sheet_manager
+import json
 
 # Configura il logger
 logger = logging.getLogger(__name__)
@@ -222,4 +224,187 @@ def get_asset_file(asset_path):
         return send_file(requested_path)
     except Exception as e:
         logger.error(f"Errore nell'accesso al file asset: {str(e)}")
-        return jsonify({"errore": "Accesso negato"}), 403 
+        return jsonify({"errore": "Accesso negato"}), 403
+
+@assets_routes.route('/api/assets/info', methods=['GET'])
+def get_assets_info_extended():
+    """
+    Restituisce informazioni sugli asset disponibili.
+    """
+    try:
+        asset_manager = get_asset_manager()
+        
+        # Ottieni informazioni sugli asset
+        sprites = asset_manager.get_all_sprites()
+        tiles = asset_manager.get_all_tiles()
+        animations = asset_manager.get_all_animations()
+        tilesets = asset_manager.get_all_tilesets()
+        ui_elements = asset_manager.get_all_ui_elements()
+        
+        # Ottieni informazioni sugli sprite sheet
+        sprite_sheet_manager = get_sprite_sheet_manager()
+        sprite_sheets = sprite_sheet_manager.sprite_sheets
+        sprite_to_sheet = sprite_sheet_manager.sprite_to_sheet
+        
+        return jsonify({
+            'sprites': {
+                'count': len(sprites),
+                'items': list(sprites.keys())
+            },
+            'tiles': {
+                'count': len(tiles),
+                'items': list(tiles.keys())
+            },
+            'animations': {
+                'count': len(animations),
+                'items': list(animations.keys())
+            },
+            'tilesets': {
+                'count': len(tilesets),
+                'items': list(tilesets.keys())
+            },
+            'ui_elements': {
+                'count': len(ui_elements),
+                'items': list(ui_elements.keys())
+            },
+            'sprite_sheets': {
+                'count': len(sprite_sheets),
+                'items': list(sprite_sheets.keys()),
+                'sprite_mappings': len(sprite_to_sheet)
+            }
+        })
+    except Exception as e:
+        logger.error(f"Errore nell'API assets/info: {e}")
+        return jsonify({
+            'error': str(e)
+        }), 500
+
+@assets_routes.route('/assets/spritesheets/', methods=['GET'])
+def get_spritesheets():
+    """
+    Restituisce l'elenco degli sprite sheet disponibili.
+    """
+    try:
+        sprite_sheet_manager = get_sprite_sheet_manager()
+        sprite_sheets = sprite_sheet_manager.sprite_sheets
+        
+        # Costruisci l'elenco degli sprite sheet disponibili
+        spritesheets_list = []
+        for sheet_id, sheet_info in sprite_sheets.items():
+            spritesheets_list.append({
+                'id': sheet_id,
+                'url': f'/assets/spritesheets/{sheet_id}.json',
+                'image': sheet_info.get('image'),
+                'frames_count': len(sheet_info.get('frames', {}))
+            })
+        
+        return jsonify({
+            'spritesheets': spritesheets_list
+        })
+    except Exception as e:
+        logger.error(f"Errore nell'API spritesheets: {e}")
+        return jsonify({
+            'error': str(e)
+        }), 500
+
+@assets_routes.route('/assets/spritesheets/<sheet_id>.json', methods=['GET'])
+def get_spritesheet(sheet_id):
+    """
+    Restituisce il JSON di uno sprite sheet specifico.
+    """
+    try:
+        # Ottieni l'istanza del gestore degli sprite sheet
+        sprite_sheet_manager = get_sprite_sheet_manager()
+        
+        # Verifica se lo sprite sheet esiste
+        if sheet_id not in sprite_sheet_manager.sprite_sheets:
+            logger.warning(f"Sprite sheet non trovato: {sheet_id}")
+            return jsonify({
+                'error': 'Sprite sheet non trovato'
+            }), 404
+        
+        # Ottieni le informazioni sullo sprite sheet
+        sheet_info = sprite_sheet_manager.sprite_sheets[sheet_id]
+        
+        # Prepara il JSON con le informazioni sullo sprite sheet
+        spritesheet_data = {
+            'id': sheet_id,
+            'frames': sheet_info.get('frames', {}),
+            'meta': sheet_info.get('meta', {}),
+            'animations': sheet_info.get('animations', {})
+        }
+        
+        # Se c'è un percorso all'immagine, aggiorna l'URL per renderlo accessibile
+        image_path = sheet_info.get('image')
+        if image_path:
+            # Calcola l'URL relativo per l'immagine
+            image_filename = os.path.basename(image_path)
+            spritesheet_data['image'] = f'/assets/spritesheets/{image_filename}'
+        
+        return jsonify(spritesheet_data)
+    except Exception as e:
+        logger.error(f"Errore nell'API spritesheet {sheet_id}: {e}")
+        return jsonify({
+            'error': str(e)
+        }), 500
+
+@assets_routes.route('/assets/spritesheets/<filename>', methods=['GET'])
+def get_spritesheet_image(filename):
+    """
+    Restituisce l'immagine di uno sprite sheet specifico.
+    """
+    try:
+        # Verifica che il filename sia sicuro
+        if '..' in filename or filename.startswith('/'):
+            logger.warning(f"Tentativo di accesso non valido: {filename}")
+            return jsonify({
+                'error': 'Percorso non valido'
+            }), 400
+        
+        # Costruisci il percorso completo
+        asset_manager = get_asset_manager()
+        sprite_sheet_manager = get_sprite_sheet_manager()
+        
+        # Cerca in tutte le directory possibili
+        search_paths = [
+            os.path.join(sprite_sheet_manager.base_path, filename),
+            os.path.join(asset_manager.base_path, 'spritesheets', filename)
+        ]
+        
+        # Aggiungi le estensioni se necessario
+        if not any(filename.endswith(ext) for ext in ['.png', '.jpg', '.jpeg']):
+            # Prova con le estensioni
+            search_paths.extend([
+                os.path.join(sprite_sheet_manager.base_path, f"{filename}.png"),
+                os.path.join(asset_manager.base_path, 'spritesheets', f"{filename}.png"),
+                os.path.join(sprite_sheet_manager.base_path, f"{filename}.jpg"),
+                os.path.join(asset_manager.base_path, 'spritesheets', f"{filename}.jpg")
+            ])
+        
+        # Cerca il file
+        for path in search_paths:
+            if os.path.exists(path) and os.path.isfile(path):
+                logger.info(f"Sprite sheet trovato: {path}")
+                return send_file(path)
+        
+        # Fallback a un'immagine di default
+        fallback_paths = [
+            os.path.join(asset_manager.base_path, 'fallback', 'placeholder.png'),
+            os.path.join(asset_manager.base_path, 'player.png')
+        ]
+        
+        for path in fallback_paths:
+            if os.path.exists(path) and os.path.isfile(path):
+                logger.warning(f"Sprite sheet non trovato, uso fallback: {path}")
+                return send_file(path)
+        
+        # Se non troviamo nemmeno il fallback, restituisci un errore
+        logger.error(f"Sprite sheet non trovato e nessun fallback disponibile: {filename}")
+        return jsonify({
+            'error': 'Sprite sheet non trovato'
+        }), 404
+    except Exception as e:
+        logger.error(f"Errore nell'API spritesheet_image {filename}: {e}")
+        return jsonify({
+            'error': str(e)
+        }), 500 

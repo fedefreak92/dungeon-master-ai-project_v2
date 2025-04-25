@@ -316,16 +316,30 @@ class OggettiManager:
             # Prepara la lista di oggetti per questa mappa
             oggetti_lista = []
             for pos, oggetto in mappa.oggetti.items():
-                oggetto_config = {
-                    "nome": oggetto.nome,
-                    "posizione": list(pos),  # Converti la tupla in lista per la serializzazione JSON
-                    "id": getattr(oggetto, 'id', oggetto.nome)
-                }
-                oggetti_lista.append(oggetto_config)
-                
-                # Salva anche la configurazione completa dell'oggetto
-                if hasattr(oggetto, 'salva_su_json') and callable(getattr(oggetto, 'salva_su_json')):
-                    oggetto.salva_su_json()
+                try:
+                    # Converti gli oggetti in dizionari serializzabili
+                    if hasattr(oggetto, 'to_dict') and callable(getattr(oggetto, 'to_dict')):
+                        oggetto_config = {
+                            "nome": oggetto.nome,
+                            "posizione": list(pos),  # Converti la tupla in lista per la serializzazione JSON
+                            "id": getattr(oggetto, 'id', oggetto.nome)
+                        }
+                        oggetti_lista.append(oggetto_config)
+                        
+                        # Salva anche la configurazione completa dell'oggetto
+                        if hasattr(oggetto, 'salva_su_json') and callable(getattr(oggetto, 'salva_su_json')):
+                            oggetto.salva_su_json()
+                    else:
+                        # Fallback per oggetti che non hanno to_dict
+                        oggetto_config = {
+                            "nome": str(oggetto),
+                            "posizione": list(pos),
+                            "tipo": "oggetto_interattivo"
+                        }
+                        oggetti_lista.append(oggetto_config)
+                        logging.warning(f"Oggetto {oggetto} non ha metodo to_dict(), salvato con informazioni di base")
+                except Exception as e:
+                    logging.error(f"Errore durante la serializzazione dell'oggetto a {pos}: {e}")
             
             # Salva le posizioni degli oggetti per questa mappa
             return data_manager.save_map_objects(mappa.nome, oggetti_lista)
@@ -354,22 +368,38 @@ class OggettiManager:
                 oggetti_per_mappa[nome_mappa] = []
                 
                 for pos, oggetto in mappa.oggetti.items():
-                    # Aggiungi l'oggetto alla lista generale per il salvataggio
-                    oggetti_interattivi.append(oggetto)
-                    
-                    # Aggiungi la posizione alla lista per questa mappa
-                    oggetti_per_mappa[nome_mappa].append({
-                        "nome": oggetto.nome,
-                        "posizione": list(pos)  # Converti la tupla in lista per la serializzazione JSON
-                    })
+                    try:
+                        # Verifica che l'oggetto sia effettivamente un OggettoInterattivo
+                        if isinstance(oggetto, OggettoInterattivo):
+                            # Aggiungi l'oggetto alla lista generale per il salvataggio
+                            oggetti_interattivi.append(oggetto)
+                            
+                            # Aggiungi la posizione alla lista per questa mappa
+                            oggetti_per_mappa[nome_mappa].append({
+                                "nome": oggetto.nome,
+                                "posizione": list(pos)  # Converti la tupla in lista per la serializzazione JSON
+                            })
+                        else:
+                            # Gestisci altri tipi di oggetti
+                            oggetti_per_mappa[nome_mappa].append({
+                                "nome": str(oggetto) if hasattr(oggetto, '__str__') else "Oggetto sconosciuto",
+                                "posizione": list(pos),
+                                "tipo": "oggetto_generico"
+                            })
+                            logging.warning(f"Oggetto in ({pos[0]}, {pos[1]}) non è di tipo OggettoInterattivo")
+                    except Exception as e:
+                        logging.error(f"Errore durante la preparazione dell'oggetto in {pos} per il salvataggio: {e}")
             
             # Ottieni il data manager
             data_manager = get_data_manager()
             
             # Salva le posizioni degli oggetti per ogni mappa
             for nome_mappa, oggetti in oggetti_per_mappa.items():
-                data_manager.save_map_objects(nome_mappa, oggetti)
-                logging.info(f"Salvate posizioni di {len(oggetti)} oggetti per la mappa {nome_mappa}")
+                try:
+                    data_manager.save_map_objects(nome_mappa, oggetti)
+                    logging.info(f"Salvate posizioni di {len(oggetti)} oggetti per la mappa {nome_mappa}")
+                except Exception as e:
+                    logging.error(f"Errore nel salvataggio delle posizioni oggetti per mappa {nome_mappa}: {e}")
             
             # Salva gli oggetti interattivi stessi
             oggetti_salvati = 0
@@ -377,11 +407,22 @@ class OggettiManager:
             
             for oggetto in oggetti_interattivi:
                 try:
+                    # Verifica che l'oggetto sia serializzabile in JSON
+                    if hasattr(oggetto, 'to_json') and callable(getattr(oggetto, 'to_json')):
+                        # Prova la serializzazione per verificare che funzioni
+                        oggetto.to_json()
+                        
+                    # Salva l'oggetto utilizzando il suo metodo specifico se disponibile
                     if hasattr(oggetto, 'salva_su_json') and callable(getattr(oggetto, 'salva_su_json')):
                         oggetto.salva_su_json()
                         oggetti_salvati += 1
+                    else:
+                        # Fallback utilizzando il data manager direttamente
+                        oggetto_dict = oggetto.to_dict() if hasattr(oggetto, 'to_dict') else {"nome": str(oggetto)}
+                        data_manager.save_interactive_object(oggetto.nome, oggetto_dict)
+                        oggetti_salvati += 1
                 except Exception as e:
-                    logging.error(f"Errore nel salvataggio dell'oggetto {oggetto.nome}: {e}")
+                    logging.error(f"Errore nel salvataggio dell'oggetto {oggetto.nome if hasattr(oggetto, 'nome') else str(oggetto)}: {e}")
                     oggetti_con_errori += 1
             
             if oggetti_con_errori > 0:
