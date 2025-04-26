@@ -19,6 +19,60 @@ logger = logging.getLogger(__name__)
 # Crea il blueprint per le route di salvataggio
 save_routes = Blueprint('save_routes', __name__)
 
+# Versione corrente del formato di salvataggio
+SAVE_FORMAT_VERSION = "2.0.0"
+
+def sanifica_salvataggio(save_data):
+    """
+    Sanifica i dati di salvataggio per evitare problemi con attributi mancanti o non previsti.
+    Questo è un livello di protezione aggiuntivo al sistema di migrazione degli stati specifici.
+    
+    Args:
+        save_data (dict): Dati del salvataggio deserializzati
+        
+    Returns:
+        dict: Dati del salvataggio sanificati
+    """
+    try:
+        # Ottieni i metadati o crea un dizionario vuoto
+        metadata = save_data.get("metadata", {})
+        
+        # Controlla la versione del salvataggio
+        save_version = metadata.get("versione", "1.0.0")
+        
+        # Se il salvataggio ha una versione precedente, aggiorna la versione
+        if save_version < SAVE_FORMAT_VERSION:
+            logger.info(f"Aggiornamento versione salvataggio da {save_version} a {SAVE_FORMAT_VERSION}")
+            metadata["versione"] = SAVE_FORMAT_VERSION
+            save_data["metadata"] = metadata
+            
+        # Controlla la presenza di world
+        if "world" not in save_data:
+            logger.warning("Salvataggio senza dati 'world', creazione di un oggetto world vuoto")
+            save_data["world"] = {}
+            
+        # Controlla e sanifica gli stati del gioco
+        if "world" in save_data and isinstance(save_data["world"], dict):
+            world_data = save_data["world"]
+            
+            # Controlla se ci sono stati salvati
+            if "states" in world_data and isinstance(world_data["states"], dict):
+                states_data = world_data["states"]
+                
+                # Itera su ogni stato e applica sanificazioni specifiche
+                for state_name, state_data in states_data.items():
+                    if state_name == "taverna" and isinstance(state_data, dict):
+                        # Rimuovi esplicitamente _handle_click_event se presente
+                        if "_handle_click_event" in state_data:
+                            logger.info(f"Rimozione attributo obsoleto '_handle_click_event' dallo stato {state_name}")
+                            del state_data["_handle_click_event"]
+        
+        return save_data
+    except Exception as e:
+        logger.warning(f"Errore durante la sanificazione del salvataggio: {e}")
+        # In caso di errore, restituisci i dati originali
+        return save_data
+
 @save_routes.route("/elenco", methods=["GET"])
 def elenca_salvataggi():
     """Ottieni lista dei salvataggi disponibili"""
@@ -387,6 +441,9 @@ def carica_mondo_ecs():
                         "successo": False,
                         "errore": f"Errore nella decodifica JSON: {str(e)}"
                     }), 500
+        
+        # Applica sanificazione ai dati caricati prima della deserializzazione
+        save_data = sanifica_salvataggio(save_data)
         
         # Estrai i dati del mondo
         world_data = save_data.get("world", {})

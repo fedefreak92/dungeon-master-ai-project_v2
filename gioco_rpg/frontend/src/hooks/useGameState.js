@@ -71,8 +71,8 @@ export const GameStateProvider = ({ children }) => {
   
   // Inizializza la connessione WebSocket
   useEffect(() => {
-    // URL del server WebSocket - usa l'origin corrente per evitare problemi CORS
-    const socketURL = process.env.REACT_APP_WS_URL || window.location.origin;
+    // URL del server WebSocket - usa esplicitamente localhost:5000
+    const socketURL = 'http://localhost:5000';
     
     // Crea una nuova connessione
     const newSocket = io(socketURL, {

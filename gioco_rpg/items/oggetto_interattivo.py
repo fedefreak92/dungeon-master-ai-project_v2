@@ -34,49 +34,51 @@ class OggettoInterattivo:
     
     def __getstate__(self):
         """
-        Prepara l'oggetto per la serializzazione con pickle.
+        Prepara l'oggetto per la serializzazione pickle/JSON rimuovendo attributi non serializzabili.
         
         Returns:
-            dict: Stato dell'oggetto da serializzare
+            dict: Dizionario con gli attributi serializzabili dell'oggetto
         """
-        # Crea una copia del dizionario dello stato
+        # Ottieni una copia dello stato corrente (dizionario degli attributi)
         state = self.__dict__.copy()
         
-        # Rimuove attributi non serializzabili (come funzioni)
-        if 'eventi' in state:
-            del state['eventi']
-        
-        # Rimuove oggetti collegati che potrebbero causare riferimenti circolari
-        if 'oggetti_collegati' in state:
-            del state['oggetti_collegati']
-        
-        # Rimuove altri elementi non serializzabili
-        non_serializzabili = []
-        for key, value in state.items():
-            if callable(value) or key.startswith('__'):
-                non_serializzabili.append(key)
-        
-        for key in non_serializzabili:
-            del state[key]
+        # Rimuovi eventuali attributi non serializzabili
+        # Ad esempio, funzioni, metodi, oggetti complessi
+        for key, value in list(state.items()):
+            # Rimuovi callable (funzioni, metodi)
+            if callable(value):
+                del state[key]
+            # Gestisci contenuto ed oggetti collegati per evitare riferimenti circolari
+            elif key == 'oggetti_collegati':
+                # Converti oggetti collegati in riferimenti per nome
+                oggetti_riferimenti = {}
+                for nome_coll, obj in state[key].items():
+                    if hasattr(obj, 'nome'):
+                        oggetti_riferimenti[nome_coll] = obj.nome
+                    else:
+                        oggetti_riferimenti[nome_coll] = str(obj)
+                state[key] = oggetti_riferimenti
         
         return state
 
     def __setstate__(self, state):
         """
-        Ripristina lo stato dell'oggetto dopo la deserializzazione.
+        Ripristina lo stato dell'oggetto durante la deserializzazione.
         
         Args:
-            state: Stato deserializzato da ripristinare
+            state (dict): Lo stato dell'oggetto da ripristinare
         """
-        # Inizializza eventi vuoti
-        state['eventi'] = {}
-        
-        # Inizializza oggetti collegati vuoti
-        if 'oggetti_collegati' not in state:
-            state['oggetti_collegati'] = {}
-        
-        # Aggiorna lo stato dell'oggetto
+        # Ripristina tutti gli attributi dallo stato
         self.__dict__.update(state)
+        
+        # Inizializza attributi non serializzabili che potrebbero essere mancanti
+        if not hasattr(self, 'listeners') or self.listeners is None:
+            self.listeners = {}
+            
+        # Ripristina eventuali callback come funzioni vuote
+        for attr_name in dir(self):
+            if attr_name.startswith('on_') and not callable(getattr(self, attr_name, None)):
+                setattr(self, attr_name, lambda *args, **kwargs: None)
     
     def __str__(self):
         """
@@ -221,47 +223,61 @@ class OggettoInterattivo:
         
     def to_dict(self):
         """
-        Converte l'oggetto interattivo in un dizionario per la serializzazione.
+        Converte l'oggetto in un dizionario serializzabile.
         
         Returns:
-            dict: Rappresentazione dell'oggetto in formato dizionario
+            dict: Rappresentazione dell'oggetto come dizionario
         """
-        # Serializza gli attributi fondamentali
+        # Crea il dizionario base
         result = {
-            "nome": self.nome,
-            "tipo": self.tipo,
-            "descrizione": self.descrizione,
-            "stato": self.stato,
-            "posizione": self.posizione,
-            "token": self.token,
-            "descrizioni_stati": self.descrizioni_stati,
-            "stati_possibili": self.stati_possibili,
-            "abilita_richieste": self.abilita_richieste,
-            "difficolta_abilita": self.difficolta_abilita,
-            "messaggi_interazione": self.messaggi_interazione,
+            'tipo': self.tipo,
+            'nome': self.nome,
+            'descrizione': self.descrizione,
+            'stato': self.stato,
+            'posizione': self.posizione,
+            'token': self.token,
+            'descrizioni_stati': self.descrizioni_stati,
+            'stati_possibili': self.stati_possibili,
+            'abilita_richieste': self.abilita_richieste,
+            'difficolta_abilita': self.difficolta_abilita,
+            'messaggi_interazione': self.messaggi_interazione,
         }
         
-        # Aggiungi il contenuto se presente
+        # Gestisci il contenuto dell'oggetto
         if self.contenuto:
-            result["contenuto"] = []
-            for obj in self.contenuto:
-                if hasattr(obj, 'to_dict') and callable(getattr(obj, 'to_dict')):
-                    result["contenuto"].append(obj.to_dict())
-                elif hasattr(obj, 'nome'):
-                    result["contenuto"].append({"nome": obj.nome})
-                elif isinstance(obj, str):
-                    result["contenuto"].append({"nome": obj})
-                else:
-                    result["contenuto"].append({"nome": str(obj)})
+            try:
+                # Prova a convertire gli oggetti nel contenuto in dizionari
+                contenuto_serializzabile = []
+                for item in self.contenuto:
+                    if hasattr(item, 'to_dict') and callable(item.to_dict):
+                        contenuto_serializzabile.append(item.to_dict())
+                    elif isinstance(item, dict):
+                        contenuto_serializzabile.append(item)
+                    else:
+                        contenuto_serializzabile.append({'nome': str(item)})
+                result['contenuto'] = contenuto_serializzabile
+            except Exception as e:
+                # Fallback in caso di errore nella serializzazione del contenuto
+                import logging
+                logging.error(f"Errore nella serializzazione del contenuto di {self.nome}: {str(e)}")
+                result['contenuto'] = [{'nome': str(item)} for item in self.contenuto]
+        else:
+            result['contenuto'] = []
         
-        # Aggiungi riferimento agli oggetti collegati (solo nomi per evitare riferimenti circolari)
-        if self.oggetti_collegati:
-            result["oggetti_collegati"] = {}
-            for key, obj in self.oggetti_collegati.items():
-                if hasattr(obj, 'nome'):
-                    result["oggetti_collegati"][key] = obj.nome
-                else:
-                    result["oggetti_collegati"][key] = str(obj)
+        # Gestisci gli oggetti collegati
+        if hasattr(self, 'oggetti_collegati') and self.oggetti_collegati:
+            try:
+                oggetti_collegati_dict = {}
+                for key, obj in self.oggetti_collegati.items():
+                    if hasattr(obj, 'nome'):
+                        oggetti_collegati_dict[key] = obj.nome
+                    else:
+                        oggetti_collegati_dict[key] = str(obj)
+                result['oggetti_collegati'] = oggetti_collegati_dict
+            except Exception as e:
+                import logging
+                logging.error(f"Errore nella serializzazione degli oggetti collegati di {self.nome}: {str(e)}")
+                result['oggetti_collegati'] = {}
         
         return result
     

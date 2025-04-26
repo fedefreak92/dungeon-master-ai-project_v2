@@ -572,15 +572,18 @@ class Giocatore(Entita):
             "fallimento_critico": tiro == 1
         }
         
-    def to_dict(self):
+    def to_dict(self, already_serialized=None):
         """
         Converte il giocatore in un dizionario per la serializzazione.
         
+        Args:
+            already_serialized (set, optional): Set di ID di oggetti già serializzati
+            
         Returns:
             dict: Dizionario rappresentante lo stato del giocatore
         """
         # Ottieni il dizionario base dall'entità
-        dati = super().to_dict()
+        dati = super().to_dict(already_serialized)
         
         # Aggiungi attributi specifici del giocatore
         dati.update({
@@ -600,20 +603,23 @@ class Giocatore(Entita):
         
         return dati
     
-    def to_msgpack(self):
+    def to_msgpack(self, already_serialized=None):
         """
         Converte il giocatore in formato MessagePack.
         
+        Args:
+            already_serialized (set, optional): Set di ID di oggetti già serializzati
+            
         Returns:
             bytes: Dati serializzati in formato MessagePack
         """
         try:
             import msgpack
-            return msgpack.packb(self.to_dict(), use_bin_type=True)
+            return msgpack.packb(self.to_dict(already_serialized), use_bin_type=True)
         except Exception as e:
             logger.error(f"Errore nella serializzazione MessagePack del giocatore {self.id}: {e}")
             # Fallback a dizionario serializzato in JSON e poi convertito in bytes
-            return json.dumps(self.to_dict()).encode()
+            return json.dumps(self.to_dict(already_serialized)).encode()
     
     @classmethod
     def from_dict(cls, dati):

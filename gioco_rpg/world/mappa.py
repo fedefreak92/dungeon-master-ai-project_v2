@@ -516,13 +516,24 @@ class Mappa:
                     continue
                 
                 # Le porte possono essere in formato (mappa_dest, (x_dest, y_dest)) o [mappa_dest, [x_dest, y_dest]]
-                if isinstance(porta_data, (list, tuple)) and len(porta_data) == 2:
-                    mappa_dest = porta_data[0]
-                    pos_dest = porta_data[1]
-                    # Converti pos_dest in tupla se è una lista
-                    if isinstance(pos_dest, list):
-                        pos_dest = tuple(pos_dest)
-                    mappa.porte[pos] = (mappa_dest, pos_dest)
+                # o anche nel formato comune [mappa_dest, x_dest, y_dest]
+                if isinstance(porta_data, (list, tuple)):
+                    if len(porta_data) == 3:
+                        # Formato [mappa_dest, x_dest, y_dest]
+                        mappa_dest = porta_data[0]
+                        x_dest = porta_data[1]
+                        y_dest = porta_data[2]
+                        mappa.porte[pos] = (mappa_dest, (x_dest, y_dest))
+                    elif len(porta_data) == 2:
+                        # Formato (mappa_dest, (x_dest, y_dest)) o [mappa_dest, [x_dest, y_dest]]
+                        mappa_dest = porta_data[0]
+                        pos_dest = porta_data[1]
+                        # Converti pos_dest in tupla se è una lista
+                        if isinstance(pos_dest, list):
+                            pos_dest = tuple(pos_dest)
+                        mappa.porte[pos] = (mappa_dest, pos_dest)
+                    else:
+                        print(f"Errore durante il caricamento della porta in {pos}: dati destinazione non validi")
                 else:
                     print(f"Errore durante il caricamento della porta in {pos}: dati destinazione non validi")
             except Exception as e:

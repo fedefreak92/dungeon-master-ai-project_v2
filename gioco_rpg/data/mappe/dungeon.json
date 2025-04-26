@@ -260,16 +260,8 @@
     }
   },
   "porte": {
-    "(6, 8)": [
-      "villaggio",
-      10,
-      13
-    ],
-    "(4, 3)": [
-      "dungeon_livello2",
-      2,
-      2
-    ]
+    "(6, 8)": ["villaggio", [10, 13]],
+    "(4, 3)": ["dungeon_livello2", [2, 2]]
   },
   "pos_iniziale_giocatore": [
     6,

@@ -1,5 +1,8 @@
 import { io } from 'socket.io-client';
 
+// URL del server fisso per evitare cambiamenti durante le riconnessioni
+const SERVER_URL = "http://localhost:5000";
+
 /**
  * Classe di servizio per gestire le comunicazioni Socket.IO
  * Implementato come singleton per garantire una sola istanza in tutta l'applicazione
@@ -15,8 +18,10 @@ class SocketService {
     this.connectionAttempts = 0;
     this.socketReady = false;
     
-    // URL del server WebSocket
-    this.serverUrl = process.env.REACT_APP_WS_URL || window.location.origin.replace(/^http/, 'ws');
+    // URL del server WebSocket - usa la costante globale
+    this.serverUrl = SERVER_URL;  // URL esplicito invece di dedurlo dinamicamente
+    
+    console.log(`SocketService: utilizzo URL esplicito ${this.serverUrl} per la connessione WebSocket`);
     
     // Statistiche per debug
     this.stats = {
@@ -67,11 +72,14 @@ class SocketService {
       this.sessionId = sessionId;
       this.connectionAttempts++;
       
+      // Forzare URL corretto per il server - usa la costante globale
+      this.serverUrl = SERVER_URL;
+      
       console.log(`SocketService: tentativo di connessione #${this.connectionAttempts} a ${this.serverUrl}`);
       
       try {
         // Chiudi l'eventuale socket esistente
-          if (this.socket) {
+        if (this.socket) {
           console.log('SocketService: chiusura socket esistente prima di crearne uno nuovo');
           this.socket.disconnect();
           this.socket = null;
@@ -79,20 +87,60 @@ class SocketService {
         
         // Opzioni ottimizzate per Socket.IO con Eventlet
         const options = {
-          transports: ['websocket', 'polling'], // Preferisci WebSocket
+          transports: ['websocket'], // SOLO WebSocket, rimuovo polling
           path: '/socket.io/',
           autoConnect: false, // Importante: non connettere automaticamente
           reconnection: true,
           reconnectionAttempts: 10,
           reconnectionDelay: 1000,
-          timeout: 20000,
+          timeout: 30000,         // Aumentato da 20000 a 30000
           upgrade: true,
           rememberUpgrade: true,
-          query: sessionId ? { sessionId } : {}
+          query: sessionId ? { sessionId } : {},
+          forceNew: true,        // Forzare sempre nuova connessione
+          timestampRequests: true,// Aggiunge timestamp per evitare caching
+          extraHeaders: {         // Headers aggiuntivi per autenticazione
+            'X-Client-Version': '1.0.0',
+            'X-Session-ID': sessionId || 'anonymous'
+          }
         };
-      
+        
+        console.log('SocketService: opzioni di connessione:', JSON.stringify(options));
+        
+        // Verifica URL completo prima di connessione
+        const fullUrl = `${this.serverUrl}${options.path || ''}`;
+        console.log(`SocketService: tentativo di connessione WebSocket all'URL completo: ${fullUrl}`);
+        
         // Crea la connessione socket ma non la avvia ancora
         this.socket = io(this.serverUrl, options);
+        
+        // IMPORTANTE: Impedisci a Socket.IO di cambiare l'URL durante le riconnessioni
+        if (this.socket.io && this.socket.io.uri) {
+          // Verifica che l'URI impostato sia quello che vogliamo
+          if (this.socket.io.uri !== this.serverUrl) {
+            console.warn(`SocketService: Socket.IO ha impostato un URI diverso: ${this.socket.io.uri}, forzo a ${this.serverUrl}`);
+            this.socket.io.uri = this.serverUrl;
+          }
+          
+          // Salva l'URL originale per ripristinarlo durante le riconnessioni
+          this.socket._originalUri = this.serverUrl;
+          
+          // Sovrascrivi il metodo che stabilisce l'URI per le riconnessioni
+          const originalReconnection = this.socket.io.reconnection;
+          this.socket.io.reconnection = (...args) => {
+            console.log(`SocketService: forzando URI ${this.serverUrl} durante riconnessione`);
+            this.socket.io.uri = this.serverUrl;  // Forza l'URI corretto
+            return originalReconnection.apply(this.socket.io, args);
+          };
+        }
+        
+        // Debug extra - controlla quale URL effettivo sta utilizzando Socket.IO
+        console.log(`SocketService: URL verificato per il socket:`, {
+          url: this.socket.io.uri,
+          opts: this.socket.io.opts,
+          engine: this.socket.io.engine && this.socket.io.engine.hostname ? 
+            `${this.socket.io.engine.secure ? 'wss://' : 'ws://'}${this.socket.io.engine.hostname}:${this.socket.io.engine.port}` : 'N/A'
+        });
         
         // Configura gli handler degli eventi base
         this._setupBaseEventHandlers(resolve, reject);
@@ -100,6 +148,19 @@ class SocketService {
         // Avvia la connessione manualmente
         console.log('SocketService: avvio connessione socket manuale');
         this.socket.connect();
+        
+        // Aggiungi un timeout di sicurezza ulteriore per prevenire blocchi
+        const timeoutId = setTimeout(() => {
+          // Se dopo 15 secondi siamo ancora nello stato "connecting", qualcosa è andato storto
+          if (this.connecting) {
+            console.error('SocketService: timeout durante la connessione, forzo fallimento');
+            this.connecting = false;
+            reject(new Error('Timeout durante la connessione al server'));
+          }
+        }, 15000);
+        
+        // Memorizza il timeout per cancellarlo in caso di connessione riuscita
+        this._connectionTimeout = timeoutId;
         
       } catch (error) {
         this.connecting = false;
@@ -121,6 +182,15 @@ class SocketService {
       this.connecting = false;
       this.socketReady = true;
       
+      // Annulla il timeout di sicurezza
+      if (this._connectionTimeout) {
+        clearTimeout(this._connectionTimeout);
+        this._connectionTimeout = null;
+      }
+      
+      // Azzera i tentativi di connessione dopo una connessione riuscita
+      this.connectionAttempts = 0;
+      
       // Risolvi la promise di connessione
       resolve(this.socket);
     });
@@ -133,9 +203,15 @@ class SocketService {
       
       // Solo la prima volta, se stiamo ancora aspettando la connessione, rifiuta la promise
       if (this.connecting) {
+        // Annulla il timeout di sicurezza
+        if (this._connectionTimeout) {
+          clearTimeout(this._connectionTimeout);
+          this._connectionTimeout = null;
+        }
+        
         this.connecting = false;
         reject(error);
-          }
+      }
     });
     
     // Evento disconnect
@@ -146,6 +222,10 @@ class SocketService {
       if (reason === 'io server disconnect' || reason === 'io client disconnect') {
         // Disconnessione volontaria, non riconnettere
         this.socketReady = false;
+      } else if (reason === 'transport close' || reason === 'transport error') {
+        // Problemi di rete, imposta come non connesso ma lascia socketReady invariato
+        // per permettere tentativi di riconnessione automatica
+        console.log('SocketService: disconnessione dovuta a problemi di rete, permetterò riconnessione automatica');
       }
     });
 
@@ -156,11 +236,56 @@ class SocketService {
       this.stats.reconnects++;
     });
     
+    // Evento reconnect_attempt
+    this.socket.on('reconnect_attempt', (attemptNumber) => {
+      console.log(`SocketService: tentativo di riconnessione #${attemptNumber}`);
+      
+      // IMPORTANTE: Forza l'URL corretto durante la riconnessione
+      if (this.socket.io) {
+        console.log(`SocketService: forzando URL a ${SERVER_URL} prima della riconnessione`);
+        this.socket.io.uri = SERVER_URL;
+        
+        // Forza WebSocket come transport per la riconnessione
+        this.socket.io.opts.transports = ['websocket'];
+      }
+    });
+    
     // Evento error
     this.socket.on('error', (error) => {
       console.error('SocketService: errore:', error);
       this.stats.errors++;
+      
+      // Gestisci specificatamente gli errori di timeout
+      if (error && typeof error === 'string' && error.includes('timeout')) {
+        console.error('SocketService: errore di timeout rilevato, tentativo di ripristino connessione');
+        
+        // Forza una riconnessione
+        if (this.socket && !this.socket.disconnected) {
+          this.socket.disconnect();
+          setTimeout(() => {
+            if (this.sessionId) {
+              console.log('SocketService: tentativo di riconnessione dopo timeout');
+              // Forza l'URL corretto prima di riconnettersi
+              if (this.socket.io) {
+                this.socket.io.uri = SERVER_URL;
+              }
+              this.socket.connect();
+            }
+          }, 2000);
+        }
+      }
     });
+    
+    // Evento ping e pong per debug
+    if (this.socket.io && this.socket.io.engine) {
+      this.socket.io.engine.on('ping', () => {
+        console.debug('SocketService: PING inviato al server');
+      });
+      
+      this.socket.io.engine.on('pong', (latency) => {
+        console.debug(`SocketService: PONG ricevuto dal server (latenza: ${latency}ms)`);
+      });
+    }
   }
 
   /**
@@ -255,6 +380,12 @@ class SocketService {
       return Promise.reject(new Error('Socket non connesso'));
   }
   
+    // IMPORTANTE: Verifica l'URL corretto prima di emettere l'evento
+    if (this.socket.io && this.socket.io.uri !== SERVER_URL) {
+      console.warn(`SocketService: URI errato rilevato prima dell'emissione, correggo da ${this.socket.io.uri} a ${SERVER_URL}`);
+      this.socket.io.uri = SERVER_URL;
+    }
+  
     return new Promise((resolve) => {
       this.socket.emit(event, data);
       this.stats.sent++;
@@ -273,6 +404,12 @@ class SocketService {
     if (!this.socket || !this.connected) {
       console.error(`SocketService: impossibile emettere evento "${event}" con ack, socket non connesso`);
       return Promise.reject(new Error('Socket non connesso'));
+    }
+    
+    // Verifica l'URL corretto prima di emettere l'evento
+    if (this.socket.io && this.socket.io.uri !== SERVER_URL) {
+      console.warn(`SocketService: URI errato rilevato prima dell'emissione con ACK, correggo da ${this.socket.io.uri} a ${SERVER_URL}`);
+      this.socket.io.uri = SERVER_URL;
     }
     
     return new Promise((resolve, reject) => {

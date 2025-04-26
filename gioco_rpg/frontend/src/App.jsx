@@ -101,37 +101,47 @@ function GameContent() {
   
   // Registra il listener per l'evento map_change_complete
   useEffect(() => {
-    if (!socketReady) {
-      // Non registrare il listener se il socket non è pronto
-      console.log('Socket non pronto, non registro listener map_change_complete');
-      return;
-    }
-    
-    console.log('Registrazione listener map_change_complete sul socket (socket pronto)');
-    
-    // Handler per l'evento map_change_complete
-    function handleMapChangeComplete(data) {
-      console.log('Evento map_change_complete ricevuto:', data);
-      
-      // Aggiorna stato globale con la nuova mappa e posizione
-      if (data.mapId) {
-        dispatch({ type: 'SET_MAP', payload: data.mapId });
+    const registerMapChangeListener = () => {
+      if (!socketReady) {
+        // Non registrare il listener se il socket non è pronto
+        console.log('Socket non pronto, non registro listener map_change_complete');
+        return;
       }
       
-      // Segnala che la mappa è pronta
-      setMappaPronta(true);
+      console.log('Registrazione listener map_change_complete sul socket (socket pronto)');
       
-      // Cambia lo stato del gioco a 'map'
-      dispatch({ type: 'SET_GAME_STATE', payload: 'map' });
+      // Handler per l'evento map_change_complete
+      function handleMapChangeComplete(data) {
+        console.log('Evento map_change_complete ricevuto:', data);
+        
+        // Aggiorna stato globale con la nuova mappa e posizione
+        if (data.mapId) {
+          dispatch({ type: 'SET_MAP', payload: data.mapId });
+        }
+        
+        // Segnala che la mappa è pronta
+        setMappaPronta(true);
+        
+        // Cambia lo stato del gioco a 'map'
+        dispatch({ type: 'SET_GAME_STATE', payload: 'map' });
+      }
+      
+      // Registra il listener sull'evento map_change_complete
+      on('map_change_complete', handleMapChangeComplete);
+      
+      // Memorizza la funzione di pulizia da eseguire quando l'effetto viene ripulito
+      return () => {
+        console.log('Rimozione listener map_change_complete');
+        off('map_change_complete', handleMapChangeComplete);
+      };
     };
     
-    // Registra il listener sull'evento map_change_complete
-    on('map_change_complete', handleMapChangeComplete);
+    // Esegui la registrazione e memorizza la funzione di pulizia
+    const cleanupFn = registerMapChangeListener();
     
-    // Cleanup
+    // Esegui la pulizia quando il componente viene smontato o quando le dipendenze cambiano
     return () => {
-      console.log('Rimozione listener map_change_complete');
-      off('map_change_complete', handleMapChangeComplete);
+      if (cleanupFn) cleanupFn();
     };
   }, [socketReady, dispatch, on, off]);
   

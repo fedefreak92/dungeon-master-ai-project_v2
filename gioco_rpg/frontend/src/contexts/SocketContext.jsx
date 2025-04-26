@@ -59,17 +59,17 @@ export const SocketProvider = ({ children }) => {
     // Esegui subito il primo check
     updateConnectionState();
     
-    // Imposta un intervallo ragionevole per i check successivi
+    // Imposta un intervallo più breve per i check di connessione
     const interval = setInterval(() => {
       // Pianifica l'aggiornamento con un piccolo ritardo per evitare loop
       if (connectionUpdateTimeout.current) {
         clearTimeout(connectionUpdateTimeout.current);
       }
       
-      connectionUpdateTimeout.current = setTimeout(updateConnectionState, 200);
-    }, 3000); // Intervallo più lungo (3 secondi)
+      connectionUpdateTimeout.current = setTimeout(updateConnectionState, 100);
+    }, 1000); // Intervallo più breve (1 secondo) per rilevare rapidamente i problemi
     
-    // Gestori per gli eventi di connessione
+    // Gestori per gli eventi di connessione con retry per errori
     const handleConnect = () => {
       console.log('SocketContext: connessione stabilita');
       setConnectionState({
@@ -82,11 +82,12 @@ export const SocketProvider = ({ children }) => {
     
     const handleDisconnect = (reason) => {
       console.log(`SocketContext: disconnesso (${reason})`);
-      setConnectionState({
+      // Non imposta subito error su disconnessione normale, permettendo un tentativo di riconnessione
+      setConnectionState(prev => ({
         connected: false,
-        connecting: false,
-        error: reason === 'io server disconnect' ? 'Disconnesso dal server' : null
-      });
+        connecting: reason !== 'io server disconnect' && reason !== 'io client disconnect',
+        error: prev.error // Mantieni l'errore precedente se presente
+      }));
       
       if (reason === 'io server disconnect' || reason === 'io client disconnect') {
         setSocketReady(false);
@@ -95,12 +96,39 @@ export const SocketProvider = ({ children }) => {
     
     const handleConnectError = (error) => {
       console.error('SocketContext: errore di connessione', error);
-      setConnectionState({
+      // Tentativo di riconnessione automatica in caso di errore di connessione
+      setConnectionState(prev => ({
         connected: false,
-        connecting: false,
+        connecting: true, // Imposta a true per mostrare che sta tentando di riconnettersi
         error: error.message
-      });
-      setSocketReady(false);
+      }));
+      
+      // Non imposta socketReady a false per permettere un nuovo tentativo
+      // Tentativo di riconnessione automatico dopo un breve ritardo
+      setTimeout(() => {
+        if (socketService.sessionId) {
+          console.log('SocketContext: tentativo di riconnessione automatica...');
+          socketService.connect(socketService.sessionId)
+            .then(() => {
+              console.log('SocketContext: riconnessione automatica riuscita');
+              setSocketReady(true);
+              setConnectionState({
+                connected: true,
+                connecting: false,
+                error: null
+              });
+            })
+            .catch(err => {
+              console.error('SocketContext: riconnessione automatica fallita', err);
+              setSocketReady(false);
+              setConnectionState({
+                connected: false,
+                connecting: false,
+                error: err.message
+              });
+            });
+        }
+      }, 2000); // Attendi 2 secondi prima di tentare la riconnessione
     };
     
     // Registra i listener sul socket
@@ -108,6 +136,14 @@ export const SocketProvider = ({ children }) => {
       socketService.on('connect', handleConnect);
       socketService.on('disconnect', handleDisconnect);
       socketService.on('connect_error', handleConnectError);
+      
+      // Aggiungi un gestore per l'errore di timeout che è specifico di Socket.IO
+      socketService.on('error', (error) => {
+        console.error('SocketContext: errore socket generico', error);
+        if (error && error.message && error.message.includes('timeout')) {
+          handleConnectError(error); // Tratta i timeout come errori di connessione
+        }
+      });
     }
     
     // Cleanup
@@ -122,6 +158,7 @@ export const SocketProvider = ({ children }) => {
         socketService.off('connect', handleConnect);
         socketService.off('disconnect', handleDisconnect);
         socketService.off('connect_error', handleConnectError);
+        socketService.off('error');
       }
     };
   }, []);

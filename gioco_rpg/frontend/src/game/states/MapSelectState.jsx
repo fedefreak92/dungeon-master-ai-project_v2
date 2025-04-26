@@ -10,7 +10,8 @@ import '../../styles/MapSelectState.css';
 const MapSelectState = ({ socketReady }) => {
   const { state, dispatch } = useGame();
   const { sessionId, player } = state;
-  const { emit } = useSocket();
+  const socket = useSocket();
+  const { emit } = socket;
   
   const [maps, setMaps] = useState({});
   const [currentMap, setCurrentMap] = useState(null);
@@ -64,6 +65,17 @@ const MapSelectState = ({ socketReady }) => {
     fetchMaps();
   }, [sessionId]);
   
+  // Funzione per emettere eventi socket in modo sicuro
+  const emitSafely = (eventName, data) => {
+    if (socketReady && socket && emit) {
+      console.log(`MapSelectState: emissione evento ${eventName}`, data);
+      return emit(eventName, data);
+    } else {
+      console.warn(`MapSelectState: impossibile emettere evento ${eventName}, socket non pronto`);
+      return Promise.reject(new Error('Socket non pronto'));
+    }
+  };
+  
   // Gestisce la selezione di una mappa
   const handleMapSelect = async (mapId) => {
     if (!sessionId) {
@@ -74,7 +86,10 @@ const MapSelectState = ({ socketReady }) => {
     
     // Non permettere di selezionare la mappa se il socket non è pronto
     if (!socketReady) {
-      console.error("Socket non pronto, impossibile cambiare mappa", {socketReady, connected: emit !== undefined});
+      console.error("Socket non pronto, impossibile cambiare mappa", {
+        socketReady,
+        connected: socket && socket.connectionState && socket.connectionState.connected
+      });
       setError("Connessione al server non disponibile. Riprova tra qualche istante.");
       return;
     }
@@ -107,8 +122,11 @@ const MapSelectState = ({ socketReady }) => {
         
         // Emettiamo l'evento select_map sul socket per l'aggiornamento in tempo reale
         // Questo è un extra che potrebbe non essere necessario se l'API REST già fa tutto
-        if (socketReady) {
-          emit('select_map', { mapId, sessionId });
+        try {
+          await emitSafely('select_map', { mapId, sessionId });
+        } catch (socketErr) {
+          console.warn('Emissione evento socket fallita, ma continuo comunque con il cambio mappa:', socketErr);
+          // Non blocchiamo il cambio mappa se l'evento socket fallisce
         }
       } else {
         console.error("Risposta cambio mappa con success=false:", result);

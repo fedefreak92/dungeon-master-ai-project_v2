@@ -291,5 +291,91 @@
     "oro": 800,
     "amichevole": true,
     "id": "Gundren"
+  },
+  "Spettro": {
+    "nome": "Spettro",
+    "descrizione": "Un'entità eterea e traslucida che fluttua silenziosamente nell'aria.",
+    "professione": "Apparizione",
+    "livello": 6,
+    "hp": 40,
+    "hp_max": 40,
+    "forza": 7,
+    "destrezza": 16,
+    "costituzione": 13,
+    "intelligenza": 14,
+    "saggezza": 15,
+    "carisma": 17,
+    "token": "S",
+    "inventario": [
+      {
+        "nome": "Tocco spettrale",
+        "tipo": "arma",
+        "effetto": {
+          "destrezza": 3,
+          "paura": 2
+        },
+        "valore": 0,
+        "descrizione": "Un tocco gelido che prosciuga l'energia vitale"
+      },
+      {
+        "nome": "Essenza eterea",
+        "tipo": "accessorio",
+        "effetto": {
+          "difesa": 2,
+          "invisibilità": 1
+        },
+        "valore": 150,
+        "descrizione": "Un'essenza che permette allo spettro di passare attraverso gli oggetti solidi"
+      }
+    ],
+    "oro": 50,
+    "amichevole": false,
+    "id": "Spettro"
+  },
+  "Cultista": {
+    "nome": "Cultista",
+    "descrizione": "Un individuo incappucciato con simboli oscuri ricamati sulla veste.",
+    "professione": "Occultista",
+    "livello": 3,
+    "hp": 22,
+    "hp_max": 22,
+    "forza": 10,
+    "destrezza": 12,
+    "costituzione": 11,
+    "intelligenza": 14,
+    "saggezza": 11,
+    "carisma": 14,
+    "token": "C",
+    "inventario": [
+      {
+        "nome": "Pugnale rituale",
+        "tipo": "arma",
+        "effetto": {
+          "destrezza": 2,
+          "oscurità": 1
+        },
+        "valore": 35,
+        "descrizione": "Un pugnale cerimoniale con rune incise sulla lama"
+      },
+      {
+        "nome": "Amuleto cultista",
+        "tipo": "accessorio",
+        "effetto": {
+          "carisma": 1,
+          "intimidazione": 2
+        },
+        "valore": 75,
+        "descrizione": "Un simbolo sacrilego che ispira timore"
+      },
+      {
+        "nome": "Tomo occulto",
+        "tipo": "comune",
+        "valore": 120,
+        "descrizione": "Un libro antico contenente rituali proibiti"
+      }
+    ],
+    "oro": 85,
+    "amichevole": false,
+    "id": "Cultista"
   }
 }

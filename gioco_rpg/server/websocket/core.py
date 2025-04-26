@@ -6,12 +6,28 @@ Modulo di base per la gestione delle funzionalità WebSocket comuni.
 import logging
 from flask_socketio import emit
 from flask import request
+import traceback
+import time
 
 # Import dei moduli necessari
-from server.utils.session import get_session
+from server.utils.session import get_session as utils_get_session
 
 # Configura il logger
 logger = logging.getLogger(__name__)
+
+# Riferimento all'oggetto socketio
+socketio = None
+
+def set_socketio(socketio_instance):
+    """
+    Imposta l'istanza SocketIO globale
+    
+    Args:
+        socketio_instance: Istanza SocketIO dell'applicazione
+    """
+    global socketio
+    socketio = socketio_instance
+    logger.info("Istanza SocketIO impostata nel core WebSocket")
 
 def validate_request_data(data, required_fields=None):
     """
@@ -59,7 +75,7 @@ def get_session(session_id):
         return None
         
     try:
-        session = get_session(session_id)
+        session = utils_get_session(session_id)
         if not session:
             logger.error(f"Sessione non trovata: {session_id}")
             emit('error', {'message': 'Sessione non trovata'})
@@ -73,13 +89,21 @@ def get_session(session_id):
 
 def handle_ping(data):
     """
-    Gestore per il ping del client
+    Gestore per messaggi di ping
     
     Args:
-        data (dict): Dati della richiesta
+        data (dict): Dati del ping
     """
-    logger.debug("Ricevuto ping dal client")
-    emit('pong', {'timestamp': data.get('timestamp', 0)})
+    timestamp = time.time()
+    client_timestamp = data.get('timestamp', 0) if isinstance(data, dict) else 0
+    
+    emit('pong', {
+        'server_time': timestamp,
+        'client_time': client_timestamp,
+        'ping_received': True
+    })
+    
+    return False  # Non è una risposta asincrona
 
 def handle_connect():
     """
@@ -88,20 +112,35 @@ def handle_connect():
     logger.info(f"Nuovo client connesso: {request.sid}")
     emit('welcome', {'message': 'Benvenuto al server di gioco RPG'})
 
-def handle_disconnect():
+def handle_disconnect(sid=None):
     """
     Gestore per la disconnessione di un client
-    """
-    logger.info(f"Client disconnesso: {request.sid}")
-
-def handle_error(e):
-    """
-    Gestore per gli errori WebSocket
     
     Args:
-        e: Eccezione sollevata
+        sid (str, optional): ID del socket del client disconnesso.
+            Se non fornito, tenta di ottenerlo da request.sid
     """
-    logger.error(f"Errore WebSocket: {e}")
+    # Se sid non è specificato, prova a ottenerlo dalla request
+    if sid is None and hasattr(request, 'sid'):
+        sid = request.sid
+    
+    logger.info(f"Client disconnesso: {sid}")
+
+def handle_error(error):
+    """
+    Gestisce gli errori durante la comunicazione WebSocket
+    
+    Args:
+        error: Oggetto errore
+    """
+    logger.error(f"Errore WebSocket: {error}")
+    try:
+        # Tenta di registrare informazioni sul client
+        if hasattr(request, 'sid'):
+            logger.error(f"Errore per client: {request.sid}")
+    except Exception as e:
+        logger.error(f"Errore nell'handler errori: {e}")
+        logger.error(traceback.format_exc())
 
 def register_handlers(socketio_instance):
     """

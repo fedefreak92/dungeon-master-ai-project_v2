@@ -185,11 +185,7 @@
     }
   },
   "porte": {
-    "(2, 5)": [
-      "villaggio",
-      15,
-      6
-    ]
+    "(2, 5)": ["villaggio", [15, 6]]
   },
   "pos_iniziale_giocatore": [
     2,

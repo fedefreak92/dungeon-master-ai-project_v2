@@ -135,6 +135,15 @@ class DataManager:
                 except Exception as e:
                     logger.error(f"Impossibile creare directory {path}: {str(e)}")
         
+        # Assicurati esplicitamente che la directory schemas esista
+        schemas_path = self._data_paths["schemas"]
+        if not schemas_path.exists():
+            try:
+                schemas_path.mkdir(parents=True, exist_ok=True)
+                logger.info(f"Creata directory schemas: {schemas_path}")
+            except Exception as e:
+                logger.error(f"Impossibile creare directory schemas {schemas_path}: {str(e)}")
+        
         # Configurazione TTL specifici per tipo di dati
         self._cache_ttl = {
             # Dati che cambiano raramente (TTL più lungo)
@@ -150,6 +159,9 @@ class DataManager:
             
             # Dati che cambiano molto frequentemente
             "world_state": 60,         # 1 minuto
+            
+            # TTL per gli schemi
+            "schemas": 3600,           # 1 ora
         }
     
     def load_data(self, data_type: str, file_name: Optional[str] = None, 
@@ -168,7 +180,19 @@ class DataManager:
         """
         if data_type not in self._data_paths:
             logger.error(f"Tipo di dati non valido: {data_type}")
-            return {}
+            # Verifichiamo se è possibile aggiungere questo tipo di dati dinamicamente
+            if isinstance(data_type, str) and data_type:
+                logger.warning(f"Tentativo di aggiungere dinamicamente il tipo di dati: {data_type}")
+                try:
+                    nuovo_percorso = DATA_DIR / data_type
+                    nuovo_percorso.mkdir(parents=True, exist_ok=True)
+                    self._data_paths[data_type] = nuovo_percorso
+                    logger.info(f"Aggiunto nuovo tipo di dati: {data_type} con percorso {nuovo_percorso}")
+                except Exception as e:
+                    logger.error(f"Impossibile creare directory per il nuovo tipo di dati {data_type}: {str(e)}")
+                    return {}
+            else:
+                return {}
         
         # Determina il nome del file predefinito se non specificato
         if file_name is None:
@@ -330,16 +354,10 @@ class DataManager:
     def _auto_generate_schema(self, data: Union[Dict, List], entity_type: str) -> None:
         """Genera automaticamente uno schema se non esiste."""
         try:
-            # Verifica che la chiave "schemas" esista nel dizionario _data_paths
-            if "schemas" not in self._data_paths:
-                logger.warning("La chiave 'schemas' non è presente in _data_paths, la aggiungo")
-                self._data_paths["schemas"] = DATA_DIR / "schemas"
-                # Assicurati che la directory esista
-                if not self._data_paths["schemas"].exists():
-                    self._data_paths["schemas"].mkdir(parents=True, exist_ok=True)
-                    logger.info(f"Creata directory: {self._data_paths['schemas']}")
-                
+            # Assicuriamoci che il percorso schemas sia sempre definito nel dizionario _data_paths
+            # Questa voce dovrebbe essere sempre presente dall'inizializzazione
             schema_path = self._data_paths["schemas"] / f"{entity_type}_schema.json"
+            
             if not schema_path.exists():
                 logger.info(f"Generazione automatica schema per {entity_type}")
                 if isinstance(data, dict) and len(data) > 0:
@@ -751,6 +769,11 @@ class DataManager:
             list: Lista di oggetti sulla mappa
         """
         mappe_oggetti = self.load_data("oggetti", "mappe_oggetti.json")
+        
+        # Verifica la coerenza delle posizioni (ma solo in modalità debug)
+        if logging.getLogger().level == logging.DEBUG:
+            self.verifica_posizioni_oggetti(nome_mappa, mappe_oggetti.get(nome_mappa, []))
+        
         return mappe_oggetti.get(nome_mappa, [])
     
     def save_map_objects(self, nome_mappa: str, oggetti_posizioni: List) -> bool:
@@ -770,8 +793,52 @@ class DataManager:
         # Aggiorna solo la mappa specifica
         mappe_oggetti[nome_mappa] = oggetti_posizioni
         
+        # Verifica la validità delle posizioni prima del salvataggio
+        oggetti_validi = self.verifica_posizioni_oggetti(nome_mappa, oggetti_posizioni)
+        
         # Salva il file aggiornato
         return self.save_data("oggetti", mappe_oggetti, "mappe_oggetti.json")
+    
+    def verifica_posizioni_oggetti(self, nome_mappa: str, oggetti_posizioni: List) -> bool:
+        """
+        Verifica che le posizioni degli oggetti siano valide e non ci siano conflitti
+        tra oggetti definiti in mappe_oggetti.json e quelli già presenti nella mappa.
+        
+        Args:
+            nome_mappa: Nome della mappa da verificare
+            oggetti_posizioni: Lista di oggetti con posizioni (opzionale, se None carica da mappe_oggetti.json)
+            
+        Returns:
+            bool: True se tutte le posizioni sono valide
+        """
+        try:
+            # Importa OggettiManager solo quando necessario per evitare dipendenze circolari
+            from world.managers.oggetti_manager import OggettiManager
+            oggetti_manager = OggettiManager()
+            
+            # Esegui la convalida
+            valido, problemi, correzioni = oggetti_manager.convalida_posizioni_oggetti_mappa(nome_mappa)
+            
+            # Logga eventuali problemi
+            if not valido:
+                logging.warning(f"Rilevati {len(problemi)} conflitti di posizionamento sulla mappa {nome_mappa}:")
+                for problema in problemi:
+                    logging.warning(f"  - {problema}")
+                    
+                if correzioni:
+                    logging.info("Correzioni suggerite:")
+                    for correzione in correzioni:
+                        oggetto = correzione["oggetto"]
+                        pos_orig = correzione["posizione_originale"]
+                        pos_nuova = correzione["posizione_suggerita"]
+                        logging.info(f"  - Sposta '{oggetto}' da {pos_orig} a {pos_nuova}")
+                        
+                logging.info("Esegui 'python tools/valida_mappe_oggetti.py -c' per applicare automaticamente le correzioni")
+            
+            return valido
+        except Exception as e:
+            logging.error(f"Errore durante la verifica delle posizioni oggetti: {e}")
+            return False
     
     def get_monsters(self, monster_id: Optional[str] = None) -> Union[Dict, List]:
         """
@@ -800,6 +867,28 @@ class DataManager:
         """
         file_name = f"{map_id}.json"
         return self.load_data("mappe", file_name)
+
+    def verifica_directory_essenziali(self) -> Dict[str, bool]:
+        """
+        Verifica la presenza di tutte le directory essenziali per il funzionamento del gioco.
+        
+        Returns:
+            Dict[str, bool]: Dizionario con chiave=nome directory e valore=True se esiste
+        """
+        stato_directory = {}
+        
+        for nome, percorso in self._data_paths.items():
+            stato_directory[nome] = percorso.exists()
+            if not percorso.exists():
+                logger.warning(f"Directory essenziale mancante: {nome} ({percorso})")
+                try:
+                    percorso.mkdir(parents=True, exist_ok=True)
+                    logger.info(f"Creata directory mancante: {percorso}")
+                    stato_directory[nome] = True
+                except Exception as e:
+                    logger.error(f"Impossibile creare directory {percorso}: {str(e)}")
+        
+        return stato_directory
 
 # Funzione helper per ottenere l'istanza del DataManager
 def get_data_manager() -> DataManager:

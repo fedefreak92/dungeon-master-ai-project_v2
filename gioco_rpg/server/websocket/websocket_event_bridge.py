@@ -139,6 +139,57 @@ class WebSocketEventBridge:
             except Exception as e:
                 logger.error(f"Errore durante l'inizializzazione degli handler WebSocket: {e}")
     
+    def register_session(self, sid: str, session_id: str):
+        """
+        Registra una nuova sessione WebSocket collegandola a un session_id.
+        
+        Args:
+            sid: ID della connessione WebSocket
+            session_id: ID della sessione di gioco
+            
+        Returns:
+            bool: True se la registrazione ha avuto successo, False altrimenti
+        """
+        try:
+            # Registra il SID come connesso a questa sessione
+            self.connected_clients[sid] = session_id
+            
+            # Se questo session_id era già associato a un altro SID, lo sostituisce
+            self.player_sessions[session_id] = sid
+            
+            logger.info(f"Sessione {session_id} registrata con SID {sid}")
+            return True
+        except Exception as e:
+            logger.error(f"Errore durante la registrazione della sessione {session_id}: {e}")
+            return False
+    
+    def unregister_session(self, sid: str):
+        """
+        Rimuove una sessione WebSocket.
+        
+        Args:
+            sid: ID della connessione WebSocket
+            
+        Returns:
+            bool: True se la rimozione ha avuto successo, False altrimenti
+        """
+        try:
+            # Trova il session_id associato a questo SID
+            session_id = self.connected_clients.get(sid)
+            
+            # Rimuovi dalle mappature
+            if sid in self.connected_clients:
+                del self.connected_clients[sid]
+                
+            if session_id and self.player_sessions.get(session_id) == sid:
+                del self.player_sessions[session_id]
+                
+            logger.info(f"Sessione con SID {sid} rimossa")
+            return True
+        except Exception as e:
+            logger.error(f"Errore durante la rimozione della sessione con SID {sid}: {e}")
+            return False
+    
     def init_websocket_handlers(self):
         """
         Inizializza gli handler per gli eventi WebSocket in arrivo dai client.

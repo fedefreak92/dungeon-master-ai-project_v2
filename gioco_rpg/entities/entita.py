@@ -366,13 +366,27 @@ class Entita:
         competenza_bonus = self.bonus_competenza if self.abilita_competenze.get(nome_abilita.lower()) else 0
         return modificatore_base + competenza_bonus
 
-    def to_dict(self):
+    def to_dict(self, already_serialized=None):
         """
         Converte l'entità in un dizionario per la serializzazione.
         
+        Args:
+            already_serialized (set, optional): Set di ID di oggetti già serializzati
+            
         Returns:
             dict: Dizionario rappresentante lo stato dell'entità.
         """
+        # Se already_serialized non è stato passato, inizializzalo come un set vuoto
+        if already_serialized is None:
+            already_serialized = set()
+            
+        # Verifica se questa entità è già stata serializzata
+        if self.id in already_serialized:
+            return {"id": self.id, "ref": True}  # Ritorna solo un riferimento all'ID
+            
+        # Aggiungi questa entità al set degli oggetti già serializzati
+        already_serialized.add(self.id)
+        
         return {
             "id": self.id,
             "nome": self.nome,
@@ -407,20 +421,23 @@ class Entita:
     # Alias per compatibilità con il sistema ECS
     serialize = to_dict
     
-    def to_msgpack(self):
+    def to_msgpack(self, already_serialized=None):
         """
         Converte l'entità in formato MessagePack per la serializzazione.
         
+        Args:
+            already_serialized (set, optional): Set di ID di oggetti già serializzati
+            
         Returns:
             bytes: Dati serializzati in formato MessagePack.
         """
         try:
             import msgpack
-            return msgpack.packb(self.to_dict(), use_bin_type=True)
+            return msgpack.packb(self.to_dict(already_serialized), use_bin_type=True)
         except Exception as e:
             logger.error(f"Errore nella serializzazione MessagePack dell'entità {self.id}: {e}")
             # Fallback a dizionario serializzato in JSON e poi convertito in bytes
-            return json.dumps(self.to_dict()).encode()
+            return json.dumps(self.to_dict(already_serialized)).encode()
     
     # Alias per compatibilità con il sistema ECS
     serialize_msgpack = to_msgpack

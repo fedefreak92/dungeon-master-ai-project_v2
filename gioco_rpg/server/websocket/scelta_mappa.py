@@ -44,6 +44,9 @@ class SceltaMappaHandler:
         self.bridge.on("selezione_mappa", self._handle_map_selection)
         self.bridge.on("richiesta_lista_mappe", self._handle_map_list_request)
         
+        # Aggiungi handler per l'evento select_map inviato dal frontend
+        self.bridge.on("select_map", self._handle_select_map)
+        
     def _handle_ui_update(self, ui_type=None, state=None, **kwargs):
         """
         Gestisce gli aggiornamenti dell'interfaccia utente.
@@ -212,6 +215,82 @@ class SceltaMappaHandler:
             "mappa_corrente": gioco.giocatore.mappa_corrente if hasattr(gioco, "giocatore") else None
         }
         send_to_client(client_id, "lista_mappe", client_data)
+
+    # Aggiungi nuova funzione di handler per l'evento select_map
+    def _handle_select_map(self, client_id, data):
+        """
+        Gestisce l'evento select_map inviato dal frontend.
+        
+        Args:
+            client_id: ID del client
+            data: Dati della richiesta che contengono mapId e sessionId
+        """
+        if not data:
+            logger.error("Dati mancanti nell'evento select_map")
+            return
+            
+        map_id = data.get('mapId')
+        session_id = data.get('sessionId')
+        
+        if not map_id or not session_id:
+            logger.error(f"Dati incompleti nell'evento select_map: {data}")
+            return
+            
+        logger.info(f"Ricevuto evento select_map: mapId={map_id}, sessionId={session_id}")
+        
+        try:
+            # Ottieni la sessione
+            sessione = get_session(session_id)
+            if not sessione:
+                logger.error(f"Sessione {session_id} non trovata")
+                return
+                
+            # Ottieni la mappa e verifica i requisiti
+            lista_mappe = sessione.gestore_mappe.ottieni_lista_mappe()
+            if map_id not in lista_mappe:
+                logger.error(f"Mappa {map_id} non disponibile")
+                return
+            
+            mappa = sessione.gestore_mappe.ottieni_mappa(map_id)
+            if not mappa:
+                logger.error(f"Impossibile caricare la mappa {map_id}")
+                return
+                
+            x, y = mappa.pos_iniziale_giocatore
+            
+            # Cambia la mappa corrente
+            logger.info(f"Cambio mappa a {map_id} per la sessione {session_id}")
+            success = sessione.cambia_mappa(map_id, x, y)
+            
+            if success:
+                # Salva la sessione aggiornata
+                salva_sessione(session_id, sessione)
+                
+                # Crea il room_id per questa sessione
+                room_id = f"session_{session_id}"
+                
+                # Prepara i dati della risposta
+                result_data = {
+                    'success': True,
+                    'mapId': map_id,
+                    'position': {'x': x, 'y': y}
+                }
+                
+                # Emetti evento per tutti i client nella stessa sessione
+                socketio.emit('map_change_complete', result_data, room=room_id)
+                logger.info(f"Notifica map_change_complete inviata per sessione {session_id}")
+                
+                # Notifica il cambiamento della mappa per permettere una connessione WebSocket più stabile
+                socketio.emit('game_state_update', {
+                    'currentMap': map_id,
+                    'player_position': {'x': x, 'y': y}
+                }, room=room_id)
+            else:
+                logger.error(f"Impossibile cambiare mappa a {map_id} per la sessione {session_id}")
+        except Exception as e:
+            logger.error(f"Errore nella gestione dell'evento select_map: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
 
 # Crea un'istanza del gestore per il singleton di EventBus
 scelta_mappa_handler = SceltaMappaHandler()
@@ -544,4 +623,124 @@ def register_handlers(socketio_instance):
     socketio_instance.on_event('scelta_mappa_annulla', handle_scelta_mappa_annulla)
     socketio_instance.on_event('scelta_mappa_dialog_choice', handle_scelta_mappa_dialog_choice)
     
-    logger.info("Handler WebSocket della scelta mappa registrati") 
+    # Aggiungiamo l'handler per l'evento 'select_map' inviato dal frontend
+    socketio_instance.on_event('select_map', handle_select_map)
+    
+    logger.info("Handler WebSocket della scelta mappa registrati")
+
+# Aggiungiamo handler globale per l'evento select_map
+def handle_select_map(data):
+    """
+    Handler globale per l'evento select_map inviato dal frontend React
+    
+    Args:
+        data (dict): Contiene mapId e sessionId
+    """
+    logger.info(f"Ricevuto evento select_map diretto: {data}")
+    
+    if not data:
+        logger.error("Dati mancanti nell'evento select_map")
+        emit('error', {'message': 'Dati mancanti'})
+        return
+        
+    mapId = data.get('mapId')
+    sessionId = data.get('sessionId')
+    
+    if not mapId or not sessionId:
+        logger.error(f"Dati incompleti nell'evento select_map: {data}")
+        emit('error', {'message': 'mapId e sessionId richiesti'})
+        return
+    
+    logger.info(f"Elaborazione cambio mappa: mapId={mapId}, sessionId={sessionId}")
+    
+    # Crea il room_id per questa sessione
+    room_id = f"session_{sessionId}"
+    
+    try:
+        # Ottieni la sessione usando l'import diretto per evitare ricorsioni
+        from server.utils.session import get_session as direct_get_session
+        sessione = direct_get_session(sessionId)
+        if not sessione:
+            logger.error(f"Sessione {sessionId} non trovata in handle_select_map")
+            emit('error', {'message': 'Sessione non trovata'})
+            return
+        
+        logger.info(f"Sessione {sessionId} recuperata con successo: {type(sessione)}")
+            
+        # Ottieni la mappa
+        try:
+            lista_mappe = sessione.gestore_mappe.ottieni_lista_mappe()
+            logger.info(f"Lista mappe trovata: {lista_mappe.keys() if lista_mappe else 'vuota'}")
+            
+            if mapId not in lista_mappe:
+                logger.error(f"Mappa {mapId} non disponibile")
+                emit('error', {'message': 'Mappa non disponibile'})
+                return
+            
+            # Ottieni le coordinate iniziali
+            mappa = sessione.gestore_mappe.ottieni_mappa(mapId)
+            if not mappa:
+                logger.error(f"Impossibile caricare la mappa {mapId}")
+                emit('error', {'message': 'Impossibile caricare la mappa'})
+                return
+            
+            x, y = mappa.pos_iniziale_giocatore
+            logger.info(f"Posizione iniziale per {mapId}: ({x}, {y})")
+            
+            # Cambia la mappa corrente
+            success = sessione.cambia_mappa(mapId, x, y)
+            logger.info(f"Cambio mappa a {mapId}: {'successo' if success else 'fallito'}")
+            
+            if success:
+                # Salva la sessione aggiornata
+                from server.utils.session import salva_sessione
+                salva_sessione(sessionId, sessione)
+                logger.info(f"Sessione {sessionId} salvata dopo cambio mappa")
+                
+                # Prepara i dati della risposta
+                result_data = {
+                    'success': True,
+                    'mapId': mapId,
+                    'position': {'x': x, 'y': y}
+                }
+                
+                # Emetti evento per tutti i client nella stessa sessione
+                from . import socketio
+                socketio.emit('map_change_complete', result_data, room=room_id)
+                logger.info(f"Notifica map_change_complete inviata per sessione {sessionId}")
+                
+                # Emetti anche l'evento originale per compatibilità
+                emit('scelta_mappa_cambiata', {
+                    'success': True,
+                    'mappa': mapId,
+                    'posizione': {'x': x, 'y': y}
+                })
+                
+                # Notifica anche il cambio di stato del gioco
+                socketio.emit('cambio_stato', {
+                    'stato': 'mappa',
+                    'parametri': {
+                        'mappa': mapId,
+                        'posizione': {'x': x, 'y': y}
+                    }
+                }, room=room_id)
+                
+                # Notifica il cambiamento della mappa per permettere una connessione WebSocket più stabile
+                socketio.emit('game_state_update', {
+                    'currentMap': mapId,
+                    'player_position': {'x': x, 'y': y}
+                }, room=room_id)
+            else:
+                logger.error(f"Impossibile cambiare mappa a {mapId}")
+                emit('error', {'message': 'Impossibile viaggiare verso questa destinazione'})
+                
+        except Exception as e:
+            logger.error(f"Errore nell'accesso alle mappe: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            emit('error', {'message': f'Errore durante il cambio mappa: {str(e)}'})
+    except Exception as e:
+        logger.error(f"Errore generale nel cambio mappa: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        emit('error', {'message': f'Errore interno: {str(e)}'}) 

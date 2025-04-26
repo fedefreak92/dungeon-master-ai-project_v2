@@ -1,22 +1,22 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Schema Mappa NPG",
-  "description": "Schema per la validazione delle mappature di NPC sulle mappe",
+  "title": "Schema Mappa Oggetti",
+  "description": "Schema per la validazione delle mappature di oggetti sulle mappe",
   "type": "object",
   "additionalProperties": {
     "type": "array",
-    "description": "Lista di NPC su una mappa specifica",
+    "description": "Lista di oggetti su una mappa specifica",
     "items": {
       "type": "object",
       "required": ["nome", "posizione"],
       "properties": {
         "nome": {
           "type": "string",
-          "description": "Nome dell'NPC da posizionare sulla mappa"
+          "description": "Nome dell'oggetto da posizionare sulla mappa"
         },
         "posizione": {
           "type": "array",
-          "description": "Coordinate [x, y] dell'NPC sulla mappa",
+          "description": "Coordinate [x, y] dell'oggetto sulla mappa",
           "items": {
             "type": "integer"
           },
@@ -25,7 +25,7 @@
         },
         "id": {
           "type": "string",
-          "description": "ID opzionale dell'NPC (usato se diverso dal nome)"
+          "description": "ID opzionale dell'oggetto (usato se diverso dal nome)"
         }
       }
     }

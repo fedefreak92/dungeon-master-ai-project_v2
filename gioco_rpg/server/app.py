@@ -311,6 +311,15 @@ def create_app(config=None):
             'message': f"Si è verificato un errore: {str(e)}"
         }), 500
     
+    # Aggiunta di intestazioni CORS esplicite a ogni risposta
+    @app.after_request
+    def add_cors_headers(response):
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Requested-With,Cache-Control,Accept,Origin,Pragma,Expires,If-Modified-Since')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
+    
     # Registra i blueprint delle route
     app.register_blueprint(base_routes, url_prefix='/game')
     
@@ -537,8 +546,8 @@ def create_socketio(app):
     try:
         # Configurazione ottimizzata per WebSocket con Eventlet
         # I valori ping_timeout e ping_interval sono cruciali per evitare disconnessioni premature
-        ping_timeout = 60000  # 60 secondi
-        ping_interval = 25000 # 25 secondi
+        ping_timeout = 120  # 120 secondi (aumentato da 60)
+        ping_interval = 15  # 15 secondi (ridotto da 25)
         
         # Configura CORS per supportare completamente WebSocket
         cors_allowed = [
@@ -548,7 +557,7 @@ def create_socketio(app):
             "http://127.0.0.1:3000", 
             "http://127.0.0.1:3001",
             "http://127.0.0.1:5000",
-            # Aggiungi qui altri domini consentiti se necessario
+            "*"  # Consenti qualsiasi origine in fase di sviluppo
         ]
         
         # Importazione ritardata per evitare importazioni circolari
@@ -570,10 +579,27 @@ def create_socketio(app):
                 ping_interval=ping_interval,
                 always_connect=True,
                 manage_session=False,
-                transports=['websocket', 'polling'],
-                engineio_logger=True if app.debug else False,
-                logger=True if app.debug else False
+                transports=['websocket'],  # Solo websocket, no polling
+                engineio_logger=True,  # Sempre abilitato per debug
+                logger=True,           # Sempre abilitato per debug
+                max_http_buffer_size=10e7  # Aumenta la dimensione del buffer per messaggi grandi
             )
+            
+            # Aggiunta di eventi di log per la connessione
+            @socketio.on('connect')
+            def handle_socket_connect():
+                logger.info(f"Evento connect SocketIO ricevuto - SID: {request.sid}")
+                return True
+            
+            @socketio.on('disconnect')
+            def handle_socket_disconnect():
+                logger.info(f"Evento disconnect SocketIO ricevuto - SID: {request.sid}")
+                return True
+                
+            @socketio.on_error()
+            def handle_socket_error(e):
+                logger.error(f"Errore SocketIO: {str(e)}")
+                return False
             
             # Salva il riferimento globale
             app._socketio_instance = socketio
@@ -587,7 +613,7 @@ def create_socketio(app):
         from server.utils.session import set_socketio
         set_socketio(socketio)
         
-        # Registra CORS per supportare WebSocket
+        # Configura CORS per supportare WebSocket
         app.config['CORS_HEADERS'] = 'Content-Type, Authorization'
         
         return socketio

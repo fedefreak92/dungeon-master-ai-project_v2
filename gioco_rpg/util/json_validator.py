@@ -17,7 +17,8 @@ _schema_cache: Dict[str, Dict] = {}
 
 # Mapping di file specifici a schemi personalizzati
 FILE_TO_SCHEMA_MAPPING = {
-    "mappe_npg.json": "mappa_npg"
+    "mappe_npg.json": "mappa_npg",
+    "mappe_oggetti.json": "mappa_oggetti"
 }
 
 def load_schema(entity_type: str) -> Dict:

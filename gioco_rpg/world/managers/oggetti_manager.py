@@ -264,7 +264,19 @@ class OggettiManager:
                 
             logging.info(f"Trovati {len(mappe_oggetti)} oggetti interattivi da posizionare nella mappa {nome_mappa}")
             
-            # Per ogni oggetto interattivo mappato, cerca la sua configurazione
+            # Crea un set di posizioni già occupate nella mappa
+            posizioni_occupate = set()
+            for pos in mappa.oggetti.keys():
+                posizioni_occupate.add(pos)
+            for pos in mappa.npg.keys():
+                posizioni_occupate.add(pos)
+            
+            # Mantieni un registro delle posizioni che stiamo per inserire
+            # per evitare inserimenti duplicati da mappe_oggetti.json
+            posizioni_da_inserire = set()
+            oggetti_da_inserire = []
+            
+            # Filtra gli oggetti da posizionare, escludendo quelli in posizioni già occupate
             for mappatura in mappe_oggetti:
                 nome_oggetto = mappatura.get('nome')
                 posizione = mappatura.get('posizione')
@@ -274,8 +286,29 @@ class OggettiManager:
                     continue
                     
                 x, y = posizione
+                tuple_pos = (x, y)
                 
-                # Cerca la configurazione corrispondente o crea l'oggetto direttamente
+                # Se la posizione è già occupata nella mappa o da un altro oggetto in mappe_oggetti.json,
+                # saltiamo questo oggetto e loghiamo un avviso
+                if tuple_pos in posizioni_occupate:
+                    oggetto_esistente = mappa.oggetti.get(tuple_pos)
+                    nome_esistente = oggetto_esistente.nome if oggetto_esistente else "oggetto sconosciuto"
+                    logging.warning(
+                        f"Oggetto '{nome_oggetto}' non posizionato: posizione ({x}, {y}) "
+                        f"già occupata dall'oggetto {nome_esistente} nella mappa {nome_mappa}"
+                    )
+                    continue
+                    
+                # Se questa posizione è già in attesa di essere popolata da un altro oggetto
+                # in mappe_oggetti.json, saltiamo questo oggetto ed evidenziamo il problema
+                if tuple_pos in posizioni_da_inserire:
+                    logging.warning(
+                        f"Oggetto '{nome_oggetto}' non posizionato: posizione ({x}, {y}) "
+                        f"già assegnata a un altro oggetto in mappe_oggetti.json per la mappa {nome_mappa}"
+                    )
+                    continue
+                    
+                # La posizione è libera, possiamo inserire l'oggetto
                 oggetto_id = mappatura.get('id', nome_oggetto)
                 oggetto = self.crea_oggetto(oggetto_id)
                 
@@ -289,9 +322,27 @@ class OggettiManager:
                         token='O'
                     )
                 
-                # Posiziona l'oggetto interattivo sulla mappa
-                self.posiziona_oggetto_su_mappa(mappa, oggetto, x, y)
-                
+                # Registra la posizione come "da inserire" e aggiungi l'oggetto alla lista
+                posizioni_da_inserire.add(tuple_pos)
+                oggetti_da_inserire.append((oggetto, x, y))
+            
+            # Ora possiamo posizionare tutti gli oggetti filtrati
+            for oggetto, x, y in oggetti_da_inserire:
+                # Posiziona l'oggetto sulla mappa
+                mappa.aggiungi_oggetto(oggetto, x, y)
+                logging.info(f"Oggetto {oggetto.nome} posizionato in ({x}, {y}) su mappa {nome_mappa}")
+            
+            logging.info(f"Posizionati {len(oggetti_da_inserire)} oggetti su {len(mappe_oggetti)} definiti per la mappa {nome_mappa}")
+            
+            # Se ci sono oggetti che non sono stati posizionati a causa di collisioni,
+            # lo segnaliamo per un'eventuale correzione manuale del file mappe_oggetti.json
+            oggetti_non_posizionati = len(mappe_oggetti) - len(oggetti_da_inserire)
+            if oggetti_non_posizionati > 0:
+                logging.warning(
+                    f"{oggetti_non_posizionati} oggetti non posizionati sulla mappa {nome_mappa} "
+                    f"a causa di collisioni di posizione. Correggere il file mappe_oggetti.json."
+                )
+            
             return True
         except Exception as e:
             logging.error(f"Errore durante il caricamento degli oggetti interattivi per la mappa {nome_mappa}: {e}")
@@ -435,4 +486,125 @@ class OggettiManager:
             import traceback
             logging.error(f"Errore durante il salvataggio degli oggetti interattivi: {e}")
             logging.error(traceback.format_exc())
-            return False 
+            return False
+    
+    def convalida_posizioni_oggetti_mappa(self, nome_mappa, percorso_file=None):
+        """
+        Analizza un file mappe_oggetti.json per una mappa specifica e verifica eventuali 
+        conflitti di posizionamento, sia interni al file stesso che con oggetti predefiniti
+        nella mappa.
+        
+        Args:
+            nome_mappa: Nome della mappa da convalidare
+            percorso_file: Percorso del file mappe_oggetti.json (opzionale)
+            
+        Returns:
+            tuple: (è_valido, problemi_rilevati, correzioni_suggerite)
+        """
+        problemi = []
+        correzioni = []
+        
+        # Carica il file mappe_oggetti.json
+        data_manager = get_data_manager()
+        mappa_oggetti = data_manager.get_map_objects(nome_mappa)
+        
+        if not mappa_oggetti:
+            return True, [], []  # Nessun oggetto definito, nessun problema
+        
+        # Carica la mappa (se disponibile)
+        mappa_json = None
+        try:
+            mappa_json = data_manager.get_map_data(nome_mappa)
+        except Exception as e:
+            logging.warning(f"Impossibile caricare la mappa {nome_mappa}: {e}")
+        
+        # Raccogli le posizioni predefinite nella mappa
+        posizioni_predefinite = set()
+        if mappa_json and 'oggetti' in mappa_json:
+            for pos_str, _ in mappa_json['oggetti'].items():
+                # Converti da stringa "[x, y]" in posizione (x, y)
+                try:
+                    pos_list = eval(pos_str)
+                    if isinstance(pos_list, list) and len(pos_list) == 2:
+                        posizioni_predefinite.add(tuple(pos_list))
+                except Exception as e:
+                    logging.error(f"Errore nella lettura della posizione {pos_str}: {e}")
+        
+        # Verifica le posizioni degli oggetti in mappe_oggetti.json
+        posizioni_occupate = set()
+        
+        for i, oggetto in enumerate(mappa_oggetti):
+            nome = oggetto.get('nome', f'oggetto_{i}')
+            posizione = oggetto.get('posizione')
+            
+            if not posizione or len(posizione) != 2:
+                problemi.append(f"Oggetto '{nome}' ha una posizione non valida: {posizione}")
+                continue
+            
+            pos_tuple = tuple(posizione)
+            
+            # Controlla se la posizione è già occupata da un oggetto predefinito
+            if pos_tuple in posizioni_predefinite:
+                problemi.append(f"Oggetto '{nome}' nella posizione {posizione} confligge con un oggetto predefinito nella mappa {nome_mappa}")
+                
+                # Suggerisci una correzione spostando l'oggetto in una posizione vicina
+                nuova_pos = self._trova_posizione_libera(pos_tuple, posizioni_predefinite, posizioni_occupate)
+                if nuova_pos:
+                    correzioni.append({
+                        "oggetto": nome,
+                        "posizione_originale": posizione,
+                        "posizione_suggerita": list(nuova_pos)
+                    })
+            
+            # Controlla se la posizione è già occupata da un altro oggetto in mappe_oggetti.json
+            elif pos_tuple in posizioni_occupate:
+                altro_nome = next((ogg.get('nome') for ogg in mappa_oggetti 
+                               if ogg.get('posizione') and tuple(ogg.get('posizione')) == pos_tuple 
+                               and ogg.get('nome') != nome), "oggetto sconosciuto")
+                
+                problemi.append(f"Oggetto '{nome}' nella posizione {posizione} confligge con '{altro_nome}' nella stessa mappa")
+                
+                # Suggerisci una correzione spostando l'oggetto in una posizione vicina
+                nuova_pos = self._trova_posizione_libera(pos_tuple, posizioni_predefinite, posizioni_occupate)
+                if nuova_pos:
+                    correzioni.append({
+                        "oggetto": nome,
+                        "posizione_originale": posizione,
+                        "posizione_suggerita": list(nuova_pos)
+                    })
+            
+            # La posizione è libera, la aggiungiamo a quelle occupate
+            else:
+                posizioni_occupate.add(pos_tuple)
+        
+        return len(problemi) == 0, problemi, correzioni
+
+    def _trova_posizione_libera(self, posizione, posizioni_predefinite, posizioni_occupate, max_distanza=5):
+        """
+        Trova una posizione libera vicina a quella specificata.
+        
+        Args:
+            posizione: Tupla (x, y) della posizione di partenza
+            posizioni_predefinite: Set delle posizioni già occupate nella mappa
+            posizioni_occupate: Set delle posizioni già assegnate ad altri oggetti
+            max_distanza: Distanza massima dalla posizione originale
+            
+        Returns:
+            tuple: Nuova posizione libera (x, y) o None se non trovata
+        """
+        x, y = posizione
+        
+        # Prova posizioni in spirale partendo dal centro
+        for d in range(1, max_distanza + 1):
+            for dx in range(-d, d+1):
+                for dy in range(-d, d+1):
+                    # Controlla solo i bordi del quadrato
+                    if abs(dx) == d or abs(dy) == d:
+                        new_pos = (x + dx, y + dy)
+                        
+                        # Se la posizione non è occupata in nessun modo, restituiscila
+                        if (new_pos not in posizioni_predefinite and 
+                            new_pos not in posizioni_occupate):
+                            return new_pos
+        
+        return None 

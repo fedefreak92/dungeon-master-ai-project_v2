@@ -28,6 +28,13 @@ class NPGManager:
             self._verifica_percorso(self.percorso_npc, "NPC")
             
         self.npc_configurazioni = self._carica_configurazioni_npc()
+        
+        # Verifica la coerenza tra mappe_npg.json e npcs.json
+        npc_mancanti = self.verifica_npc_mancanti()
+        if npc_mancanti:
+            logging.warning(f"Rilevati {len(npc_mancanti)} NPC utilizzati ma non definiti in npcs.json")
+            logging.warning(f"È necessario definire in npcs.json gli NPC: {', '.join(npc_mancanti)}")
+            # Non fermare l'esecuzione, ma avvisare in modo chiaro
     
     def _verifica_percorso(self, percorso, tipo_percorso):
         """Verifica se un percorso esiste e prova alternative se necessario"""
@@ -67,6 +74,12 @@ class NPGManager:
             data_manager = get_data_manager()
             npcs = data_manager.get_npc_data()
             
+            # Log dettagliato sul caricamento
+            if npcs:
+                logging.info(f"DataManager ha caricato {len(npcs)} configurazioni NPC: {', '.join(npcs.keys())}")
+            else:
+                logging.warning("DataManager non ha trovato configurazioni NPC")
+            
             # Adatta il formato: ogni NPC diventa una configurazione
             for nome, config in npcs.items():
                 # Valida e correggi i dati dell'NPC
@@ -88,21 +101,33 @@ class NPGManager:
         if not configurazioni and self.percorso_npc and self.percorso_npc.exists():
             logging.warning("Tentativo di caricamento NPC da file JSON diretti")
             try:
-                for file_path in self.percorso_npc.glob("*.json"):
-                    if file_path.name == "npcs.json":
-                        logging.info(f"Caricamento configurazione NPC da {file_path}")
-                        try:
-                            # Usa SafeLoader per il caricamento
-                            npcs = SafeLoader.safe_json_load(file_path, {})
+                npcs_json_path = self.percorso_npc / "npcs.json"
+                if npcs_json_path.exists():
+                    logging.info(f"Caricamento configurazione NPC da {npcs_json_path}")
+                    try:
+                        # Usa SafeLoader per il caricamento
+                        npcs = SafeLoader.safe_json_load(npcs_json_path, {})
+                        
+                        # Log dettagliato sul caricamento
+                        if npcs:
+                            logging.info(f"File npcs.json contiene {len(npcs)} configurazioni: {', '.join(npcs.keys())}")
+                        else:
+                            logging.warning("File npcs.json esiste ma è vuoto o non valido")
+                        
+                        # Adatta il formato per gli NPC
+                        for nome, config in npcs.items():
+                            config_corretta = valida_npc(config, nome)
+                            configurazioni[nome] = config_corretta
                             
-                            # Adatta il formato per gli NPC
-                            for nome, config in npcs.items():
-                                config_corretta = valida_npc(config, nome)
-                                configurazioni[nome] = config_corretta
+                            # Aggiungi anche per ID se diverso dal nome
+                            if "id" in config_corretta and config_corretta["id"] != nome:
+                                configurazioni[config_corretta["id"]] = config_corretta
                                 
-                            logging.info(f"Caricate {len(configurazioni)} configurazioni NPC da file diretto")
-                        except Exception as e:
-                            logging.error(f"Errore durante il caricamento della configurazione NPC da {file_path}: {e}")
+                        logging.info(f"Caricate {len(configurazioni)} configurazioni NPC da file npcs.json")
+                    except Exception as e:
+                        logging.error(f"Errore durante il caricamento della configurazione NPC da {npcs_json_path}: {e}")
+                else:
+                    logging.error(f"File npcs.json non trovato in {self.percorso_npc}. Crea questo file con le definizioni degli NPC necessari")
             except Exception as e:
                 logging.error(f"Errore durante il caricamento delle configurazioni NPC: {e}")
         
@@ -129,27 +154,41 @@ class NPGManager:
                     break
                     
         if config is None:
-            logging.warning(f"Configurazione non trovata per NPC {npc_id}")
-            # Crea una configurazione minima di default
-            config = {
-                "nome": npc_id,
-                "id": npc_id,
-                "token": npc_id[0].upper(),
-                "descrizione": f"Un personaggio chiamato {npc_id}",
-                "livello": 1,
-                "hp": 10,
-                "hp_max": 10,
-                "forza": 10,
-                "destrezza": 10,
-                "costituzione": 10,
-                "intelligenza": 10,
-                "saggezza": 10,
-                "carisma": 10,
-                "inventario": [],
-                "oro": 0,
-                "amichevole": True
-            }
-            logging.info(f"Creata configurazione di default per NPC {npc_id}")
+            # NPC non trovato, ricarica le configurazioni per assicurarsi che siano aggiornate
+            logging.info(f"Ricarico le configurazioni NPC per cercare {npc_id}")
+            self.npc_configurazioni = self._carica_configurazioni_npc()
+            
+            # Riprova la ricerca con le configurazioni aggiornate
+            config = self.npc_configurazioni.get(npc_id, None)
+            if config is None:
+                for conf in self.npc_configurazioni.values():
+                    if conf.get("nome") == npc_id:
+                        config = conf
+                        break
+            
+            # Se ancora non trovato, registra un errore critico
+            if config is None:
+                logging.error(f"Configurazione non trovata per NPC {npc_id}. È necessario definire questo NPC in npcs.json")
+                # Crea una configurazione minima di default solo come misura d'emergenza
+                config = {
+                    "nome": npc_id,
+                    "id": npc_id,
+                    "token": npc_id[0].upper(),
+                    "descrizione": f"Un personaggio chiamato {npc_id} (CONFIGURAZIONE MANCANTE - DA COMPLETARE)",
+                    "livello": 1,
+                    "hp": 10,
+                    "hp_max": 10,
+                    "forza": 10,
+                    "destrezza": 10,
+                    "costituzione": 10,
+                    "intelligenza": 10,
+                    "saggezza": 10,
+                    "carisma": 10,
+                    "inventario": [],
+                    "oro": 0,
+                    "amichevole": True
+                }
+                logging.warning(f"Creata configurazione temporanea per NPC {npc_id} - QUESTA È UNA MISURA D'EMERGENZA")
             
         return config
     
@@ -317,4 +356,58 @@ class NPGManager:
             logging.error(f"Errore durante il salvataggio degli NPG per la mappa {mappa.nome}: {e}")
             import traceback
             logging.error(traceback.format_exc())
-            return False 
+            return False
+    
+    def verifica_npc_mancanti(self):
+        """
+        Verifica se ci sono NPC definiti in mappe_npg.json ma mancanti in npcs.json.
+        
+        Returns:
+            list: Lista di nomi di NPC mancanti
+        """
+        # Ottieni il data manager
+        data_manager = get_data_manager()
+        
+        # Carica mappe_npg.json per tutti gli NPC usati
+        mappe_npg = data_manager.load_data("npc", "mappe_npg.json") or {}
+        
+        # Raccogli tutti gli NPC definiti in tutte le mappe
+        npc_definiti = set()
+        for mappa_nome, npg_lista in mappe_npg.items():
+            for npg_config in npg_lista:
+                # Usa l'id se presente, altrimenti il nome
+                npc_id = npg_config.get("id", npg_config.get("nome"))
+                if npc_id:
+                    npc_definiti.add(npc_id)
+                    
+        # Ottieni tutti gli NPC configurati
+        npcs_configurati = set(self.npc_configurazioni.keys())
+        
+        # Trova gli NPC mancanti
+        npc_mancanti = npc_definiti - npcs_configurati
+        
+        # Se ci sono NPC mancanti, registra un avviso
+        if npc_mancanti:
+            npc_mancanti_lista = list(npc_mancanti)
+            logging.warning(f"NPC mancanti in npcs.json: {', '.join(npc_mancanti_lista)}")
+            return npc_mancanti_lista
+            
+        return []
+        
+    def carica_e_verifica_npg(self):
+        """
+        Ricarica tutte le configurazioni NPC e verifica eventuali incongruenze.
+        
+        Returns:
+            dict: Rapporto sulla verifica con 'npc_mancanti', 'totale_npc_configurati'
+        """
+        # Ricarica le configurazioni
+        self.npc_configurazioni = self._carica_configurazioni_npc()
+        
+        # Verifica NPC mancanti
+        npc_mancanti = self.verifica_npc_mancanti()
+        
+        return {
+            'npc_mancanti': npc_mancanti,
+            'totale_npc_configurati': len(self.npc_configurazioni)
+        } 

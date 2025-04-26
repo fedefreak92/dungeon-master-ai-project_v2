@@ -2,6 +2,7 @@ from states.base.enhanced_base_state import EnhancedBaseState
 from .ui_handlers import TavernaUI
 from .menu_handlers import MenuTavernaHandler
 from .oggetti_interattivi import inizializza_oggetti_taverna
+from .serializzazione import to_dict as serialize_to_dict, from_dict as deserialize_from_dict
 from entities.npg import NPG
 import logging
 import core.events as Events
@@ -256,33 +257,8 @@ class TavernaState(EnhancedBaseState):
         Returns:
             dict: Rappresentazione dello stato in formato dizionario
         """
-        # Ottieni il dizionario base
-        data = super().to_dict()
-        
-        # Rimuovi il dizionario npg_presenti prima, dato che verrà serializzato separatamente
-        if "npg_presenti" in data:
-            del data["npg_presenti"]
-            
-        # Serializza manualmente gli NPG per evitare problemi di serializzazione
-        npg_dict = {}
-        try:
-            for nome, npg in self.npg_presenti.items():
-                if hasattr(npg, 'to_dict') and callable(getattr(npg, 'to_dict')):
-                    npg_dict[nome] = npg.to_dict()
-        except:
-            # In caso di errore, salviamo solo i nomi degli NPG
-            npg_dict = {nome: {"nome": nome} for nome in self.npg_presenti.keys()}
-            
-        # Aggiungi attributi specifici
-        data.update({
-            "fase": self.fase,
-            "ultimo_input": self.ultimo_input,
-            "ultima_scelta": self.ultima_scelta,
-            "npg_nomi": list(self.npg_presenti.keys())  # Salva solo i nomi degli NPG
-            # Non serializzare oggetti_interattivi poiché sono generati dinamicamente
-        })
-        
-        return data
+        # Utilizziamo il metodo di serializzazione dal modulo serializzazione.py
+        return serialize_to_dict(self)
     
     @classmethod
     def from_dict(cls, data, game=None):
@@ -296,22 +272,5 @@ class TavernaState(EnhancedBaseState):
         Returns:
             TavernaState: Nuova istanza di TavernaState
         """
-        # Creiamo un'istanza con il costruttore standard
-        state = cls(game)
-        
-        # Imposta la prima visita a False durante un caricamento
-        state.prima_visita = False
-        
-        # Carica altri attributi dal dizionario se presenti
-        state.fase = data.get("fase", "menu_principale")
-        state.ultimo_input = data.get("ultimo_input")
-        state.ultima_scelta = data.get("ultima_scelta")
-        
-        # Ricrea gli NPG dai nomi
-        state.npg_presenti = {}
-        npg_nomi = data.get("npg_nomi", ["Durnan", "Elminster", "Mirt"])
-        for nome in npg_nomi:
-            from entities.npg import NPG
-            state.npg_presenti[nome] = NPG(nome)
-        
-        return state 
+        # Utilizziamo il metodo di deserializzazione dal modulo serializzazione.py
+        return deserialize_from_dict(cls, data, game) 

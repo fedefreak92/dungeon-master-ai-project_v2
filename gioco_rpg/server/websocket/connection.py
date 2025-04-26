@@ -5,6 +5,7 @@ import traceback
 import json
 import time
 from datetime import datetime, timedelta
+from urllib.parse import parse_qs
 
 # Moduli locali
 from server.utils.session import socket_sessioni, carica_sessione, salva_sessione
@@ -19,6 +20,44 @@ active_clients = {}
 
 # Aggiungi questa variabile per tracciare le disconnessioni temporanee
 temp_disconnected_clients = {}
+
+def get_connection_stats():
+    """
+    Restituisce le statistiche sulle connessioni attive
+    
+    Returns:
+        dict: Statistiche sulle connessioni
+    """
+    # Assicuriamoci di restituire solo dati serializzabili senza oggetti di entità
+    connected_count = 0
+    for client_id in active_clients:
+        if active_clients[client_id].get('connected', True):
+            connected_count += 1
+    
+    return {
+        "clients_total": len(active_clients),
+        "clients_connected": connected_count,
+        "timestamp": time.time()
+    }
+
+def get_client_info(client_id):
+    """
+    Ottiene informazioni su un client connesso
+    
+    Args:
+        client_id (str): ID del client
+        
+    Returns:
+        dict: Informazioni sul client o None se non trovato
+    """
+    if client_id in active_clients:
+        return active_clients[client_id]
+    
+    # Cerca nelle disconnessioni temporanee
+    if client_id in temp_disconnected_clients:
+        return temp_disconnected_clients[client_id]
+    
+    return None
 
 def send_to_client(session_id, event_name, data):
     """
@@ -39,92 +78,107 @@ def send_to_client(session_id, event_name, data):
         return False
 
 def handle_connect():
-    """Gestisce la connessione di un nuovo client"""
+    """
+    Gestisce una nuova connessione WebSocket
+    """
+    # Ottieni SID e environ dalla request corrente
+    sid = request.sid if hasattr(request, 'sid') else "unknown"
+    environ = request.environ if hasattr(request, 'environ') else {}
+    
+    logger.info(f"Nuova connessione WebSocket stabilita: {sid}")
+    logger.info(f"Informazioni di ambiente: Origin={environ.get('HTTP_ORIGIN', 'N/A')}, Transport={environ.get('wsgi.url_scheme', 'N/A')}")
+    
+    # Leggi i parametri di query
+    query = environ.get('QUERY_STRING', '')
+    parsed_query = parse_qs(query)
+    
+    # Estrai session_id dai parametri di query
+    session_id = parsed_query.get('sessionId', [None])[0]
+    logger.info(f"Tentativo di connessione con sessionId: {session_id}")
+    
+    # Associa il SID con session_id
+    if session_id:
+        from server.websocket.websocket_event_bridge import WebSocketEventBridge
+        
+        # Registra questa connessione nel bridge
+        logger.info(f"Registrando sessione {session_id} con SID {sid} nel WebSocketEventBridge")
+        try:
+            WebSocketEventBridge.get_instance().register_session(sid, session_id)
+            logger.info(f"Sessione {session_id} registrata correttamente con SID {sid}")
+        except Exception as e:
+            logger.error(f"Errore nella registrazione della sessione {session_id}: {e}")
+    else:
+        logger.warning(f"Connessione WebSocket senza sessionId: {sid}")
+    
+    # Ottieni e aggiorna le statistiche di connessione
+    stats = get_connection_stats()
+    stats["clients_total"] += 1
+    stats["clients_connected"] += 1
+    
     try:
-        client_id = request.sid
-        logger.info(f"Nuovo client connesso: {client_id}")
-        
-        # Ottieni informazioni sulla richiesta
-        transport = request.environ.get('wsgi.websocket_version', 'Unknown')
-        user_agent = request.headers.get('User-Agent', 'Unknown')
-        logger.info(f"Dettagli connessione - Client: {client_id}, Transport: {transport}, User-Agent: {user_agent}")
-        
-        # Registra il client attivo
-        active_clients[client_id] = {
-            'connected_at': datetime.now(),
-            'last_ping': datetime.now(),
-            'ping_count': 0,
-            'session_id': None,
-            'user_agent': user_agent,
-            'transport': transport
-        }
-        
-        # Ottieni informazioni sulla connessione Socket.IO
-        socket_info = {
-            'id': client_id,
-            'async_mode': socketio.async_mode,
-            'transport': transport,
-            'protocol_version': request.environ.get('HTTP_SEC_WEBSOCKET_VERSION', 'Unknown')
-        }
-        logger.info(f"Socket.IO info: {json.dumps(socket_info)}")
-        
-        emit('connection_established', {
-            'status': 'ok',
-            'client_id': client_id,
-            'server_info': {
-                'version': '1.0.0',
-                'transport': transport,
-                'async_mode': socketio.async_mode,
-                'session_count': len(socket_sessioni),
-                'connected_clients': len(active_clients)
-            }
-        })
+        # Utilizza l'oggetto socketio già importato dal modulo
+        from . import socketio as module_socketio
+        if hasattr(module_socketio, 'emit'):
+            logger.info(f"Invio clients_update a tutti i client")
+            module_socketio.emit('clients_update', stats, namespace='/')
+        else:
+            logger.warning(f"L'oggetto socketio non ha il metodo emit")
     except Exception as e:
-        logger.error(f"Errore durante gestione connessione client: {e}")
+        logger.error(f"Errore nell'invio di clients_update: {e}")
         logger.error(traceback.format_exc())
-        emit('error', {'message': 'Errore interno del server durante la connessione'})
+    
+    return True
 
-def handle_disconnect():
-    """Gestisce la disconnessione di un client"""
+def handle_disconnect(sid=None):
+    """
+    Gestisce la disconnessione di un client
+    """
+    # Se sid non è specificato, prova a ottenerlo dalla request
+    if sid is None and hasattr(request, 'sid'):
+        sid = request.sid
+        
+    logger.info(f"Disconnessione client WebSocket: {sid}")
+    
+    # Ottieni informazioni sul client
+    client_info = get_client_info(sid)
+    if client_info:
+        logger.info(f"Client disconnesso: SessionID={client_info.get('session_id')}, IP={client_info.get('ip')}")
+    
     try:
-        client_id = request.sid
-        logger.info(f"Client disconnesso: {client_id}")
+        from server.websocket.websocket_event_bridge import WebSocketEventBridge
         
-        # Salva temporaneamente l'associazione socket-sessione per permettere riconnessioni rapide
-        if client_id in socket_sessioni:
-            id_sessione = socket_sessioni[client_id]
-            
-            # Mantieni l'associazione per un breve periodo
-            temp_disconnected_clients[client_id] = {
-                'session_id': id_sessione,
-                'disconnected_at': datetime.now(),
-                'expiry': datetime.now() + timedelta(seconds=30)  # 30 secondi di tempo per riconnettersi
-            }
-            
-            logger.info(f"Associazione socket-sessione {client_id} -> {id_sessione} conservata temporaneamente per facilitare riconnessione")
-            
-            # Salva comunque la sessione
-            sessione = carica_sessione(id_sessione)
-            if sessione:
-                try:
-                    salva_sessione(id_sessione, sessione)
-                    logger.info(f"Sessione {id_sessione} salvata dopo disconnessione del client {client_id}")
-                except Exception as e:
-                    logger.error(f"Errore durante il salvataggio della sessione {id_sessione}: {e}")
-            
-            # Non rimuoviamo ancora dalla stanza ma lasciamo l'associazione per facilitare la riconnessione
-            # leave_room(f"session_{id_sessione}")
-            # del socket_sessioni[client_id]
-        
-        # Rimuovi dal tracking dei client attivi
-        if client_id in active_clients:
-            client_data = active_clients[client_id]
-            connection_duration = datetime.now() - client_data['connected_at']
-            logger.info(f"Statistiche client {client_id}: connesso per {connection_duration.total_seconds()}s, ping: {client_data['ping_count']}")
-            del active_clients[client_id]
+        # Cleanup della connessione nel bridge
+        logger.info(f"Pulizia della sessione con SID {sid} nel WebSocketEventBridge")
+        WebSocketEventBridge.get_instance().unregister_session(sid)
+        logger.info(f"Pulizia sessione completata per SID {sid}")
     except Exception as e:
-        logger.error(f"Errore durante gestione disconnessione client: {e}")
+        logger.error(f"Errore nella pulizia della sessione {sid}: {e}")
+    
+    # Aggiorna le statistiche di connessione
+    stats = get_connection_stats()
+    stats["clients_connected"] -= 1
+    
+    # Invia aggiornamento a tutti i client
+    try:
+        from . import socketio as module_socketio
+        if hasattr(module_socketio, 'emit'):
+            logger.info(f"Invio clients_update a tutti i client")
+            module_socketio.emit('clients_update', stats, namespace='/')
+        else:
+            logger.warning(f"L'oggetto socketio non ha il metodo emit")
+    except Exception as e:
+        logger.error(f"Errore nell'invio dell'aggiornamento clients_update: {e}")
         logger.error(traceback.format_exc())
+    
+    # Ottieni riferimento al gestore di gioco per la pulizia
+    try:
+        from core.game import Game
+        # Se necessario, esegui operazioni di pulizia
+        pass
+    except ImportError:
+        logger.warning("Impossibile importare Game per la gestione disconnessione")
+        
+    logger.info(f"Disconnessione client {sid} completata")
 
 def handle_join_game(data):
     """
@@ -270,9 +324,14 @@ def check_zombie_connections():
         for zombie in zombies:
             logger.warning(f"Disconnessione client zombie: {zombie}, ultimo ping: {active_clients[zombie]['last_ping']}")
             try:
-                # Modifica: invece di usare socketio.disconnect() che non esiste
-                # Usiamo socketio.emit con un evento che il client interpreterà come richiesta di disconnessione
-                socketio.emit('force_disconnect', {'reason': 'zombie_timeout'}, room=zombie)
+                # Usa l'oggetto socketio importato dal modulo
+                from . import socketio as module_socketio
+                if hasattr(module_socketio, 'emit'):
+                    logger.info(f"Invio force_disconnect al client zombie {zombie}")
+                    module_socketio.emit('force_disconnect', {'reason': 'zombie_timeout'}, room=zombie)
+                else:
+                    logger.warning(f"L'oggetto socketio non ha il metodo emit")
+                    
                 # Se il client è in una stanza, lo rimuoviamo
                 if zombie in socket_sessioni:
                     session_id = socket_sessioni[zombie]
@@ -280,6 +339,7 @@ def check_zombie_connections():
                     leave_room(room_id)
             except Exception as e:
                 logger.error(f"Errore durante disconnessione zombie {zombie}: {e}")
+                logger.error(traceback.format_exc())
             
             # Rimuovi dai tracking anche se la disconnessione fallisce
             if zombie in active_clients:
@@ -294,6 +354,7 @@ def check_zombie_connections():
             
     except Exception as e:
         logger.error(f"Errore durante verifica connessioni zombie: {e}")
+        logger.error(traceback.format_exc())
 
 def handle_connection_test(data):
     """

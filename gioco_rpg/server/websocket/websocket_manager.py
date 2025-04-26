@@ -132,8 +132,19 @@ class WebSocketManager:
             return True
             
         @self.socketio.on('disconnect')
-        def handle_disconnect():
-            sid = request.sid
+        def handle_disconnect(sid=None):
+            """
+            Gestisce la disconnessione di un client WebSocket
+            """
+            # Se sid non è specificato, prova a ottenerlo dalla request
+            if sid is None and hasattr(request, 'sid'):
+                sid = request.sid
+            
+            logger.info(f"Client WebSocket disconnesso: {sid}")
+            
+            # Ottieni info sul client prima di rimuoverlo
+            client_info = connection.get_client_info(sid)
+            
             self.active_connections = max(0, self.active_connections - 1)
             
             # Rimuovi dalla mappa di connessione
