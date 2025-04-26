@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import socketService from '../api/socketService';
 
 // Crea il contesto per il socket
@@ -20,6 +20,9 @@ export const SocketProvider = ({ children }) => {
   // Riferimento per evitare aggiornamenti multipli
   const connectionCheckRunning = useRef(false);
   const connectionUpdateTimeout = useRef(null);
+  
+  // Stato per tracciare il socket effettivo e forzare aggiornamento
+  const [socketInstance, setSocketInstance] = useState(socketService.socket);
   
   // Aggiorna lo stato di connessione quando cambia
   useEffect(() => {
@@ -51,6 +54,11 @@ export const SocketProvider = ({ children }) => {
         console.log('SocketContext: socket connesso ma non pronto, imposto a pronto');
         socketService.socketReady = true;
         setSocketReady(true);
+      }
+      
+      // Aggiorna l'istanza del socket se necessario
+      if (socketInstance !== socketService.socket) {
+        setSocketInstance(socketService.socket);
       }
       
       connectionCheckRunning.current = false;
@@ -146,6 +154,9 @@ export const SocketProvider = ({ children }) => {
       });
     }
     
+    // Aggiorna l'istanza del socket all'inizio
+    setSocketInstance(socketService.socket);
+
     // Cleanup
     return () => {
       // Rimuovi solo i listener e gli intervalli
@@ -161,21 +172,24 @@ export const SocketProvider = ({ children }) => {
         socketService.off('error');
       }
     };
-  }, []);
+  }, [socketInstance]);
   
   /**
    * Inizializza la connessione socket
-   * @param {string} sessionId - ID della sessione di gioco
-   * @returns {Promise} Promise che si risolve quando la connessione è stabilita
+   * Memoizzata con useCallback per stabilità referenziale
    */
-  const connectSocket = async (sessionId) => {
+  const connectSocket = useCallback(async (sessionId) => {
+    // Usa connectionState.current per leggere lo stato più recente senza causare ri-render
+    const currentConnectionState = connectionState;
+    
     try {
       // Previeni riconnessioni mentre è in corso una connessione
-      if (connectionState.connecting) {
+      if (currentConnectionState.connecting) {
         console.log('SocketContext: connessione già in corso, ignoro la richiesta');
         return false;
       }
       
+      // Aggiorna lo stato per indicare che la connessione è in corso
       setConnectionState(prev => ({
         ...prev,
         connecting: true,
@@ -183,23 +197,29 @@ export const SocketProvider = ({ children }) => {
       }));
       
       await socketService.connect(sessionId);
+      // L'aggiornamento a connected: true avverrà tramite l'evento 'connect'
       
+      // Aggiorna l'istanza del socket dopo la connessione
+      setSocketInstance(socketService.socket);
       return true;
     } catch (error) {
+      console.error("SocketContext: Errore durante connectSocket", error);
       setConnectionState({
         connected: false,
         connecting: false,
         error: error.message
       });
-      
+      setSocketInstance(socketService.socket); // Assicurati che l'istanza sia aggiornata anche in caso di errore
       return false;
     }
-  };
+    // Aggiungi connectionState come dipendenza se leggi direttamente lo stato
+  }, [connectionState.connecting]); // Dipende solo da connecting per evitare loop
   
   /**
    * Chiudi la connessione socket
+   * Memoizzata con useCallback
    */
-  const disconnectSocket = () => {
+  const disconnectSocket = useCallback(() => {
     socketService.disconnect();
     setSocketReady(false);
     setConnectionState({
@@ -207,21 +227,52 @@ export const SocketProvider = ({ children }) => {
       connecting: false,
       error: null
     });
-  };
-  
-  // Valore del contesto
-  const contextValue = {
+    setSocketInstance(null); // Resetta l'istanza del socket
+  }, []); // Nessuna dipendenza
+
+  // Funzioni wrapper memoizzate per le operazioni sul socket
+  const emit = useCallback((...args) => {
+    if (socketService.socket) {
+      return socketService.emit(...args);
+    }
+    console.warn("Socket non disponibile per emit");
+  }, [socketInstance]); // Dipende dall'istanza del socket
+
+  const emitWithAck = useCallback((...args) => {
+    if (socketService.socket) {
+      return socketService.emitWithAck(...args);
+    }
+    console.warn("Socket non disponibile per emitWithAck");
+    return Promise.reject(new Error("Socket non disponibile"));
+  }, [socketInstance]); // Dipende dall'istanza del socket
+
+  const on = useCallback((...args) => {
+    if (socketService.socket) {
+      return socketService.on(...args);
+    }
+    console.warn("Socket non disponibile per on");
+  }, [socketInstance]); // Dipende dall'istanza del socket
+
+  const off = useCallback((...args) => {
+    if (socketService.socket) {
+      return socketService.off(...args);
+    }
+    console.warn("Socket non disponibile per off");
+  }, [socketInstance]); // Dipende dall'istanza del socket
+
+  // Valore del contesto memoizzato
+  // Includi le funzioni memoizzate
+  const contextValue = React.useMemo(() => ({
     socketReady,
     connectionState,
     connectSocket,
     disconnectSocket,
-    // Funzioni wrapper per le operazioni sul socket
-    emit: socketService.emit.bind(socketService),
-    emitWithAck: socketService.emitWithAck.bind(socketService),
-    on: socketService.on.bind(socketService),
-    off: socketService.off.bind(socketService)
-  };
-  
+    emit,
+    emitWithAck,
+    on,
+    off
+  }), [socketReady, connectionState, connectSocket, disconnectSocket, emit, emitWithAck, on, off]);
+
   return (
     <SocketContext.Provider value={contextValue}>
       {children}

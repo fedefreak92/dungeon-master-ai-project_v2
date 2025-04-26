@@ -101,47 +101,45 @@ function GameContent() {
   
   // Registra il listener per l'evento map_change_complete
   useEffect(() => {
-    const registerMapChangeListener = () => {
-      if (!socketReady) {
-        // Non registrare il listener se il socket non è pronto
-        console.log('Socket non pronto, non registro listener map_change_complete');
-        return;
+    if (!socketReady) {
+      console.log('Socket non pronto, non registro listener map_change_complete');
+      return;
+    }
+    
+    console.log('Registrazione listener map_change_complete sul socket (socket pronto)');
+    
+    // Handler per l'evento map_change_complete
+    function handleMapChangeComplete(data) {
+      console.log('>>> handleMapChangeComplete ESEGUITA! Dati ricevuti:', data);
+      
+      // Aggiorna stato globale con la nuova mappa e posizione
+      if (data && data.mapId) {
+        console.log(`handleMapChangeComplete: Aggiorno mappa a ${data.mapId}`);
+        dispatch({ type: 'SET_MAP', payload: data.mapId });
+      } else {
+        console.warn('handleMapChangeComplete: Dati mappa mancanti nell\'evento', data);
       }
       
-      console.log('Registrazione listener map_change_complete sul socket (socket pronto)');
+      // Segnala che la mappa è pronta
+      console.log('handleMapChangeComplete: Imposto mappaPronta a true');
+      setMappaPronta(true);
       
-      // Handler per l'evento map_change_complete
-      function handleMapChangeComplete(data) {
-        console.log('Evento map_change_complete ricevuto:', data);
-        
-        // Aggiorna stato globale con la nuova mappa e posizione
-        if (data.mapId) {
-          dispatch({ type: 'SET_MAP', payload: data.mapId });
-        }
-        
-        // Segnala che la mappa è pronta
-        setMappaPronta(true);
-        
-        // Cambia lo stato del gioco a 'map'
-        dispatch({ type: 'SET_GAME_STATE', payload: 'map' });
-      }
-      
-      // Registra il listener sull'evento map_change_complete
-      on('map_change_complete', handleMapChangeComplete);
-      
-      // Memorizza la funzione di pulizia da eseguire quando l'effetto viene ripulito
-      return () => {
-        console.log('Rimozione listener map_change_complete');
-        off('map_change_complete', handleMapChangeComplete);
-      };
-    };
+      // Cambia lo stato del gioco a 'map'
+      console.log('handleMapChangeComplete: Imposto gameState a map');
+      dispatch({ type: 'SET_GAME_STATE', payload: 'map' });
+
+      // Resetta lo stato di caricamento globale usando dispatch
+      console.log('handleMapChangeComplete: Resetto lo stato di loading globale');
+      dispatch({ type: 'SET_LOADING', payload: false });
+    }
     
-    // Esegui la registrazione e memorizza la funzione di pulizia
-    const cleanupFn = registerMapChangeListener();
+    // Registra direttamente il listener sull'evento
+    on('map_change_complete', handleMapChangeComplete);
     
-    // Esegui la pulizia quando il componente viene smontato o quando le dipendenze cambiano
+    // Rimuovi il listener quando il componente viene smontato
     return () => {
-      if (cleanupFn) cleanupFn();
+      console.log('Rimozione listener map_change_complete');
+      off('map_change_complete', handleMapChangeComplete);
     };
   }, [socketReady, dispatch, on, off]);
   

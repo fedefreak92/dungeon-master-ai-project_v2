@@ -108,7 +108,6 @@ except ImportError:
 # Moduli che non sono presenti nella directory ma vengono importati
 # Creiamo blueprint vuoti come segnaposto
 api_routes = Blueprint('api_routes', __name__)
-# api_map = Blueprint('api_map', __name__)  # Questo sembra essere un modulo, non un blueprint
 assets_api = Blueprint('assets_api', __name__)
 maps_api = Blueprint('maps_api', __name__)
 sessions_api = Blueprint('sessions_api', __name__)
@@ -198,13 +197,11 @@ def register_routes(app):
     
     # Registra i blueprint per le API con nomi univoci
     app.register_blueprint(entity_api, url_prefix='/api', name='entity_api_direct')
-    # app.register_blueprint(api_map, url_prefix='/api/map', name='api_map_direct')  # api_map è un modulo, non un blueprint
     try:
-        from server.routes.api_map import api_map_bp  # Prova a importare il blueprint reale
-        app.register_blueprint(api_map_bp, url_prefix='/api/map')
-    except (ImportError, AttributeError):
-        # Se non esiste, non registrarlo
-        logger.warning("api_map_bp non trovato, saltato")
+        from server.routes.api_map import api_map  # Importo il nome corretto 'api_map'
+        app.register_blueprint(api_map, url_prefix='/api/map', name='api_map_direct')
+    except (ImportError, AttributeError) as e:
+        logger.warning(f"Blueprint 'api_map' non trovato o errore durante import/registrazione: {e}, saltato")
     
     app.register_blueprint(api_diagnostics, url_prefix='/api', name='api_diagnostics_direct')
     app.register_blueprint(health_api, url_prefix='/api', name='health_api_direct')
@@ -237,6 +234,5 @@ __all__ = [
     'game_api',
     'api_routes',
     'entity_api',
-    'api_map',
     'register_routes'
 ] 

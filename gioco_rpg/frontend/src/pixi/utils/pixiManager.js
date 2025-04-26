@@ -1,4 +1,5 @@
 import * as PIXI from 'pixi.js';
+import { GlowFilter } from 'pixi-filters';
 import MapRendererFactory from './MapRendererFactory';
 
 /**
@@ -78,15 +79,38 @@ class PixiManager {
    */
   preloadCommonTextures() {
     // Implementazione texture di base per test
+    console.log("PreloadCommonTextures: Inizio creazione texture.");
+    if (!this.app || !this.app.renderer) {
+      console.error("PreloadCommonTextures: Errore - App PIXI o renderer non inizializzati!");
+      return;
+    }
+    if (typeof this.app.renderer.generateTexture !== 'function') {
+      console.error("PreloadCommonTextures: Errore - generateTexture non è una funzione sul renderer!");
+      return;
+    }
+    console.log("PreloadCommonTextures: Renderer App valido.");
+
     const createColoredTexture = (color, name) => {
-      const graphics = new PIXI.Graphics();
-      graphics.beginFill(color);
-      graphics.drawRect(0, 0, 64, 64);
-      graphics.endFill();
-      
-      const texture = this.app.renderer.generateTexture(graphics);
-      this.textures[name] = texture;
-      return texture;
+      try {
+        const graphics = new PIXI.Graphics();
+        graphics.beginFill(color);
+        graphics.drawRect(0, 0, 64, 64);
+        graphics.endFill();
+        
+        // Assicurati che generateTexture esista e sia una funzione
+        if (this.app.renderer.generateTexture) {
+          const texture = this.app.renderer.generateTexture(graphics);
+          this.textures[name] = texture;
+          console.log(`PreloadCommonTextures: Texture '${name}' creata.`);
+          return texture;
+        } else {
+          console.error(`PreloadCommonTextures: generateTexture non trovato per ${name}`);
+          return null;
+        }
+      } catch (error) {
+        console.error(`PreloadCommonTextures: Errore durante creazione texture '${name}':`, error);
+        return null;
+      }
     };
     
     // Crea texture base per i tipi di tile principali
@@ -115,56 +139,112 @@ class PixiManager {
   }
   
   /**
-   * Crea una nuova scena PIXI con gestione sicura degli errori di contesto WebGL
-   * @param {string} containerId - ID dell'elemento container
-   * @param {Object} options - Opzioni di configurazione
+   * Crea una nuova scena PIXI specifica per un componente React, gestendo la sua istanza
+   * @param {HTMLElement} container - L'elemento DOM container
+   * @param {Object} options - Opzioni di configurazione (sceneId, width, height, backgroundColor)
    * @returns {PIXI.Application|null} - L'istanza dell'applicazione o null in caso di errore
    */
-  createScene(containerId, options = {}) {
+  createScene(container, options = {}) {
+    const { sceneId, width, height, backgroundColor } = options;
+
+    if (!container) {
+      console.error(`[PixiManager] createScene(${sceneId}): Container non fornito.`);
+      return null;
+    }
+
+    if (!sceneId) {
+      console.error('[PixiManager] createScene: sceneId è obbligatorio nelle opzioni.');
+      return null;
+    }
+
+    // Controlla se esiste già una scena attiva con lo stesso ID
+    if (this.activeScenes.has(sceneId)) {
+      console.warn(`[PixiManager] createScene(${sceneId}): Esiste già una scena attiva con questo ID. Pulizia precedente...`);
+      this.cleanupScene(sceneId); // Pulisce la vecchia scena prima di crearne una nuova
+    }
+
     try {
-      // Verifica se il container esiste prima di inizializzare
-      const container = document.getElementById(containerId);
-      if (!container) {
-        console.error('Container non trovato:', containerId);
-        return null;
+      console.log(`[PixiManager] createScene(${sceneId}): Creazione nuova istanza PIXI.Application in container:`, container);
+      console.log(`[PixiManager] createScene(${sceneId}): Dimensioni richieste: ${width}x${height}`);
+
+      // Verifica se le dimensioni sono valide
+      if (!width || width <= 0 || !height || height <= 0) {
+        console.error(`[PixiManager] createScene(${sceneId}): Dimensioni non valide fornite (width: ${width}, height: ${height}). Impossibile creare la scena.`);
+        // Potremmo provare a prendere le dimensioni dal container, ma è rischioso se non sono ancora definite
+        const cWidth = container.clientWidth;
+        const cHeight = container.clientHeight;
+        if (!cWidth || cWidth <= 0 || !cHeight || cHeight <= 0) {
+           console.error(`[PixiManager] createScene(${sceneId}): Anche le dimensioni del container (${cWidth}x${cHeight}) non sono valide. Fallimento.`);
+           return null;
+        }
+         console.warn(`[PixiManager] createScene(${sceneId}): Utilizzo dimensioni del container (${cWidth}x${cHeight}) come fallback.`);
+         options.width = cWidth;
+         options.height = cHeight;
+        // Riassegna width e height locali per l'istanza
+        // width = cWidth; // Non necessario se usiamo options.width sotto
+        // height = cHeight;
       }
 
-      // Inizializzazione con gestione errori
+
+      // Determina il renderer preferito
+      const preferredRenderer = this.renderMode === 'auto'
+        ? (PIXI.utils.isWebGLSupported() ? PIXI.RENDERER_TYPE.WEBGL : PIXI.RENDERER_TYPE.CANVAS)
+        : (this.renderMode === 'webgl' ? PIXI.RENDERER_TYPE.WEBGL : PIXI.RENDERER_TYPE.CANVAS);
+
       const app = new PIXI.Application({
-        width: options.width || 800,
-        height: options.height || 600,
-        backgroundColor: options.backgroundColor || 0x1099bb,
+        width: options.width, // Usa le dimensioni dalle opzioni (potenzialmente corrette sopra)
+        height: options.height,
+        backgroundColor: backgroundColor || 0x1a1a1a,
         resolution: window.devicePixelRatio || 1,
         autoDensity: true,
-        powerPreference: 'high-performance',
         antialias: true,
-        // Aggiungi opzioni per gestire la perdita di contesto
-        failIfMajorPerformanceCaveat: false
+        forceCanvas: preferredRenderer === PIXI.RENDERER_TYPE.CANVAS,
+        // Gestione perdita contesto WebGL
+        failIfMajorPerformanceCaveat: false, // Tenta di usare WebGL anche se non ottimale
+         powerPreference: 'high-performance',
       });
 
-      // Gestione perdita contesto WebGL
-      app.renderer.on('context', context => {
-        console.warn('Contesto WebGL cambiato:', context);
-      });
+      console.log(`[PixiManager] createScene(${sceneId}): Istanza PIXI.Application creata con renderer: ${app.renderer.type === PIXI.RENDERER_TYPE.WEBGL ? 'WebGL' : 'Canvas'}`);
 
-      // Protezione durante l'applicazione di filtri
-      const originalRender = app.renderer.render;
-      app.renderer.render = function(displayObject, ...args) {
-        try {
-          return originalRender.call(this, displayObject, ...args);
-        } catch (err) {
-          console.error('Errore durante rendering:', err);
-          // Tenta di recuperare dal problema
-          this.reset();
-          return null;
-        }
-      };
+      // Aggiungi il canvas al container
+      // Pulisci prima il container da eventuali canvas precedenti o overlay
+      while (container.firstChild) {
+          container.removeChild(container.firstChild);
+      }
+      container.appendChild(app.view); // app.view è il canvas
+      console.log(`[PixiManager] createScene(${sceneId}): Canvas PIXI aggiunto al container.`);
 
-      container.appendChild(app.view);
-      return app;
+      // Aggiungi listener per perdita contesto (opzionale ma utile)
+      app.renderer.view.addEventListener('webglcontextlost', (event) => {
+        console.warn(`[PixiManager] createScene(${sceneId}): Contesto WebGL perso!`, event);
+        // Qui potresti provare a gestire il ripristino
+      }, false);
+
+      app.renderer.view.addEventListener('webglcontextrestored', () => {
+        console.log(`[PixiManager] createScene(${sceneId}): Contesto WebGL ripristinato.`);
+        // Qui potresti dover ricaricare le texture o ri-renderizzare
+      }, false);
+
+
+      // Memorizza l'istanza dell'app nella mappa delle scene attive
+      this.activeScenes.set(sceneId, app);
+      console.log(`[PixiManager] createScene(${sceneId}): Scena creata e registrata con successo.`);
+
+      return app; // Restituisce l'istanza PIXI.Application creata
+
     } catch (err) {
-      console.error('Errore durante creazione scena Pixi.js:', err);
-      return null;
+      console.error(`[PixiManager] createScene(${sceneId}): Errore GRAVE durante creazione scena Pixi.js:`, err);
+      // Assicurati che non rimanga una scena parziale registrata
+      if (this.activeScenes.has(sceneId)) {
+         const partialApp = this.activeScenes.get(sceneId);
+         try {
+           partialApp.destroy(true, {children: true, texture: true, baseTexture: true });
+         } catch (destroyErr) {
+           console.error(`[PixiManager] createScene(${sceneId}): Errore durante destroy dopo fallimento creazione:`, destroyErr);
+         }
+         this.activeScenes.delete(sceneId);
+      }
+      return null; // Restituisce null in caso di qualsiasi errore
     }
   }
   
@@ -245,16 +325,19 @@ class PixiManager {
       const tileContainer = new PIXI.Container();
       const objectsContainer = new PIXI.Container();
       const npcsContainer = new PIXI.Container();
+      const entitiesContainer = new PIXI.Container();
       
       // Aggiungi i container al container principale della mappa
       scene.mapContainer.addChild(tileContainer);
       scene.mapContainer.addChild(objectsContainer);
       scene.mapContainer.addChild(npcsContainer);
+      scene.mapContainer.addChild(entitiesContainer);
       
       // Memorizza i riferimenti ai container per utilizzo futuro
       scene.tileContainer = tileContainer;
       scene.objectsContainer = objectsContainer;
       scene.npcsContainer = npcsContainer;
+      scene.entitiesContainer = entitiesContainer;
       
       // Disegna la griglia di base della mappa
       this.renderMapGrid(scene, mapData);
@@ -448,7 +531,15 @@ class PixiManager {
     };
     
     // Restituisci la texture corrispondente o null
-    return tileTextureMap[tileType] || null;
+    const texture = tileTextureMap[tileType];
+    if (!texture) {
+      // Logga solo se il tipo non è 0 (che ignoriamo comunque)
+      if (tileType !== 0) { 
+          console.warn(`getTileTexture: Texture non trovata per tipo ${tileType}, usando fallback.`);
+      }
+      return this.textures.floor || null; // Fallback a pavimento se esiste
+    }
+    return texture;
   }
   
   /**
@@ -491,12 +582,33 @@ class PixiManager {
       // Itera su tutti gli oggetti
       for (const objectId in mapData.oggetti) {
         const object = mapData.oggetti[objectId];
-        
-        // Verifica che l'oggetto abbia le coordinate necessarie
-        if (typeof object.x !== 'number' || typeof object.y !== 'number') {
-          console.warn(`Oggetto ${objectId} con coordinate non valide:`, object);
-          continue;
+        let x, y;
+
+        // --- Gestione Coordinate Oggetti --- 
+        if (typeof object.x === 'number' && typeof object.y === 'number') {
+            x = object.x;
+            y = object.y;
+        } else if (typeof object.posizione === 'string') { 
+            // Prova a parsare da stringa "(x, y)"
+            const match = object.posizione.match(/\((\d+),\s*(\d+)\)/);
+            if (match) {
+                x = parseInt(match[1], 10);
+                y = parseInt(match[2], 10);
+            } else {
+                console.warn(`Oggetto ${objectId} con stringa posizione non valida: ${object.posizione}`, object);
+                continue;
+            }
+        } else {
+             console.warn(`Oggetto ${objectId} con coordinate non valide o mancanti:`, object);
+             continue;
         }
+        // -----------------------------------
+
+        // Verifica che l'oggetto abbia le coordinate necessarie (dopo parsing)
+        // if (typeof object.x !== 'number' || typeof object.y !== 'number') { // Rimosso controllo ridondante
+        //   console.warn(`Oggetto ${objectId} con coordinate non valide:`, object);
+        //   continue;
+        // }
         
         // Ottieni la texture per questo tipo di oggetto
         let objectSprite;
@@ -524,8 +636,8 @@ class PixiManager {
         }
         
         // Posiziona lo sprite
-        objectSprite.x = object.x * TILE_SIZE;
-        objectSprite.y = object.y * TILE_SIZE;
+        objectSprite.x = x * TILE_SIZE;
+        objectSprite.y = y * TILE_SIZE;
         objectSprite.width = TILE_SIZE;
         objectSprite.height = TILE_SIZE;
         
@@ -583,12 +695,33 @@ class PixiManager {
       // Itera su tutti gli NPC
       for (const npcId in mapData.npg) {
         const npc = mapData.npg[npcId];
-        
-        // Verifica che l'NPC abbia le coordinate necessarie
-        if (typeof npc.x !== 'number' || typeof npc.y !== 'number') {
-          console.warn(`NPC ${npcId} con coordinate non valide:`, npc);
-          continue;
+        let x, y;
+
+        // --- Gestione Coordinate NPC --- 
+        if (typeof npc.x === 'number' && typeof npc.y === 'number') {
+            x = npc.x;
+            y = npc.y;
+        } else if (typeof npc.posizione === 'string') { 
+            // Prova a parsare da stringa "(x, y)"
+            const match = npc.posizione.match(/\((\d+),\s*(\d+)\)/);
+            if (match) {
+                x = parseInt(match[1], 10);
+                y = parseInt(match[2], 10);
+            } else {
+                console.warn(`NPC ${npcId} con stringa posizione non valida: ${npc.posizione}`, npc);
+                continue;
+            }
+        } else {
+             console.warn(`NPC ${npcId} con coordinate non valide o mancanti:`, npc);
+             continue;
         }
+        // -------------------------------
+
+        // Verifica che l'NPC abbia le coordinate necessarie (dopo parsing)
+        // if (typeof npc.x !== 'number' || typeof npc.y !== 'number') { // Rimosso controllo ridondante
+        //   console.warn(`NPC ${npcId} con coordinate non valide:`, npc);
+        //   continue;
+        // }
         
         // Ottieni la texture per questo tipo di NPC
         let npcSprite;
@@ -616,8 +749,8 @@ class PixiManager {
         }
         
         // Posiziona lo sprite
-        npcSprite.x = npc.x * TILE_SIZE;
-        npcSprite.y = npc.y * TILE_SIZE;
+        npcSprite.x = x * TILE_SIZE;
+        npcSprite.y = y * TILE_SIZE;
         npcSprite.width = TILE_SIZE;
         npcSprite.height = TILE_SIZE;
         
@@ -700,7 +833,7 @@ class PixiManager {
     if (isWebGLContextValid(scene.renderer)) {
       try {
         // Applica il filtro glow direttamente allo sprite
-        playerSprite.filters = [new PIXI.filters.GlowFilter({
+        playerSprite.filters = [new GlowFilter({
           distance: 15,
           outerStrength: 2,
           innerStrength: 1,
@@ -859,10 +992,26 @@ class PixiManager {
    * @param {Array} entities - Array di entità da renderizzare
    */
   updateEntities(sceneId, entities) {
-    const scene = this.activeScenes.get(sceneId);
-    if (!scene || !entities) return;
+    const sceneData = this.activeScenes.get(sceneId);
+    if (!sceneData || !entities) return;
     
-    const { entitiesContainer } = scene;
+    const scene = sceneData.app; // Ottieni l'applicazione PIXI dalla mappa delle scene
+    if (!scene || !scene.stage) {
+      console.error("Applicazione PIXI o stage non trovati per updateEntities");
+      return;
+    }
+    
+    // Accedi a entitiesContainer tramite la scena PIXI (dove è stato aggiunto da renderMap)
+    const entitiesContainer = scene.entitiesContainer; 
+    if (!entitiesContainer) {
+        console.error("entitiesContainer non trovato sulla scena PIXI. Assicurati che renderMap sia stato eseguito.");
+        // Potremmo creare il container qui come fallback?
+        // scene.entitiesContainer = new PIXI.Container();
+        // scene.stage.addChild(scene.entitiesContainer);
+        // entitiesContainer = scene.entitiesContainer;
+        return; // Per ora usciamo se non esiste
+    }
+
     const TILE_SIZE = 64;
     
     // Rimuovi le entità esistenti
@@ -921,57 +1070,44 @@ class PixiManager {
   }
   
   /**
-   * Pulisce e rimuove una scena specifica
-   * @param {string} id - ID della scena da rimuovere
+   * Pulisce una specifica scena PIXI rimuovendo l'app e le sue risorse
+   * @param {string} id - L'ID della scena da pulire (es. 'map_scene_taverna')
    */
   cleanupScene(id) {
-    const scene = this.activeScenes.get(id);
-    if (!scene) return;
-    
-    try {
-      // Se c'è un renderer ottimizzato, distruggilo
-      if (scene.mapRenderer && typeof scene.mapRenderer.destroy === 'function') {
-        scene.mapRenderer.destroy();
-        scene.mapRenderer = null;
+    console.log(`[PixiManager] cleanupScene: Inizio pulizia per sceneId: ${id}`);
+    if (this.activeScenes.has(id)) {
+      const app = this.activeScenes.get(id);
+      console.log(`[PixiManager] cleanupScene(${id}): Trovata app PIXI attiva.`);
+      
+      try {
+        // Distruggi l'applicazione PIXI
+        // Il secondo argomento { children: true, texture: true, baseTexture: true }
+        // assicura una pulizia più profonda delle risorse GPU
+        console.log(`[PixiManager] cleanupScene(${id}): Tentativo di distruzione app.destroy(true, {...})...`);
+        app.destroy(true, { children: true, texture: true, baseTexture: true });
+        console.log(`[PixiManager] cleanupScene(${id}): App PIXI distrutta con successo.`);
+
+      } catch (error) {
+        console.error(`[PixiManager] cleanupScene(${id}): Errore durante la distruzione dell'app PIXI:`, error);
+      } finally {
+        // Rimuovi la scena dalla mappa delle scene attive INDIPENDENTEMENTE dall'esito
+        this.activeScenes.delete(id);
+        console.log(`[PixiManager] cleanupScene(${id}): Scena rimossa dalla mappa activeScenes.`);
       }
-      
-      // Ferma il ticker
-      if (scene.ticker) {
-        scene.ticker.stop();
-        scene.ticker.destroy();
-      }
-      
-      // Rimuovi gli event listener
-      if (scene.resizeHandler) {
-        window.removeEventListener('resize', scene.resizeHandler);
-      }
-      
-      // Rimuovi il canvas dal DOM
-      if (scene.canvas && scene.canvas.parentNode) {
-        scene.canvas.parentNode.removeChild(scene.canvas);
-      }
-      
-      // Distruggi il renderer
-      if (scene.renderer) {
-        scene.renderer.destroy(true);
-      }
-      
-      // Distruggi lo stage e tutti i suoi figli
-      if (scene.stage) {
-        scene.stage.destroy({ children: true });
-      }
-      
-      // Rimuovi la scena dalla mappa
-      this.activeScenes.delete(id);
-      
-      // Rimuovi gli sprite memorizzati
-      this.playerSprites.delete(id);
-      this.entitySprites.delete(id);
-      
-      console.log(`Scena ${id} pulita con successo`);
-    } catch (error) {
-      console.error(`Errore nella pulizia della scena ${id}:`, error);
+    } else {
+      console.warn(`[PixiManager] cleanupScene(${id}): Nessuna scena attiva trovata con questo ID. Pulizia saltata.`);
     }
+
+    // Pulisci gli sprite associati a questa scena
+    this.playerSprites.delete(id);
+    console.log(`[PixiManager] cleanupScene(${id}): Sprite giocatore rimosso (se esisteva).`);
+    this.entitySprites.delete(id);
+    console.log(`[PixiManager] cleanupScene(${id}): Cache sprite entità rimossa (se esisteva).`);
+
+
+    // Nota: Non puliamo le texture globali qui (this.textures)
+    // perché potrebbero essere usate da altre scene.
+    // La pulizia globale avviene solo con this.cleanup()
   }
   
   /**

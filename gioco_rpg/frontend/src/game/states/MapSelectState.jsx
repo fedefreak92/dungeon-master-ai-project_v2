@@ -10,8 +10,7 @@ import '../../styles/MapSelectState.css';
 const MapSelectState = ({ socketReady }) => {
   const { state, dispatch } = useGame();
   const { sessionId, player } = state;
-  const socket = useSocket();
-  const { emit } = socket;
+  const { emit, connectionState } = useSocket();
   
   const [maps, setMaps] = useState({});
   const [currentMap, setCurrentMap] = useState(null);
@@ -66,8 +65,8 @@ const MapSelectState = ({ socketReady }) => {
   }, [sessionId]);
   
   // Funzione per emettere eventi socket in modo sicuro
-  const emitSafely = (eventName, data) => {
-    if (socketReady && socket && emit) {
+  const emitEvent = (eventName, data) => {
+    if (socketReady && emit) {
       console.log(`MapSelectState: emissione evento ${eventName}`, data);
       return emit(eventName, data);
     } else {
@@ -88,7 +87,7 @@ const MapSelectState = ({ socketReady }) => {
     if (!socketReady) {
       console.error("Socket non pronto, impossibile cambiare mappa", {
         socketReady,
-        connected: socket && socket.connectionState && socket.connectionState.connected
+        connectionState: connectionState
       });
       setError("Connessione al server non disponibile. Riprova tra qualche istante.");
       return;
@@ -105,38 +104,19 @@ const MapSelectState = ({ socketReady }) => {
       setChangingMap(true);
       setError(null);
       
-      console.log(`Avvio cambio mappa: mapId=${mapId}, sessionId=${sessionId}`);
+      console.log(`Emissione evento select_map: mapId=${mapId}, sessionId=${sessionId}`);
       
-      // Prima usiamo l'API REST per iniziare il cambio mappa
-      const result = await mapApi.changeMap(sessionId, mapId);
+      // Emettiamo solo l'evento select_map sul socket
+      // Il backend gestirà il cambio mappa e invierà map_change_complete
+      await emitEvent('select_map', { mapId, sessionId });
       
-      console.log("Risposta cambio mappa completa:", result);
+      console.log("Evento select_map emesso, in attesa di map_change_complete...");
       
-      if (result.success) {
-        // Aggiorna lo stato globale con la nuova mappa
-        dispatch({ type: 'SET_MAP', payload: mapId });
-        console.log("SET_MAP dispatch completato, in attesa dell'evento map_change_complete");
-        
-        // Ora non cambiamo subito lo stato, ma attendiamo l'evento map_change_complete
-        // Il cambio stato verrà gestito in App.jsx quando riceveremo l'evento
-        
-        // Emettiamo l'evento select_map sul socket per l'aggiornamento in tempo reale
-        // Questo è un extra che potrebbe non essere necessario se l'API REST già fa tutto
-        try {
-          await emitSafely('select_map', { mapId, sessionId });
-        } catch (socketErr) {
-          console.warn('Emissione evento socket fallita, ma continuo comunque con il cambio mappa:', socketErr);
-          // Non blocchiamo il cambio mappa se l'evento socket fallisce
-        }
-      } else {
-        console.error("Risposta cambio mappa con success=false:", result);
-        setError('Errore nel cambio mappa: risposta success=false');
-        setLoading(false);
-        setChangingMap(false);
-      }
     } catch (err) {
-      console.error('Errore nel cambio mappa:', err);
-      setError('Impossibile cambiare mappa: ' + (err.message || 'Errore sconosciuto'));
+      // Gestione errore se l'emissione fallisce
+      console.error('Errore nell\'emissione evento select_map:', err);
+      setError('Impossibile avviare il cambio mappa: ' + (err.message || 'Errore sconosciuto'));
+      // Resetta lo stato di loading e changingMap QUI in caso di errore
       setLoading(false);
       setChangingMap(false);
     }

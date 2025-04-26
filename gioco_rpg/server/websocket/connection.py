@@ -105,8 +105,15 @@ def handle_connect():
         try:
             WebSocketEventBridge.get_instance().register_session(sid, session_id)
             logger.info(f"Sessione {session_id} registrata correttamente con SID {sid}")
+            
+            # --- AGGIUNTA JOIN_ROOM --- 
+            room_id = f"session_{session_id}"
+            join_room(room_id) 
+            logger.info(f"Client {sid} aggiunto alla stanza {room_id}")
+            # ---------------------------
+            
         except Exception as e:
-            logger.error(f"Errore nella registrazione della sessione {session_id}: {e}")
+            logger.error(f"Errore nella registrazione della sessione {session_id} o join_room: {e}")
     else:
         logger.warning(f"Connessione WebSocket senza sessionId: {sid}")
     
