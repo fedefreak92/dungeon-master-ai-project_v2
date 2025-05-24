@@ -1,7 +1,6 @@
 import json
 import uuid
 import logging
-import msgpack
 from typing import Dict, Any, Optional, List, Union
 
 logger = logging.getLogger(__name__)
@@ -64,15 +63,6 @@ class ItemBase:
         """
         return json.dumps(self.to_dict(), ensure_ascii=False, indent=2)
     
-    def to_msgpack(self) -> bytes:
-        """
-        Converte l'oggetto in formato MessagePack.
-        
-        Returns:
-            bytes: Dati binari MessagePack con i dati dell'oggetto
-        """
-        return msgpack.packb(self.to_dict(), use_bin_type=True)
-    
     @classmethod
     def from_dict(cls, dati: Dict[str, Any]) -> 'ItemBase':
         """
@@ -115,24 +105,6 @@ class ItemBase:
             return None
         except Exception as e:
             logger.error(f"Errore inaspettato nella creazione da JSON: {e}")
-            return None
-    
-    @classmethod
-    def from_msgpack(cls, msgpack_data: bytes) -> Optional['ItemBase']:
-        """
-        Crea un oggetto da dati MessagePack.
-        
-        Args:
-            msgpack_data: Dati binari MessagePack
-            
-        Returns:
-            ItemBase: Oggetto creato o None se il formato non è valido
-        """
-        try:
-            dati = msgpack.unpackb(msgpack_data, raw=False)
-            return cls.from_dict(dati)
-        except Exception as e:
-            logger.error(f"Errore nella decodifica MessagePack: {e}")
             return None
     
     def copia(self) -> 'ItemBase':

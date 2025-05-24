@@ -334,48 +334,109 @@
   },
   "Cultista": {
     "nome": "Cultista",
-    "descrizione": "Un individuo incappucciato con simboli oscuri ricamati sulla veste.",
-    "professione": "Occultista",
-    "livello": 3,
-    "hp": 22,
-    "hp_max": 22,
-    "forza": 10,
+    "descrizione": "Una figura incappucciata che mormora parole oscure.",
+    "professione": "Cultista",
+    "livello": 2,
+    "hp": 15,
+    "hp_max": 15,
+    "forza": 11,
     "destrezza": 12,
-    "costituzione": 11,
-    "intelligenza": 14,
-    "saggezza": 11,
-    "carisma": 14,
+    "costituzione": 10,
+    "intelligenza": 10,
+    "saggezza": 9,
+    "carisma": 8,
     "token": "C",
     "inventario": [
       {
-        "nome": "Pugnale rituale",
+        "nome": "Pugnale arrugginito",
         "tipo": "arma",
-        "effetto": {
-          "destrezza": 2,
-          "oscurità": 1
-        },
-        "valore": 35,
-        "descrizione": "Un pugnale cerimoniale con rune incise sulla lama"
-      },
-      {
-        "nome": "Amuleto cultista",
-        "tipo": "accessorio",
-        "effetto": {
-          "carisma": 1,
-          "intimidazione": 2
-        },
-        "valore": 75,
-        "descrizione": "Un simbolo sacrilego che ispira timore"
-      },
-      {
-        "nome": "Tomo occulto",
-        "tipo": "comune",
-        "valore": 120,
-        "descrizione": "Un libro antico contenente rituali proibiti"
+        "effetto": {"forza": 1},
+        "valore": 5,
+        "descrizione": "Un pugnale vecchio e poco affidabile"
       }
     ],
-    "oro": 85,
+    "oro": 10,
     "amichevole": false,
     "id": "Cultista"
+  },
+  "Negoziante": {
+    "nome": "Negoziante",
+    "descrizione": "Un negoziante generico con un sorriso cordiale.",
+    "professione": "Negoziante",
+    "livello": 3,
+    "hp": 20,
+    "hp_max": 20,
+    "forza": 10,
+    "destrezza": 10,
+    "costituzione": 10,
+    "intelligenza": 12,
+    "saggezza": 11,
+    "carisma": 14,
+    "token": "N",
+    "inventario": [],
+    "oro": 150,
+    "amichevole": true,
+    "id": "Negoziante"
+  },
+  "Guardia": {
+    "nome": "Guardia",
+    "descrizione": "Una guardia cittadina in armatura, dall'aspetto vigile.",
+    "professione": "Guardia",
+    "livello": 4,
+    "hp": 25,
+    "hp_max": 25,
+    "forza": 13,
+    "destrezza": 12,
+    "costituzione": 13,
+    "intelligenza": 10,
+    "saggezza": 10,
+    "carisma": 10,
+    "token": "G",
+    "inventario": [
+       {"nome": "Spada corta", "tipo": "arma", "effetto": {"forza": 3}, "valore": 25}
+    ],
+    "oro": 20,
+    "amichevole": true,
+    "id": "Guardia"
+  },
+  "Goblin": {
+    "nome": "Goblin",
+    "descrizione": "Una piccola creatura verde e malvagia.",
+    "professione": "Mostro",
+    "livello": 1,
+    "hp": 7,
+    "hp_max": 7,
+    "forza": 8,
+    "destrezza": 14,
+    "costituzione": 10,
+    "intelligenza": 10,
+    "saggezza": 8,
+    "carisma": 8,
+    "token": "g",
+    "inventario": [
+        {"nome": "Scimitarra arrugginita", "tipo": "arma", "effetto": {"forza": 2}, "valore": 5}
+    ],
+    "oro": 5,
+    "amichevole": false,
+    "id": "Goblin"
+  },
+  "Mercante": {
+    "nome": "Mercante",
+    "descrizione": "Un mercante itinerante con merci varie.",
+    "professione": "Mercante",
+    "livello": 3,
+    "hp": 18,
+    "hp_max": 18,
+    "forza": 9,
+    "destrezza": 11,
+    "costituzione": 10,
+    "intelligenza": 13,
+    "saggezza": 12,
+    "carisma": 15,
+    "token": "M",
+    "inventario": [],
+    "oro": 250,
+    "amichevole": true,
+    "id": "Mercante"
   }
 }

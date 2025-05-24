@@ -11,6 +11,7 @@
     "altezza": "integer (Altezza della mappa in celle)",
     "tipo": "string (interno|esterno|dungeon|villaggio)",
     "descrizione": "string (Descrizione testuale della mappa)",
+    "backgroundImage": "string (Percorso all'immagine di sfondo della mappa)",
     "griglia": "array 2D di integer (0=vuoto, 1=muro, 2=porta)",
     "oggetti": "object (Dizionario di oggetti presenti sulla mappa, chiave=posizione \"(x, y)\")",
     "npg": "object (Dizionario di NPC presenti sulla mappa, chiave=posizione \"(x, y)\")",

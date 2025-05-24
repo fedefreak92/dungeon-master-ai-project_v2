@@ -4,6 +4,7 @@ import uuid
 from typing import Dict, List, Optional, Any
 import json
 import logging
+from items.item_factory import ItemFactory
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +51,6 @@ class Entita:
         """
         self.id = id or str(uuid.uuid4())
         self.nome = nome or f"Entita-{self.id[:8]}"
-        self.posizione = posizione
         self.token = token
         self.stato = "normale"  # Stati possibili: normale, invisibile, morto, ecc.
         self.interagibile = True
@@ -79,10 +79,13 @@ class Entita:
         self.modificatore_saggezza = self.calcola_modificatore(self.saggezza_base)
         self.modificatore_carisma = self.calcola_modificatore(self.carisma_base)
         
-        # Attributi per la posizione
+        # Attributi per il movimento e la posizione
         self.x = 0
         self.y = 0
-        self.mappa_corrente = None
+        self.mappa_corrente = "default_map" # Nome della mappa corrente dell'entità
+        if posizione and isinstance(posizione, tuple) and len(posizione) == 2:
+            self.x = posizione[0]
+            self.y = posizione[1]
         
         # Competenze in abilità
         self.abilita_competenze = {}  # Esempio: {"percezione": True, "persuasione": False}
@@ -267,8 +270,8 @@ class Entita:
     def tiro_salvezza(self, tipo, difficolta, gioco=None):
         return self.prova_abilita(tipo, difficolta, gioco)
 
-    def calcola_modificatore(self, valore):
-        return (valore - 10) // 2
+    def calcola_modificatore(self, punteggio_caratteristica):
+        return (punteggio_caratteristica - 10) // 2
 
     @property
     def forza(self):
@@ -390,7 +393,6 @@ class Entita:
         return {
             "id": self.id,
             "nome": self.nome,
-            "posizione": self.posizione,
             "token": self.token,
             "stato": self.stato,
             "interagibile": self.interagibile,
@@ -409,38 +411,17 @@ class Entita:
             "abilita_competenze": self.abilita_competenze,
             "bonus_competenza": self.bonus_competenza,
             "difesa": self.difesa,
-            "inventario": self.inventario,
+            "inventario": [item.to_dict() if hasattr(item, 'to_dict') else item for item in self.inventario],
             "oro": self.oro,
             "esperienza": self.esperienza,
             "livello": self.livello,
-            "arma": self.arma,
-            "armatura": self.armatura,
-            "accessori": self.accessori
+            "arma": self.arma.to_dict() if self.arma and hasattr(self.arma, 'to_dict') else None,
+            "armatura": self.armatura.to_dict() if self.armatura and hasattr(self.armatura, 'to_dict') else None,
+            "accessori": [acc.to_dict() if hasattr(acc, 'to_dict') else acc for acc in self.accessori]
         }
     
     # Alias per compatibilità con il sistema ECS
     serialize = to_dict
-    
-    def to_msgpack(self, already_serialized=None):
-        """
-        Converte l'entità in formato MessagePack per la serializzazione.
-        
-        Args:
-            already_serialized (set, optional): Set di ID di oggetti già serializzati
-            
-        Returns:
-            bytes: Dati serializzati in formato MessagePack.
-        """
-        try:
-            import msgpack
-            return msgpack.packb(self.to_dict(already_serialized), use_bin_type=True)
-        except Exception as e:
-            logger.error(f"Errore nella serializzazione MessagePack dell'entità {self.id}: {e}")
-            # Fallback a dizionario serializzato in JSON e poi convertito in bytes
-            return json.dumps(self.to_dict(already_serialized)).encode()
-    
-    # Alias per compatibilità con il sistema ECS
-    serialize_msgpack = to_msgpack
     
     @classmethod
     def from_dict(cls, data):
@@ -456,7 +437,6 @@ class Entita:
         entita = cls(
             nome=data.get("nome"),
             id=data.get("id"),
-            posizione=data.get("posizione"),
             token=data.get("token", "E")
         )
         
@@ -472,56 +452,64 @@ class Entita:
         entita.saggezza_base = data.get("saggezza_base", 10)
         entita.carisma_base = data.get("carisma_base", 10)
         
+        # Ricalcola modificatori dopo aver impostato le stats base
+        entita.modificatore_forza = entita.calcola_modificatore(entita.forza_base)
+        entita.modificatore_destrezza = entita.calcola_modificatore(entita.destrezza_base)
+        entita.modificatore_costituzione = entita.calcola_modificatore(entita.costituzione_base)
+        entita.modificatore_intelligenza = entita.calcola_modificatore(entita.intelligenza_base)
+        entita.modificatore_saggezza = entita.calcola_modificatore(entita.saggezza_base)
+        entita.modificatore_carisma = entita.calcola_modificatore(entita.carisma_base)
+
         entita.x = data.get("x", 0)
         entita.y = data.get("y", 0)
-        entita.mappa_corrente = data.get("mappa_corrente", "overworld")
+        entita.mappa_corrente = data.get("mappa_corrente") # Rimosso default "overworld" per coerenza se non presente
         
         entita.abilita_competenze = data.get("abilita_competenze", {})
         entita.bonus_competenza = data.get("bonus_competenza", 2)
         entita.difesa = data.get("difesa", 0)
         
-        entita.inventario = data.get("inventario", [])
+        # Non più solo data.get, ma deserializzazione oggetti
+        # entita.inventario = data.get("inventario", []) 
         entita.oro = data.get("oro", 0)
         
         entita.esperienza = data.get("esperienza", 0)
         entita.livello = data.get("livello", 1)
         
-        entita.arma = data.get("arma")
-        entita.armatura = data.get("armatura")
-        entita.accessori = data.get("accessori", [])
+        # Non più solo data.get per arma, armatura, accessori
+        # entita.arma = data.get("arma")
+        # entita.armatura = data.get("armatura")
+        # entita.accessori = data.get("accessori", [])
+
+        # Deserializzazione Inventario e Equipaggiamento
+        raw_inventario = data.get("inventario", [])
+        entita.inventario = []
+        if raw_inventario: # Solo se c'è qualcosa da processare
+            for item_data_dict in raw_inventario:
+                if isinstance(item_data_dict, dict):
+                    item_instance = ItemFactory.crea_da_dict(item_data_dict)
+                    if item_instance:
+                        entita.inventario.append(item_instance)
+                # else: Potremmo loggare un warning se l'item non è un dict
+        
+        arma_data_dict = data.get("arma")
+        entita.arma = ItemFactory.crea_da_dict(arma_data_dict) if isinstance(arma_data_dict, dict) else None
+
+        armatura_data_dict = data.get("armatura")
+        entita.armatura = ItemFactory.crea_da_dict(armatura_data_dict) if isinstance(armatura_data_dict, dict) else None
+
+        raw_accessori = data.get("accessori", [])
+        entita.accessori = []
+        if raw_accessori: # Solo se c'è qualcosa da processare
+            for acc_data_dict in raw_accessori:
+                if isinstance(acc_data_dict, dict):
+                    item_instance = ItemFactory.crea_da_dict(acc_data_dict)
+                    if item_instance:
+                        entita.accessori.append(item_instance)
         
         return entita
     
     # Alias per compatibilità con il sistema ECS
     deserialize = classmethod(from_dict)
-    
-    @classmethod
-    def from_msgpack(cls, data_bytes):
-        """
-        Crea un'entità da dati in formato MessagePack.
-        
-        Args:
-            data_bytes (bytes): Dati serializzati in formato MessagePack.
-            
-        Returns:
-            Entita: Istanza dell'entità creata.
-        """
-        try:
-            import msgpack
-            data = msgpack.unpackb(data_bytes, raw=False)
-            return cls.from_dict(data)
-        except Exception as e:
-            logger.error(f"Errore nella deserializzazione MessagePack: {e}")
-            try:
-                # Tenta di interpretare i dati come JSON
-                data = json.loads(data_bytes.decode())
-                return cls.from_dict(data)
-            except Exception as e2:
-                logger.error(f"Errore anche con fallback JSON: {e2}")
-                return cls()  # Ritorna un'entità vuota in caso di errore
-    
-    # Alias per compatibilità con il sistema ECS
-    deserialize_msgpack = classmethod(from_msgpack)
     
     def __str__(self):
         """
@@ -530,5 +518,105 @@ class Entita:
         Returns:
             str: Stringa che rappresenta l'entità.
         """
-        pos_str = f"({self.posizione[0]}, {self.posizione[1]})" if self.posizione else "(?, ?)"
-        return f"{self.nome} [{self.token}] @ {pos_str}"
+        pos_str = f"({self.x}, {self.y})" if (self.x, self.y) != (0, 0) else "(?, ?)"
+        return f"{self.nome} [{self.token}] @ {pos_str} su '{self.mappa_corrente}'"
+
+    def verifica_valori_vitali(self):
+        pass # Implementazione specifica nelle sottoclassi (es. Giocatore)
+
+    def muovi(self, dx, dy, gestore_mappe):
+        """
+        Tenta di muovere l'entità sulla mappa.
+
+        Args:
+            dx (int): Spostamento sull'asse X.
+            dy (int): Spostamento sull'asse Y.
+            gestore_mappe (GestitoreMappe): Il gestore delle mappe per i controlli.
+
+        Returns:
+            dict: Un dizionario con {"successo": bool, "nuova_posizione": Optional[tuple], "messaggio": Optional[str]}
+        """
+        if not gestore_mappe:
+            logger.error(f"Entita {self.id}: GestoreMappe non fornito per il movimento.")
+            return {"successo": False, "nuova_posizione": None, "messaggio": "Errore interno del server."}
+
+        mappa = gestore_mappe.ottieni_mappa(self.mappa_corrente)
+        if not mappa:
+            logger.warning(f"Entita {self.id}: Mappa corrente '{self.mappa_corrente}' non trovata in GestoreMappe.")
+            return {"successo": False, "nuova_posizione": None, "messaggio": f"Mappa '{self.mappa_corrente}' non caricata."}
+
+        nuova_x = self.x + dx
+        nuova_y = self.y + dy
+
+        # Log del tentativo di movimento
+        logger.debug(f"Entita {self.id} ({self.nome}) a ({self.x},{self.y}) su '{self.mappa_corrente}' tenta movimento a ({nuova_x},{nuova_y}). Dx: {dx}, Dy: {dy}")
+
+
+        # 1. Controllo limiti mappa e se la casella base è calpestabile (non un muro definito nella griglia)
+        if not mappa.is_posizione_valida(nuova_x, nuova_y):
+            logger.debug(f"Movimento fallito per {self.id}: ({nuova_x},{nuova_y}) fuori dai limiti della mappa ({mappa.larghezza}x{mappa.altezza}) o su casella non calpestabile (muro base).")
+            return {"successo": False, "nuova_posizione": None, "messaggio": "Non puoi muoverti lì."}
+
+        # Il controllo mappa.is_casella_calpestabile(nuova_x, nuova_y) è ora implicito in mappa.is_posizione_valida,
+        # che verifica self.griglia[y][x] == 0.
+
+        # 3. Controllo collisione con altri NPG (se non è il giocatore stesso)
+        #    Per ora, un'entità non può entrare in una casella occupata da un'altra entità.
+        #    Questa logica potrebbe diventare più complessa (es. NPG amichevoli che si spostano)
+        altre_entita_nella_mappa = []
+        if hasattr(mappa, 'npg') and isinstance(mappa.npg, dict): # mappa.npg è {pos_key_str: npg_instance}
+            altre_entita_nella_mappa.extend(mappa.npg.values())
+        # Aggiungi anche il giocatore se presente sulla mappa e non è l'entità che si sta muovendo
+        giocatore_sulla_mappa = mappa.giocatore if hasattr(mappa, 'giocatore') else None
+        if giocatore_sulla_mappa and giocatore_sulla_mappa.id != self.id:
+             altre_entita_nella_mappa.append(giocatore_sulla_mappa)
+
+
+        for altra_entita in altre_entita_nella_mappa:
+            if altra_entita.id != self.id and altra_entita.x == nuova_x and altra_entita.y == nuova_y and altra_entita.mappa_corrente == self.mappa_corrente:
+                logger.debug(f"Movimento fallito per {self.id}: collisione con entità {altra_entita.id} a ({nuova_x},{nuova_y}).")
+                return {"successo": False, "nuova_posizione": None, "messaggio": f"C'è già qualcuno lì ({altra_entita.nome})."}
+
+        # 4. Controllo collisione con oggetti bloccanti sulla mappa
+        oggetto_a_destinazione = mappa.ottieni_oggetto_a(nuova_x, nuova_y)
+        if oggetto_a_destinazione and not getattr(oggetto_a_destinazione, 'calpestabile', True): # Assumiamo calpestabile se l'attributo non esiste
+            # Ulteriore controllo: se l'oggetto è una porta e l'entità è il giocatore, gestisci la transizione
+            if self.token == '@' and getattr(oggetto_a_destinazione, 'tipo_oggetto', '') == 'porta':
+                destinazione_porta = getattr(oggetto_a_destinazione, 'destinazione', None)
+                if destinazione_porta:
+                    logger.info(f"Giocatore {self.id} interagisce con porta a ({nuova_x},{nuova_y}) verso '{destinazione_porta}'.")
+                    # La logica di cambio mappa la gestirà il chiamante (es. MappaState)
+                    # Qui segnaliamo solo il successo e la potenziale transizione.
+                    self.x = nuova_x 
+                    self.y = nuova_y
+                    return {"successo": True, "nuova_posizione": (self.x, self.y), "messaggio": f"Sei entrato in {oggetto_a_destinazione.nome}.", "cambio_mappa_richiesto": destinazione_porta, "nuova_mappa_coords": getattr(oggetto_a_destinazione, 'pos_destinazione', None)}
+            
+            logger.debug(f"Movimento fallito per {self.id}: collisione con oggetto bloccante '{oggetto_a_destinazione.nome}' a ({nuova_x},{nuova_y}).")
+            return {"successo": False, "nuova_posizione": None, "messaggio": f"Non puoi passare attraverso {oggetto_a_destinazione.nome}."}
+
+
+        # Movimento riuscito
+        self.x = nuova_x
+        self.y = nuova_y
+        logger.info(f"Movimento riuscito per {self.id}: nuova posizione ({self.x},{self.y}) su '{self.mappa_corrente}'.")
+        
+        # Eventuale cambio mappa se si finisce su un tile di transizione
+        # Questa logica è più complessa e potrebbe risiedere in MappaState o GameManager
+        # Per ora, il metodo muovi si occupa solo dell'aggiornamento delle coordinate sulla mappa corrente.
+        # Ma se la mappa ha dei trigger di transizione, potremmo verificarli qui.
+        trigger_transizione = mappa.ottieni_trigger_transizione_a(nuova_x, nuova_y)
+        if trigger_transizione:
+            logger.info(f"Entità {self.id} ha attivato un trigger di transizione a ({nuova_x},{nuova_y}) verso la mappa '{trigger_transizione['destinazione_mappa']}'.")
+            # Potremmo voler aggiornare la mappa corrente dell'entità qui o segnalarlo
+            return {
+                "successo": True, 
+                "nuova_posizione": (self.x, self.y), 
+                "messaggio": "Hai trovato un passaggio!", 
+                "cambio_mappa_richiesto": trigger_transizione['destinazione_mappa'],
+                "nuova_mappa_coords": trigger_transizione.get('pos_destinazione') 
+            }
+
+        return {"successo": True, "nuova_posizione": (self.x, self.y), "messaggio": "Movimento effettuato."}
+
+    def __str__(self):
+        return f"{self.nome} (ID: {self.id}) a ({self.x}, {self.y}) su '{self.mappa_corrente}'"

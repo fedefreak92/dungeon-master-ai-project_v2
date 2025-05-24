@@ -1,0 +1,146 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Schema Mappa",
+  "description": "Schema per la validazione dei file JSON delle mappe di gioco",
+  "type": "object",
+  "required": [
+    "nome",
+    "larghezza",
+    "altezza",
+    "tipo",
+    "descrizione",
+    "griglia",
+    "pos_iniziale_giocatore"
+  ],
+  "properties": {
+    "nome": {
+      "type": "string",
+      "description": "Nome univoco della mappa"
+    },
+    "larghezza": {
+      "type": "integer",
+      "description": "Larghezza della mappa in celle"
+    },
+    "altezza": {
+      "type": "integer",
+      "description": "Altezza della mappa in celle"
+    },
+    "tipo": {
+      "type": "string",
+      "description": "Tipo di mappa (es. interno, esterno, dungeon, villaggio)"
+    },
+    "descrizione": {
+      "type": "string",
+      "description": "Descrizione testuale della mappa"
+    },
+    "backgroundImage": {
+      "type": "string",
+      "description": "Percorso all'immagine di sfondo della mappa"
+    },
+    "griglia": {
+      "type": "array",
+      "description": "Array 2D rappresentante la griglia della mappa (0=vuoto, 1=muro, 2=porta, ecc.)",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "integer"
+        }
+      }
+    },
+    "oggetti": {
+      "type": "object",
+      "description": "Dizionario di oggetti presenti sulla mappa. La chiave è una stringa rappresentante le coordinate (es. '[x, y]' o 'x,y') e il valore è un oggetto che descrive l'oggetto.",
+      "additionalProperties": {
+        "$ref": "#/definitions/oggettoMappa"
+      }
+    },
+    "npg": {
+      "type": "object",
+      "description": "Dizionario di NPC presenti sulla mappa. La chiave è una stringa rappresentante le coordinate e il valore è un oggetto che descrive l'NPC.",
+      "additionalProperties": {
+        "$ref": "#/definitions/npcMappa"
+      }
+    },
+    "porte": {
+      "type": "object",
+      "description": "Dizionario di porte. La chiave è una stringa rappresentante le coordinate della porta e il valore è un array contenente [nome_mappa_destinazione, [x_dest, y_dest]].",
+      "additionalProperties": {
+        "type": "array",
+        "items": [
+          { "type": "string" },
+          {
+            "type": "array",
+            "items": { "type": "integer" },
+            "minItems": 2,
+            "maxItems": 2
+          }
+        ],
+        "additionalItems": false
+      }
+    },
+    "pos_iniziale_giocatore": {
+      "type": "array",
+      "description": "Coordinate [x, y] della posizione iniziale del giocatore sulla mappa",
+      "items": {
+        "type": "integer"
+      },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "config_luogo": {
+      "type": "object",
+      "description": "Configurazioni specifiche per lo stato LuogoState associate a questa mappa",
+      "properties": {
+        "descrizione_iniziale": {"type": "string"},
+        "menu_principale_opzioni": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "testo": {"type": "string"},
+              "azione_id": {"type": "string"}
+            },
+            "required": ["testo", "azione_id"]
+          }
+        },
+        "comandi_testuali_aggiuntivi": {
+          "type": "object",
+          "additionalProperties": {"type": "string"}
+        },
+        "ui_specific_texts": {
+          "type": "object",
+          "additionalProperties": {"type": "string"}
+        }
+      }
+    },
+    "_version": {
+        "type": "string",
+        "description": "Versione del formato dati"
+    },
+    "_last_modified": {
+        "type": "number",
+        "description": "Timestamp dell'ultima modifica"
+    }
+  },
+  "definitions": {
+    "oggettoMappa": {
+      "type": "object",
+      "required": ["nome"],
+      "properties": {
+        "nome": {"type": "string", "description": "Nome o ID dell'oggetto (deve corrispondere a un oggetto definito in items/)"},
+        "tipo": {"type": "string", "description": "Tipo di oggetto (opzionale, può essere inferito dall'oggetto stesso)"},
+        "sprite": {"type": "string", "description": "Nome dello sprite da usare (opzionale, può essere inferito dall'oggetto stesso)"}
+      }
+    },
+    "npcMappa": {
+      "type": "object",
+      "required": ["nome"],
+      "properties": {
+        "nome": {"type": "string", "description": "Nome o ID dell'NPC (deve corrispondere a un NPC definito in data/npc/npcs.json)"},
+        "tipo": {"type": "string", "description": "Tipo di NPC (opzionale, può essere inferito dall'NPC stesso)"},
+        "sprite": {"type": "string", "description": "Nome dello sprite da usare (opzionale, può essere inferito dall'NPC stesso)"}
+      }
+    }
+  },
+  "additionalProperties": false
+} 

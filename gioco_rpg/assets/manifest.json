@@ -1,128 +1,167 @@
 {
   "version": "1.0.0",
-  "last_updated": 1745658264.6159482,
+  "last_updated": 1748126562.513188,
   "sprites": {
     "chest": {
       "id": "chest",
-      "name": "Chest",
-      "file": "sprites\\chest.png",
+      "name": "chest",
+      "file": "sprites/chest.png",
+      "tags": [],
+      "last_updated": 1748125638.7562816,
       "dimensions": null,
-      "offset": null,
-      "tags": []
+      "offset": null
     },
     "enemy_goblin": {
       "id": "enemy_goblin",
-      "name": "Enemy_goblin",
-      "file": "sprites\\enemy_goblin.png",
+      "name": "enemy_goblin",
+      "file": "sprites/enemy_goblin.png",
+      "tags": [],
+      "last_updated": 1748125638.7565005,
       "dimensions": null,
-      "offset": null,
-      "tags": []
+      "offset": null
     },
     "npc_merchant": {
       "id": "npc_merchant",
-      "name": "Npc_merchant",
-      "file": "sprites\\npc_merchant.png",
+      "name": "npc_merchant",
+      "file": "sprites/npc_merchant.png",
+      "tags": [],
+      "last_updated": 1748125638.7567189,
       "dimensions": null,
-      "offset": null,
-      "tags": []
+      "offset": null
     },
     "player": {
       "id": "player",
-      "name": "Player",
-      "file": "sprites\\player.png",
+      "name": "player",
+      "file": "sprites/player.png",
+      "tags": [],
+      "last_updated": 1748125638.75689,
       "dimensions": null,
-      "offset": null,
-      "tags": []
+      "offset": null
     }
   },
   "tiles": {
     "door": {
       "id": "door",
-      "name": "Door",
-      "file": "tiles\\door.png",
+      "name": "door",
+      "file": "tiles/door.png",
+      "tags": [],
+      "last_updated": 1748125638.7574484,
       "dimensions": null,
-      "properties": {},
-      "tags": []
+      "properties": null
     },
     "floor": {
       "id": "floor",
-      "name": "Floor",
-      "file": "tiles\\floor.png",
+      "name": "floor",
+      "file": "tiles/floor.png",
+      "tags": [],
+      "last_updated": 1748125638.7576108,
       "dimensions": null,
-      "properties": {},
-      "tags": []
+      "properties": null
     },
     "wall": {
       "id": "wall",
-      "name": "Wall",
-      "file": "tiles\\wall.png",
+      "name": "wall",
+      "file": "tiles/wall.png",
+      "tags": [],
+      "last_updated": 1748125638.7584264,
       "dimensions": null,
-      "properties": {},
-      "tags": []
+      "properties": null
     },
     "bridge": {
       "id": "bridge",
-      "name": "Bridge",
-      "file": "tiles\\bridge.png",
+      "name": "bridge",
+      "file": "tiles/bridge.png",
+      "tags": [],
+      "last_updated": 1748125638.7572777,
       "dimensions": null,
-      "properties": {},
-      "tags": []
+      "properties": null
     },
     "grass": {
       "id": "grass",
-      "name": "Grass",
-      "file": "tiles\\grass.png",
+      "name": "grass",
+      "file": "tiles/grass.png",
+      "tags": [],
+      "last_updated": 1748125638.757777,
       "dimensions": null,
-      "properties": {},
-      "tags": []
+      "properties": null
     },
     "lava": {
       "id": "lava",
-      "name": "Lava",
-      "file": "tiles\\lava.png",
+      "name": "lava",
+      "file": "tiles/lava.png",
+      "tags": [],
+      "last_updated": 1748125638.7579408,
       "dimensions": null,
-      "properties": {},
-      "tags": []
+      "properties": null
     },
     "road": {
       "id": "road",
-      "name": "Road",
-      "file": "tiles\\road.png",
+      "name": "road",
+      "file": "tiles/road.png",
+      "tags": [],
+      "last_updated": 1748125638.7581277,
       "dimensions": null,
-      "properties": {},
-      "tags": []
+      "properties": null
     },
     "stairs": {
       "id": "stairs",
-      "name": "Stairs",
-      "file": "tiles\\stairs.png",
+      "name": "stairs",
+      "file": "tiles/stairs.png",
+      "tags": [],
+      "last_updated": 1748125638.758281,
       "dimensions": null,
-      "properties": {},
-      "tags": []
+      "properties": null
     },
     "water": {
       "id": "water",
-      "name": "Water",
-      "file": "tiles\\water.png",
+      "name": "water",
+      "file": "tiles/water.png",
+      "tags": [],
+      "last_updated": 1748125638.758626,
       "dimensions": null,
-      "properties": {},
-      "tags": []
+      "properties": null
     }
   },
-  "animations": {},
-  "tilesets": {},
+  "animations": {
+    "player_walk": {
+      "id": "player_walk",
+      "name": "player_walk",
+      "file": "animations/player_walk.msgpack",
+      "tags": [],
+      "last_updated": 1748125638.7614195
+    }
+  },
+  "tilesets": {
+    "basic_tileset": {
+      "id": "basic_tileset",
+      "name": "basic_tileset",
+      "file": "tilesets/basic_tileset.msgpack",
+      "tags": [],
+      "last_updated": 1748125638.763104
+    }
+  },
   "ui_elements": {
     "button": {
       "id": "button",
-      "name": "Button",
-      "file": "button.png",
-      "path": "ui/button.png",
+      "name": "button",
+      "file": "ui/button.png",
+      "tags": [],
+      "last_updated": 1748125638.763533,
+      "dimensions": null,
       "type": "ui",
-      "dimensions": {
-        "width": 64,
-        "height": 32
-      },
-      "tags": []
+      "path": "ui/button.png"
+    }
+  },
+  "backgrounds": {
+    "taverna_background": {
+      "id": "taverna_background",
+      "name": "taverna_background",
+      "file": "maps/taverna_background.png",
+      "tags": [],
+      "last_updated": 1748125638.763962,
+      "dimensions": null,
+      "map_id": null,
+      "path": "maps/taverna_background.png"
     }
   }
 }

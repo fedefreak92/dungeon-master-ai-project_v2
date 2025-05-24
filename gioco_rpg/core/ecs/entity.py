@@ -387,21 +387,6 @@ class Entity:
             "abilita": self.abilita.copy()
         }
         
-    def serialize_msgpack(self) -> bytes:
-        """
-        Serializza l'entità in formato MessagePack
-        
-        Returns:
-            bytes: Dati serializzati dell'entità in formato MessagePack
-        """
-        try:
-            import msgpack
-            return msgpack.packb(self.serialize(), use_bin_type=True)
-        except Exception as e:
-            logger.error(f"Errore nella serializzazione MessagePack dell'entità {self.id}: {e}")
-            # Fallback a dizionario serializzato in JSON e poi convertito in bytes
-            return json.dumps(self.serialize()).encode()
-        
     @classmethod
     def deserialize(cls, data: Dict[str, Any]) -> 'Entity':
         """
@@ -429,31 +414,6 @@ class Entity:
         entity.abilita = data.get("abilita", {}).copy()
         
         return entity
-        
-    @classmethod
-    def deserialize_msgpack(cls, data_bytes: bytes) -> 'Entity':
-        """
-        Crea un'entità da dati serializzati in formato MessagePack
-        
-        Args:
-            data_bytes: Dati serializzati in formato MessagePack
-            
-        Returns:
-            Entity: Nuova entità
-        """
-        try:
-            import msgpack
-            data = msgpack.unpackb(data_bytes, raw=False)
-            return cls.deserialize(data)
-        except Exception as e:
-            logger.error(f"Errore nella deserializzazione MessagePack: {e}")
-            try:
-                # Tenta di interpretare i dati come JSON
-                data = json.loads(data_bytes.decode())
-                return cls.deserialize(data)
-            except Exception as e2:
-                logger.error(f"Errore anche con fallback JSON: {e2}")
-                return cls()  # Ritorna un'entità vuota in caso di errore
         
     def __str__(self) -> str:
         """

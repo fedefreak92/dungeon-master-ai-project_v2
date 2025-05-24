@@ -3,6 +3,7 @@ import GameConnection from '../components/GameConnection';
 import EventSubscriber from '../components/EventSubscriber';
 import { useEventEmitter } from '../components/EventEmitter';
 import gameEventService from '../services/gameEventService';
+import { setLocalPlayerId, setCurrentPixiSceneId } from '../services/eventBusService';
 import '../styles/MapPage.css';
 
 /**
@@ -11,6 +12,7 @@ import '../styles/MapPage.css';
 const MapPage = () => {
   const [mapData, setMapData] = useState(null);
   const [player, setPlayer] = useState({ x: 0, y: 0 });
+  const [playerId, setPlayerId] = useState(null); // Stato per l'ID del giocatore
   const [entities, setEntities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -47,9 +49,15 @@ const MapPage = () => {
       console.log('Dati mappa ricevuti:', data);
       if (data && data.map) {
         setMapData(data.map);
+        setCurrentPixiSceneId(data.map.id || data.map.name || 'default_scene');
         
-        // Se ci sono informazioni sul player, aggiorniamo la sua posizione
+        // Se ci sono informazioni sul player, aggiorniamo la sua posizione e ID
         if (data.player) {
+          if (data.player.id) { // Assicurati che l'ID sia presente
+            setPlayerId(data.player.id); // Memorizza l'ID del giocatore nello stato di MapPage
+            setLocalPlayerId(data.player.id); // Comunica l'ID a eventBusService
+            console.log(`Player ID impostato a: ${data.player.id}`);
+          }
           setPlayer(data.player.position || { x: 0, y: 0 });
         }
         
@@ -63,16 +71,20 @@ const MapPage = () => {
     // Movimento di un'entità (incluso il player)
     'entity_moved': (data) => {
       console.log('Entità mossa:', data);
+      // Aggiungi un log per vedere l'ID del giocatore memorizzato e quello ricevuto
+      // console.log(`Evento entity_moved: entity_id ricevuto=${data.entity_id}, playerId memorizzato=${playerId}`);
       
       // Se è il player che si è mosso, aggiorna la sua posizione
-      if (data.entity_id === 'player') {
+      // Il controllo dell'ID ora avviene in eventBusService._handleEntityMoved per Pixi
+      // Qui aggiorniamo lo stato React di MapPage per UI non-Pixi (se presente)
+      if (playerId && data.entity_id === playerId) { 
         setPlayer(data.position);
       } else {
         // Altrimenti aggiorna la posizione dell'entità nella lista
         setEntities(prevEntities => 
           prevEntities.map(entity => 
             entity.id === data.entity_id 
-              ? { ...entity, position: data.position } 
+              ? { ...entity, position: data.position } // Assicurati che entity.id esista e corrisponda
               : entity
           )
         );
@@ -108,6 +120,17 @@ const MapPage = () => {
     'movement_blocked': (data) => {
       console.log('Movimento bloccato:', data);
       // Qui si potrebbe mostrare un messaggio all'utente
+    },
+    // AGGIUNTO: Handler per movimento NPG (per aggiornare lo stato React)
+    'NON_PLAYER_ENTITY_MOVED': (data) => {
+        console.log('[MapPage] NON_PLAYER_ENTITY_MOVED ricevuto:', data);
+        setEntities(prevEntities => 
+          prevEntities.map(entity => 
+            entity.id === data.entity_id 
+              ? { ...entity, position: data.position } // Assicurati che entity.id esista e corrisponda
+              : entity
+          )
+        );
     }
   };
 
@@ -150,7 +173,7 @@ const MapPage = () => {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [player]);
+  }, [player, playerId]); // Aggiungi playerId alle dipendenze se handleKeyDown lo usa
 
   // Render della mappa di gioco
   const renderMap = () => {

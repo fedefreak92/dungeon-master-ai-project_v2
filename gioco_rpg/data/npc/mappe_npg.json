@@ -1,27 +1,4 @@
 {
-  "taverna": [
-    {
-      "nome": "Durnan",
-      "posizione": [
-        6,
-        6
-      ]
-    },
-    {
-      "nome": "Elminster",
-      "posizione": [
-        8,
-        5
-      ]
-    },
-    {
-      "nome": "Mirt",
-      "posizione": [
-        7,
-        7
-      ]
-    }
-  ],
   "mercato": [
     {
       "nome": "Araldo",
@@ -58,6 +35,40 @@
       "posizione": [
         12,
         8
+      ]
+    }
+  ],
+  "villaggio": [
+    {
+      "nome": "Mercante",
+      "posizione": [
+        14,
+        3
+      ]
+    },
+    {
+      "nome": "Guardia",
+      "posizione": [
+        18,
+        8
+      ]
+    }
+  ],
+  "negozio": [
+    {
+      "nome": "Negoziante",
+      "posizione": [
+        5,
+        3
+      ]
+    }
+  ],
+  "dungeon": [
+    {
+      "nome": "Goblin",
+      "posizione": [
+        7,
+        2
       ]
     }
   ]

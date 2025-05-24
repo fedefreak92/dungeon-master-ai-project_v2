@@ -4,274 +4,35 @@
   "altezza": 10,
   "tipo": "interno",
   "descrizione": "Una taverna accogliente con un camino e molti avventori.",
+  "backgroundImage": "assets/maps/taverna_background.png",
   "griglia": [
-    [
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1
-    ],
-    [
-      1,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      1
-    ],
-    [
-      1,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      1
-    ],
-    [
-      1,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      1
-    ],
-    [
-      1,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      1
-    ],
-    [
-      1,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      1
-    ],
-    [
-      1,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      1
-    ],
-    [
-      1,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      1
-    ],
-    [
-      1,
-      0,
-      0,
-      0,
-      0,
-      0,
-      2,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      1
-    ],
-    [
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1
-    ]
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+    [1, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
   ],
   "oggetti": {
-    "[3, 2]": {
-      "nome": "Baule",
-      "tipo": "oggetto_interattivo",
-      "descrizione": "Un baule di legno con rinforzi in metallo.",
-      "stato": "chiuso",
-      "token": "C",
-      "descrizioni_stati": {
-        "chiuso": "Un baule di legno con rinforzi in metallo, è chiuso.",
-        "aperto": "Un baule di legno con rinforzi in metallo, è aperto."
-      },
-      "stati_possibili": {
-        "chiuso": [
-          "aperto"
-        ],
-        "aperto": [
-          "chiuso"
-        ]
-      },
-      "abilita_richieste": {
-        "forza": "aperto"
-      },
-      "difficolta_abilita": {
-        "forza": 10
-      },
-      "messaggi_interazione": {
-        "forza": "Con uno sforzo considerevole, riesci ad aprire il baule."
-      },
-      "contenuto": [
-        {
-          "nome": "Pozione di cura",
-          "tipo": "pozione",
-          "rarità": "comune",
-          "effetto": "cura",
-          "valore": 5
-        },
-        {
-          "nome": "Monete d'oro",
-          "tipo": "moneta",
-          "quantità": 15
-        }
-      ],
-      "sprite": "chest"
-    },
-    "[12, 5]": {
-      "nome": "Porta",
-      "tipo": "porta",
-      "descrizione": "Una porta che conduce all'esterno.",
-      "stato": "chiusa",
-      "token": "D",
-      "descrizioni_stati": {
-        "chiusa": "Una porta in legno che conduce all'esterno, è chiusa.",
-        "aperta": "Una porta in legno che conduce all'esterno, è aperta."
-      },
-      "stati_possibili": {
-        "chiusa": [
-          "aperta"
-        ],
-        "aperta": [
-          "chiusa"
-        ]
-      },
-      "sprite": "door"
-    }
+    "[2, 2]": {"nome": "bancone", "tipo": "arredo", "sprite": "bancone"},
+    "[9, 1]": {"nome": "camino", "tipo": "arredo", "sprite": "camino"},
+    "[7, 5]": {"nome": "tavolo", "tipo": "arredo", "sprite": "tavolo"},
+    "[6, 5]": {"nome": "sedia", "tipo": "arredo", "sprite": "sedia"},
+    "[1, 1]": {"nome": "barile", "tipo": "container", "sprite": "barile"},
+    "[13, 8]": {"nome": "scala", "tipo": "passaggio", "sprite": "scala"},
+    "[13, 2]": {"nome": "porta_cantina", "tipo": "porta", "sprite": "porta_cantina"}
   },
   "npg": {
-    "[8, 4]": {
-      "nome": "Oste",
-      "descrizione": "Un uomo corpulento con un grembiule macchiato.",
-      "stato": "neutrale",
-      "token": "O",
-      "dialogo": [
-        "Benvenuto nella mia taverna! Cosa posso servirti oggi?",
-        "Abbiamo birra, idromele e vino di buona qualità.",
-        "Se cerchi una stanza per la notte, costa 5 monete d'oro."
-      ],
-      "sprite": "npc_merchant"
-    },
-    "[4, 7]": {
-      "nome": "Avventuriero",
-      "descrizione": "Un avventuriero solitario con cicatrici sul volto.",
-      "stato": "neutrale",
-      "token": "A",
-      "dialogo": [
-        "Ho sentito dire che ci sono mostri nella foresta a nord.",
-        "Se vai lì, assicurati di essere ben equipaggiato.",
-        "Potresti trovare tesori, ma anche molti pericoli."
-      ],
-      "sprite": "player"
-    }
+    "[6, 6]": {"nome": "Durnan", "tipo": "npc", "sprite": "npc"},
+    "[8, 5]": {"nome": "Elminster", "tipo": "npc", "sprite": "vendor"},
+    "[7, 7]": {"nome": "Mirt", "tipo": "npc", "sprite": "guard"}
   },
   "porte": {
     "[12, 5]": ["villaggio", [1, 5]]
   },
-  "pos_iniziale_giocatore": [
-    7,
-    5
-  ]
+  "pos_iniziale_giocatore": [7, 5]
 }

@@ -1,9 +1,10 @@
 from util.dado import Dado
 from util.data_manager import get_data_manager
 import json
+import uuid
 
 class OggettoInterattivo:
-    def __init__(self, nome, descrizione="", stato="chiuso", contenuto=None, posizione=None, token="O"):
+    def __init__(self, nome, descrizione="", stato="chiuso", contenuto=None, posizione=None, token="O", id=None):
         """
         Inizializza un oggetto interattivo nel mondo di gioco.
         
@@ -14,7 +15,9 @@ class OggettoInterattivo:
             contenuto: Lista di oggetti contenuti (se applicabile)
             posizione: Posizione dell'oggetto nel mondo di gioco (es. "taverna", "mercato", o coordinate)
             token: Token per la rappresentazione sulla mappa
+            id (str, optional): ID univoco dell'oggetto. Se None, ne viene generato uno.
         """
+        self.id = id or str(uuid.uuid4())
         self.nome = nome
         self.descrizione = descrizione
         self.stato = stato
@@ -230,6 +233,7 @@ class OggettoInterattivo:
         """
         # Crea il dizionario base
         result = {
+            'id': self.id,
             'tipo': self.tipo,
             'nome': self.nome,
             'descrizione': self.descrizione,
@@ -241,6 +245,7 @@ class OggettoInterattivo:
             'abilita_richieste': self.abilita_richieste,
             'difficolta_abilita': self.difficolta_abilita,
             'messaggi_interazione': self.messaggi_interazione,
+            'sprite': self.nome
         }
         
         # Gestisci il contenuto dell'oggetto
@@ -281,32 +286,6 @@ class OggettoInterattivo:
         
         return result
     
-    def to_msgpack(self):
-        """
-        Converte l'oggetto interattivo in formato MessagePack per la serializzazione.
-        MessagePack è più efficiente di JSON per la serializzazione e deserializzazione.
-        
-        Returns:
-            bytes: Rappresentazione dell'oggetto in formato MessagePack
-        """
-        import msgpack
-        return msgpack.packb(self.to_dict(), use_bin_type=True)
-    
-    @classmethod
-    def from_msgpack(cls, data_bytes):
-        """
-        Crea un'istanza di OggettoInterattivo da dati in formato MessagePack.
-        
-        Args:
-            data_bytes (bytes): Dati in formato MessagePack
-            
-        Returns:
-            OggettoInterattivo: Nuova istanza di OggettoInterattivo
-        """
-        import msgpack
-        data = msgpack.unpackb(data_bytes, raw=False)
-        return cls.from_dict(data)
-    
     @classmethod
     def from_dict(cls, data):
         """
@@ -324,6 +303,7 @@ class OggettoInterattivo:
         if not isinstance(data, dict):
             return cls("Oggetto Sconosciuto")
             
+        id_oggetto = data.get("id")
         nome = data.get("nome", "")
         descrizione = data.get("descrizione", "")
         stato = data.get("stato", "chiuso")
@@ -335,7 +315,8 @@ class OggettoInterattivo:
             descrizione=descrizione,
             stato=stato,
             posizione=posizione,
-            token=token
+            token=token,
+            id=id_oggetto
         )
         
         # Imposta il tipo
@@ -436,8 +417,8 @@ class OggettoInterattivo:
 
 
 class Baule(OggettoInterattivo):
-    def __init__(self, nome, descrizione="", stato="chiuso", contenuto=None, richiede_chiave=False, posizione=None, token="C"):
-        super().__init__(nome, descrizione, stato, contenuto, posizione, token)
+    def __init__(self, nome, descrizione="", stato="chiuso", contenuto=None, richiede_chiave=False, posizione=None, token="C", id=None):
+        super().__init__(nome, descrizione, stato, contenuto, posizione, token, id)
         self.richiede_chiave = richiede_chiave
         self.tipo = "baule"
     
@@ -495,8 +476,8 @@ class Baule(OggettoInterattivo):
 
 
 class Porta(OggettoInterattivo):
-    def __init__(self, nome, descrizione="", stato="chiusa", richiede_chiave=False, posizione=None, posizione_destinazione=None, token="D"):
-        super().__init__(nome, descrizione, stato, None, posizione, token)
+    def __init__(self, nome, descrizione="", stato="chiusa", richiede_chiave=False, posizione=None, posizione_destinazione=None, token="D", id=None):
+        super().__init__(nome, descrizione, stato, None, posizione, token, id)
         self.richiede_chiave = richiede_chiave
         self.posizione_destinazione = posizione_destinazione  # Dove porta questa porta
         self.tipo = "porta"
@@ -553,8 +534,8 @@ class Porta(OggettoInterattivo):
 
 
 class Leva(OggettoInterattivo):
-    def __init__(self, nome, descrizione="", stato="disattivata", posizione=None, token="L"):
-        super().__init__(nome, descrizione, stato, None, posizione, token)
+    def __init__(self, nome, descrizione="", stato="disattivata", posizione=None, token="L", id=None):
+        super().__init__(nome, descrizione, stato, None, posizione, token, id)
         self.tipo = "leva"
     
     def interagisci(self, giocatore, gioco=None):
@@ -591,8 +572,8 @@ class Leva(OggettoInterattivo):
 
 
 class Trappola(OggettoInterattivo):
-    def __init__(self, nome, descrizione="", stato="attiva", danno=10, posizione=None, difficolta_salvezza=10, token="T"):
-        super().__init__(nome, descrizione, stato, None, posizione, token)
+    def __init__(self, nome, descrizione="", stato="attiva", danno=10, posizione=None, difficolta_salvezza=10, token="T", id=None):
+        super().__init__(nome, descrizione, stato, None, posizione, token, id)
         self.danno = danno
         self.difficolta_salvezza = difficolta_salvezza
         self.tipo = "trappola"
@@ -644,8 +625,8 @@ class Trappola(OggettoInterattivo):
 
 
 class OggettoRompibile(OggettoInterattivo):
-    def __init__(self, nome, descrizione="", stato="integro", materiali=None, forza_richiesta=5, posizione=None, token="O"):
-        super().__init__(nome, descrizione, stato, None, posizione, token)
+    def __init__(self, nome, descrizione="", stato="integro", materiali=None, forza_richiesta=5, posizione=None, token="O", id=None):
+        super().__init__(nome, descrizione, stato, None, posizione, token, id)
         self.materiali = materiali or []  # Lista di oggetti che si ottengono rompendo
         self.forza_richiesta = forza_richiesta
         self.tipo = "oggetto_rompibile"

@@ -4,6 +4,8 @@ from entities.entita import Entita, ABILITA_ASSOCIATE
 from util.data_manager import get_data_manager
 import json
 import logging
+# IMPORT PER DESERIALIZZAZIONE INVENTARIO
+from items.item_factory import ItemFactory
 
 logger = logging.getLogger(__name__)
 
@@ -220,29 +222,12 @@ class NPG(Entita):
             "stato_corrente": self.stato_corrente,
             "background": self.background,
             "professione": self.professione,
+            "sprite": self.npc_data.get("sprite", self.token)
             # Le conversazioni non vengono serializzate perché vengono caricate dinamicamente
         })
         
         return data
     
-    def to_msgpack(self, already_serialized=None):
-        """
-        Converte l'NPG in formato MessagePack.
-        
-        Args:
-            already_serialized (set, optional): Set di ID di oggetti già serializzati
-            
-        Returns:
-            bytes: Dati serializzati in formato MessagePack
-        """
-        try:
-            import msgpack
-            return msgpack.packb(self.to_dict(already_serialized), use_bin_type=True)
-        except Exception as e:
-            logger.error(f"Errore nella serializzazione MessagePack dell'NPG {self.id}: {e}")
-            # Fallback a dizionario serializzato in JSON e poi convertito in bytes
-            return json.dumps(self.to_dict(already_serialized)).encode()
-        
     @classmethod
     def from_dict(cls, data):
         """
@@ -254,69 +239,83 @@ class NPG(Entita):
         Returns:
             NPG: Nuova istanza di NPG
         """
-        # Creiamo prima un'istanza di NPG solo con il nome
+        # Passo 1: Creare l'istanza NPG. 
+        # L'__init__ di NPG caricherà i dati di default dal file JSON per 'nome'.
+        # Successivamente, sovrascriveremo questi valori con quelli da 'data'.
         npg = cls(
-            nome=data.get("nome", "Sconosciuto"),
-            token=data.get("token", "N")
+            nome=data.get("nome", "Sconosciuto_deserializzato"), # Usare un nome che indichi la deserializzazione se 'nome' manca
+            token=data.get("token") # Lasciare che __init__ prenda il token da npc_data se non in 'data'
         )
+
+        # Passo 2: Sovrascrivere gli attributi dell'entità base con i valori da 'data'.
+        npg.id = data.get("id", npg.id) 
+        # Gestione posizione
+        posizione_data = data.get("posizione")
+        if isinstance(posizione_data, (list, tuple)) and len(posizione_data) == 2:
+            npg.x, npg.y = posizione_data
+        else:
+            npg.x = data.get("x", npg.x)
+            npg.y = data.get("y", npg.y)
+            
+        npg.stato = data.get("stato", npg.stato)
+        npg.interagibile = data.get("interagibile", npg.interagibile)
+        npg.visibile = data.get("visibile", npg.visibile)
+        npg.tags = set(data.get("tags", list(npg.tags)))
         
-        # Impostiamo manualmente gli attributi serializzati
-        npg.hp = data.get("hp", 10)
-        npg.hp_max = data.get("hp_max", 10)
-        npg.x = data.get("x", 0)
-        npg.y = data.get("y", 0)
-        npg.mappa_corrente = data.get("mappa_corrente")
-        npg.abilita_competenze = data.get("abilita_competenze", {})
-        npg.bonus_competenza = data.get("bonus_competenza", 2)
-        npg.oro = data.get("oro", 0)
-        npg.esperienza = data.get("esperienza", 0)
-        npg.livello = data.get("livello", 1)
-        npg.difesa = data.get("difesa", 0)
+        npg.forza_base = data.get("forza_base", npg.forza_base)
+        npg.destrezza_base = data.get("destrezza_base", npg.destrezza_base)
+        npg.costituzione_base = data.get("costituzione_base", npg.costituzione_base)
+        npg.intelligenza_base = data.get("intelligenza_base", npg.intelligenza_base)
+        npg.saggezza_base = data.get("saggezza_base", npg.saggezza_base)
+        npg.carisma_base = data.get("carisma_base", npg.carisma_base)
         
-        # Impostiamo i valori base che sono stati serializzati
-        npg.forza_base = data.get("forza_base", 10)
-        npg.destrezza_base = data.get("destrezza_base", 10)
-        npg.costituzione_base = data.get("costituzione_base", 10)
-        npg.intelligenza_base = data.get("intelligenza_base", 10)
-        npg.saggezza_base = data.get("saggezza_base", 10)
-        npg.carisma_base = data.get("carisma_base", 10)
-        
-        # Ricalcoliamo i modificatori
         npg.modificatore_forza = npg.calcola_modificatore(npg.forza_base)
         npg.modificatore_destrezza = npg.calcola_modificatore(npg.destrezza_base)
         npg.modificatore_costituzione = npg.calcola_modificatore(npg.costituzione_base)
         npg.modificatore_intelligenza = npg.calcola_modificatore(npg.intelligenza_base)
         npg.modificatore_saggezza = npg.calcola_modificatore(npg.saggezza_base)
         npg.modificatore_carisma = npg.calcola_modificatore(npg.carisma_base)
+
+        npg.mappa_corrente = data.get("mappa_corrente", npg.mappa_corrente)
         
-        # Imposta attributi specifici
-        npg.stato_corrente = data.get("stato_corrente", "default")
-        npg.background = data.get("background", "")
-        npg.professione = data.get("professione", "")
+        npg.abilita_competenze = data.get("abilita_competenze", npg.abilita_competenze)
+        npg.bonus_competenza = data.get("bonus_competenza", npg.bonus_competenza)
+        npg.difesa = data.get("difesa", npg.difesa) 
+        npg.oro = data.get("oro", npg.oro) 
+        npg.esperienza = data.get("esperienza", npg.esperienza)
+        npg.livello = data.get("livello", npg.livello) 
+        
+        npg.hp_max = data.get("hp_max", npg.hp_max) 
+        npg.hp = data.get("hp", npg.hp) 
+
+        # Passo 3: Deserializzare l'inventario e l'equipaggiamento
+        raw_inventario = data.get("inventario", [])
+        npg.inventario = [] 
+        if raw_inventario:
+            for item_data_dict in raw_inventario:
+                if isinstance(item_data_dict, dict):
+                    item_instance = ItemFactory.crea_da_dict(item_data_dict)
+                    if item_instance:
+                        npg.inventario.append(item_instance)
+        
+        arma_data_dict = data.get("arma")
+        npg.arma = ItemFactory.crea_da_dict(arma_data_dict) if isinstance(arma_data_dict, dict) else None
+
+        armatura_data_dict = data.get("armatura")
+        npg.armatura = ItemFactory.crea_da_dict(armatura_data_dict) if isinstance(armatura_data_dict, dict) else None
+
+        raw_accessori = data.get("accessori", [])
+        npg.accessori = [] 
+        if raw_accessori:
+            for acc_data_dict in raw_accessori:
+                if isinstance(acc_data_dict, dict):
+                    item_instance = ItemFactory.crea_da_dict(acc_data_dict)
+                    if item_instance:
+                        npg.accessori.append(item_instance)
+
+        # Passo 4: Sovrascrivere gli attributi specifici di NPG con i valori da 'data'
+        npg.stato_corrente = data.get("stato_corrente", npg.stato_corrente)
+        npg.background = data.get("background", npg.background) 
+        npg.professione = data.get("professione", npg.professione) 
         
         return npg
-    
-    @classmethod
-    def from_msgpack(cls, data_bytes):
-        """
-        Crea un'istanza di NPG da dati in formato MessagePack.
-        
-        Args:
-            data_bytes (bytes): Dati serializzati in formato MessagePack
-            
-        Returns:
-            NPG: Nuova istanza di NPG
-        """
-        try:
-            import msgpack
-            dati = msgpack.unpackb(data_bytes, raw=False)
-            return cls.from_dict(dati)
-        except Exception as e:
-            logger.error(f"Errore nella deserializzazione MessagePack dell'NPG: {e}")
-            try:
-                # Tenta di interpretare i dati come JSON
-                dati = json.loads(data_bytes.decode())
-                return cls.from_dict(dati)
-            except Exception as e2:
-                logger.error(f"Errore anche con fallback JSON: {e2}")
-                return cls("NPC Errore")  # Ritorna un NPC base in caso di errore

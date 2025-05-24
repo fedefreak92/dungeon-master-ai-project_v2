@@ -1,6 +1,6 @@
 import uuid
 import logging
-from typing import Dict, List, Set, Type, Optional, Any
+from typing import Dict, List, Set, Type, Optional, Any, TYPE_CHECKING
 from collections import defaultdict
 
 # Import delle classi ECS
@@ -8,6 +8,10 @@ from .entity import Entity
 from .component import Component
 from .system import System
 from world.gestore_mappe import GestitoreMappe
+from entities.giocatore import Giocatore
+
+if TYPE_CHECKING:
+    from states.base.enhanced_base_state import EnhancedBaseState
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +35,11 @@ class World:
         self.io = None  # Oggetto per input/output
         self.gestore_mappe = GestitoreMappe()  # Gestore delle mappe di gioco
         
+        # Attributi per la FSM
+        self.current_fsm_state: Optional['EnhancedBaseState'] = None
+        self.fsm_stack: List['EnhancedBaseState'] = []
+        self.session_id: Optional[str] = None
+
     @property
     def giocatore(self):
         """
@@ -42,55 +51,118 @@ class World:
         return self.get_player_entity()
         
     @giocatore.setter
-    def giocatore(self, value):
+    def giocatore(self, value: Any): # Cambiato tipo a Any per flessibilità
         """
-        Imposta l'entità giocatore
-        
-        Args:
-            value: L'entità giocatore da impostare
+        Imposta l'entità giocatore.
+        Può essere un'istanza di gioco_rpg.entities.giocatore.Giocatore
+        o un'istanza di core.ecs.entity.Entity (con i componenti necessari).
         """
-        # Rimuove il tag player da tutte le entità che lo hanno
-        player_entities = self.find_entities_by_tag("player")
-        for entity in player_entities:
-            entity.remove_tag("player")
-            
-        # Verifica se l'oggetto è un'entità ECS o un oggetto Giocatore
-        if hasattr(value, "add_tag") and callable(getattr(value, "add_tag")):
-            # È un'entità ECS
-            
-            # Assicura che l'entità sia aggiunta al mondo
-            if value.id not in self.entities:
-                self.add_entity(value)
+        # Rimuove il tag player da tutte le entità che lo hanno precedentemente
+        # Questo per assicurare che solo una entità sia il giocatore corrente.
+        current_players = self.find_entities_by_tag("player")
+        for p_entity in current_players:
+            # Non rimuovere il tag se stiamo ri-settando la stessa entità o value è None
+            if value is None or getattr(p_entity, 'id', None) != getattr(value, 'id', None):
+                if hasattr(p_entity, 'remove_tag') and callable(getattr(p_entity, 'remove_tag')): # Per core.ecs.entity.Entity
+                    p_entity.remove_tag("player")
+                elif hasattr(p_entity, 'tags') and isinstance(getattr(p_entity, 'tags', None), set): # Per gioco_rpg.entities.Entita
+                    getattr(p_entity, 'tags').discard("player")
                 
-            # Aggiunge il tag player alla nuova entità giocatore
-            value.add_tag("player")
-            logger.info(f"Impostata entità giocatore ECS: {value.name} (ID: {value.id})")
+                self._reindex_tags_for_entity(p_entity) # Assicura che entities_by_tag sia aggiornato
+                display_name_p_entity = getattr(p_entity, 'nome', getattr(p_entity, 'name', getattr(p_entity, 'id', 'N/A')))
+                logger.info(f"Rimosso tag 'player' dalla precedente entità giocatore: {display_name_p_entity}")
+
+
+        if value is None:
+            logger.warning("Tentativo di impostare world.giocatore a None. Le entità precedenti con tag 'player' sono state ripulite.")
+            return
+
+        entity_to_be_player = None
+
+        try:
+            from entities.giocatore import Giocatore as RPGGiocatore
+            is_rpg_giocatore = isinstance(value, RPGGiocatore)
+        except ImportError:
+            is_rpg_giocatore = False
+
+        if is_rpg_giocatore:
+            logger.info(f"Impostazione di un'istanza di gioco_rpg.entities.giocatore.Giocatore come giocatore del mondo: {value.nome} (ID: {value.id})")
+            entity_to_be_player = value
+            if entity_to_be_player.id not in self.entities:
+                self.add_entity(entity_to_be_player)
+            
+            # Assicura che abbia il tag 'player' (per gioco_rpg.entities.Entita/Giocatore)
+            if not hasattr(entity_to_be_player, 'tags') or not isinstance(entity_to_be_player.tags, set):
+                entity_to_be_player.tags = set() # Inizializza se mancante o tipo sbagliato
+            if "player" not in entity_to_be_player.tags:
+                entity_to_be_player.tags.add("player")
+                self._reindex_tags_for_entity(entity_to_be_player)
+            display_name_value_legacy = getattr(value, 'nome', getattr(value, 'name', value.id)) # value qui è RPGGiocatore, ha 'nome'
+            logger.info(f"Giocatore legacy '{display_name_value_legacy}' (ID: {value.id}) impostato e taggato.")
+
+        elif hasattr(value, 'components') and isinstance(getattr(value, 'components', None), dict) and hasattr(value, 'add_tag'):
+            # È un'entità ECS (core.ecs.entity.Entity)
+            display_name_value_ecs = getattr(value, 'name', value.id) # value qui è Entity, ha 'name'
+            logger.info(f"Impostazione di un'istanza di core.ecs.entity.Entity come giocatore del mondo: {display_name_value_ecs} (ID: {value.id})")
+            entity_to_be_player = value
+            if entity_to_be_player.id not in self.entities:
+                self.add_entity(entity_to_be_player)
+            if not entity_to_be_player.has_tag("player"):
+                 entity_to_be_player.add_tag("player")
+                 self._reindex_tags_for_entity(entity_to_be_player) # add_entity già lo fa se il tag è nuovo
+            logger.info(f"Entità ECS '{value.name}' (ID: {value.id}) impostata e taggata come giocatore.")
         else:
-            # È un oggetto Giocatore legacy
-            # Creiamo un'entità ECS wrapper per il giocatore legacy
-            from .entity import Entity
-            
-            # Usa i dati del giocatore per creare un'entità ECS
-            player_entity = Entity(id=value.id, name=value.nome)
-            
-            # Aggiorna l'attributo tags se esiste nel Giocatore
-            if hasattr(value, "tags"):
-                player_entity.tags = value.tags.copy() if hasattr(value.tags, "copy") else set(value.tags)
-            
-            # Assicurati che abbia il tag player
-            player_entity.add_tag("player")
-            
-            # Aggiungi l'entità al mondo ECS
-            self.add_entity(player_entity)
-            
-            # Memorizza un riferimento al giocatore legacy nell'entità ECS
-            setattr(player_entity, "_legacy_player", value)
-            
-            # Aggiunge un attributo alla classe Giocatore per accedere all'entità ECS
-            setattr(value, "entity", player_entity)
-            
-            logger.info(f"Impostata entità giocatore Legacy: {value.nome} (ID: {value.id})")
+            logger.error(f"Tipo non supportato per world.giocatore: {type(value)}. Non è né un Giocatore legacy né un Entity ECS.")
+            return
+
+        # Log finale per confermare
+        final_players = self.find_entities_by_tag("player")
+        if entity_to_be_player and len(final_players) == 1 and final_players[0].id == entity_to_be_player.id:
+            display_name_player = getattr(entity_to_be_player, 'nome', getattr(entity_to_be_player, 'name', entity_to_be_player.id))
+            logger.info(f"world.giocatore impostato con successo. Entità giocatore attuale: {display_name_player}")
+        elif entity_to_be_player and len(final_players) > 1:
+            ids = [getattr(p, 'id', 'N/A') for p in final_players]
+            logger.warning(f"ATTENZIONE: Più entità ({len(final_players)}, IDs: {ids}) sono taggate come 'player' dopo l'impostazione.")
+        elif entity_to_be_player and not final_players:
+            logger.warning(f"ATTENZIONE: Nessuna entità è taggata come 'player' dopo il tentativo di impostazione per {entity_to_be_player.id}.")
+        elif not entity_to_be_player:
+             logger.error("entity_to_be_player non è stato definito correttamente nel setter.")
+
+    def _reindex_tags_for_entity(self, entity: Any):
+        """Metodo helper per aggiornare gli indici dei tag per una specifica entità."""
+        if not hasattr(entity, 'id'):
+            logger.warning(f"Tentativo di reindicizzare tag per entità senza ID: {type(entity)}")
+            return
+
+        entity_id = entity.id
         
+        # Rimuovi vecchi indici per questa entità basati sull'ID
+        for tag_name, entities_in_tag in list(self.entities_by_tag.items()): # Itera su una copia per modifiche sicure
+            to_remove_from_set = None
+            for e_in_set in entities_in_tag:
+                if hasattr(e_in_set, 'id') and e_in_set.id == entity_id:
+                    to_remove_from_set = e_in_set
+                    break
+            if to_remove_from_set:
+                entities_in_tag.remove(to_remove_from_set)
+                if not entities_in_tag: # Se il set diventa vuoto, rimuovi la chiave del tag
+                    del self.entities_by_tag[tag_name]
+
+        current_tags_source = None
+        if hasattr(entity, 'tags') and isinstance(entity.tags, set):
+            current_tags_source = entity.tags
+        elif hasattr(entity, 'tags') and isinstance(entity.tags, list): # Meno ideale, ma supportato
+            current_tags_source = set(entity.tags)
+        
+        if current_tags_source:
+            for tag in current_tags_source:
+                self.entities_by_tag[tag].add(entity) # Aggiunge l'istanza corrente
+            display_name_entity_reindex = getattr(entity, 'nome', getattr(entity, 'name', entity_id))
+            logger.debug(f"Reindicizzati tag per l'entità '{display_name_entity_reindex}'. Tag attuali: {current_tags_source}")
+        else:
+            display_name_entity_reindex_fail = getattr(entity, 'nome', getattr(entity, 'name', entity_id))
+            logger.debug(f"Nessun tag da reindicizzare per l'entità '{display_name_entity_reindex_fail}' (tags non trovati o formato non supportato).")
+
     def add_entity(self, entity: Entity) -> Entity:
         """
         Aggiunge un'entità al mondo
@@ -111,18 +183,22 @@ class World:
         # Aggiungi l'entità agli indici per tag
         for tag in entity.tags:
             self.entities_by_tag[tag].add(entity)
-            logger.debug(f"Aggiunto tag '{tag}' all'entità '{entity.name}' (ID: {entity.id})")
+            logger.debug(f"Aggiunto tag '{tag}' all'entità '{entity.nome}' (ID: {entity.id})")
             
         # Aggiungi log per verificare i tag del giocatore
         if 'player' in entity.tags:
-            logger.info(f"Aggiunta entità giocatore al mondo: {entity.name} (ID: {entity.id}) con tag: {entity.tags}")
+            logger.info(f"Aggiunta entità giocatore al mondo: {entity.nome} (ID: {entity.id}) con tag: {entity.tags}")
             logger.info(f"Numero di entità con tag 'player' dopo l'aggiunta: {len(self.entities_by_tag.get('player', set()))}")
             
         # Registra l'entità con i sistemi appropriati
         for system in self.systems:
             system.register_entity(entity)
             
-        logger.debug(f"Entità '{entity.name}' (ID: {entity.id}) aggiunta al mondo")
+        # Aggiorna l'indice dei tag dopo aver aggiunto l'entità e i suoi tag
+        self._reindex_tags_for_entity(entity)
+
+        display_name_add = getattr(entity, 'nome', getattr(entity, 'name', entity.id))
+        logger.debug(f"Entità '{display_name_add}' (ID: {entity.id}) aggiunta al mondo")
         return entity
         
     def remove_entity(self, entity_id: str) -> bool:
@@ -145,14 +221,17 @@ class World:
             system.unregister_entity(entity)
             
         # Rimuovi l'entità dagli indici per tag
-        for tag in entity.tags:
-            if entity in self.entities_by_tag[tag]:
+        for tag in list(entity.tags): # Itera su una copia se entity.tags può cambiare
+            if tag in self.entities_by_tag and entity in self.entities_by_tag[tag]:
                 self.entities_by_tag[tag].remove(entity)
+                if not self.entities_by_tag[tag]: # Rimuovi il tag dall'indice se il set è vuoto
+                    del self.entities_by_tag[tag]
                 
         # Rimuovi l'entità dalla mappa
         del self.entities[entity_id]
         
-        logger.debug(f"Entità '{entity.name}' (ID: {entity_id}) rimossa dal mondo")
+        display_name_remove = getattr(entity, 'nome', getattr(entity, 'name', entity_id))
+        logger.debug(f"Entità '{display_name_remove}' (ID: {entity_id}) rimossa dal mondo")
         return True
         
     def get_entity(self, entity_id: str) -> Optional[Entity]:
@@ -436,15 +515,39 @@ class World:
         try:
             # Serializza entità
             entities_data = {}
-            for entity_id, entity in self.entities.items():
+            for entity_id, entity_obj in self.entities.items(): # Nome variabile cambiato per chiarezza
                 try:
-                    entities_data[entity_id] = entity.serialize()
+                    serialized_entity_data = None
+                    if hasattr(entity_obj, 'to_dict') and callable(getattr(entity_obj, 'to_dict')):
+                        serialized_entity_data = entity_obj.to_dict()
+                    elif hasattr(entity_obj, 'serialize') and callable(getattr(entity_obj, 'serialize')):
+                        # Questo è per core.ecs.entity.Entity
+                        serialized_entity_data = entity_obj.serialize()
+                    
+                    if serialized_entity_data:
+                        # Assicurati che il campo 'tipo' sia presente.
+                        # Giocatore.to_dict() e Entita.to_dict() lo impostano.
+                        # core.ecs.Entity.serialize() no.
+                        if 'tipo' not in serialized_entity_data:
+                            serialized_entity_data['tipo'] = type(entity_obj).__name__
+                        entities_data[entity_id] = serialized_entity_data
+                    else:
+                        logger.warning(f"L'entità {entity_id} (tipo: {type(entity_obj).__name__}) non ha né to_dict né serialize "
+                                       f"oppure hanno restituito None. Salvo info base.")
+                        entities_data[entity_id] = {
+                            "id": entity_id,
+                            "name": getattr(entity_obj, 'nome', getattr(entity_obj, 'name', getattr(entity_obj, 'id', 'unknown_id'))),
+                            "tipo": type(entity_obj).__name__
+                        }
                 except Exception as e:
-                    # Log dell'errore e continua con la prossima entità
-                    logger.error(f"Errore nella serializzazione dell'entità {entity_id}: {e}")
-                    # Crea un record minimo per l'entità con informazioni base
-                    entities_data[entity_id] = {"id": entity_id, "name": getattr(entity, 'name', 'unknown')}
-                
+                    logger.error(f"Errore nella serializzazione dell'entità {entity_id} (tipo: {type(entity_obj).__name__}): {e}", exc_info=True)
+                    entities_data[entity_id] = {
+                        "id": entity_id,
+                        "name": getattr(entity_obj, 'nome', getattr(entity_obj, 'name', getattr(entity_obj, 'id', 'unknown_id'))),
+                        "tipo": type(entity_obj).__name__,
+                        "__serialization_error__": str(e)
+                    }
+            
             # Serializza eventi - assicura che non ci siano riferimenti circolari
             events_data = []
             for event in self.events:
@@ -502,13 +605,12 @@ class World:
             # Serializza stati temporanei
             temporary_states_data = {}
             for state_name, state_value in self.temporary_states.items():
-                # Salta l'oggetto io che non è serializzabile
                 if state_name == "io":
                     logger.info("Saltato oggetto io durante la serializzazione")
                     continue
-                    
+                
+                logger.debug(f"[SERIALIZE_TEMP_STATE_DEBUG] Serializzo stato temporaneo: '{state_name}', Tipo: {type(state_value).__name__}, Ha to_dict: {hasattr(state_value, 'to_dict')}")
                 try:
-                    # Gestisci la serializzazione degli stati
                     if hasattr(state_value, 'to_dict') and callable(getattr(state_value, 'to_dict')):
                         temporary_states_data[state_name] = state_value.to_dict()
                     elif hasattr(state_value, 'serialize') and callable(getattr(state_value, 'serialize')):
@@ -611,28 +713,6 @@ class World:
             except:
                 return f"<<Oggetto non serializzabile: {type(obj).__name__}>>"
         
-    def serialize_msgpack(self) -> bytes:
-        """
-        Serializza il mondo in formato MessagePack
-        
-        Returns:
-            bytes: Dati serializzati in formato MessagePack
-        """
-        try:
-            import msgpack
-            data = self.serialize()
-            return msgpack.packb(data, use_bin_type=True)
-        except Exception as e:
-            logger.error(f"Errore nella serializzazione MessagePack del mondo: {e}")
-            # Ritorna un dizionario minimo ma valido, serializzato
-            import msgpack
-            return msgpack.packb({
-                "entities": {},
-                "events": [],
-                "pending_events": [],
-                "temporary_states": {}
-            }, use_bin_type=True)
-        
     @classmethod
     def deserialize(cls, data: Dict[str, Any]) -> 'World':
         """
@@ -645,22 +725,86 @@ class World:
             World: Il mondo deserializzato
         """
         world = cls()
+        world.session_id = data.get("session_id_persisted")
         
-        # Verifica che data sia un dizionario valido
         if not isinstance(data, dict):
             logger.error(f"Dati non validi per la deserializzazione: {type(data)}")
+                         
             return world
         
         try:
             # Deserializza entità
             entities_data = data.get("entities", {})
-            for entity_id, entity_data in entities_data.items():
+            for entity_id, entity_data_dict in entities_data.items():
+                entity_to_add = None
                 try:
-                    entity = Entity.deserialize(entity_data)
-                    world.add_entity(entity)
+                    entity_type_str = entity_data_dict.get("tipo")
+                    has_player_tag = "player" in entity_data_dict.get("tags", [])
+                    
+                    # Logica migliorata per determinare la classe target
+                    target_class = Entity # Default
+
+                    if entity_type_str == "Giocatore":
+                        from entities.giocatore import Giocatore
+                        target_class = Giocatore
+                    elif entity_type_str == "Nemico":
+                        from entities.nemico import Nemico # Assumendo che esista
+                        target_class = Nemico
+                    elif entity_type_str == "NPG":
+                        from entities.npg import NPG # Assumendo che esista
+                        target_class = NPG
+                    elif not entity_type_str and has_player_tag:
+                        # Se il tipo è mancante MA ha il tag player, proviamo a deserializzarlo come Giocatore
+                        # Questo è un tentativo di recupero per sessioni più vecchie/corrotte.
+                        logger.warning(f"Campo 'tipo' mancante per entità {entity_id} ma ha il tag 'player'. "
+                                       f"Tentativo di deserializzazione come Giocatore.")
+                        try:
+                            from entities.giocatore import Giocatore
+                            target_class = Giocatore
+                            entity_data_dict['tipo'] = 'Giocatore' # Forza il tipo per coerenza futura
+                        except ImportError:
+                            logger.error(f"Impossibile importare la classe Giocatore per il fallback dell'entità {entity_id}. Sarà Entity base.")
+                            entity_type_str = "Entity" # Aggiorna per il logging successivo
+                            target_class = Entity
+                    elif not entity_type_str:
+                        logger.warning(f"Campo 'tipo' mancante nei dati per entità {entity_id}. Deserializzo come Entity base.")
+                        entity_type_str = "Entity" # Per i log e per evitare problemi dopo
+                        target_class = Entity
+                    # Aggiungi altri tipi qui se necessario
+
+                    # MODIFICA CHIAVE: Seleziona il metodo di deserializzazione corretto
+                    if hasattr(target_class, 'from_dict') and callable(getattr(target_class, 'from_dict')):
+                        # Giocatore, Entita (da gioco_rpg.entities) usano from_dict
+                        entity_to_add = target_class.from_dict(entity_data_dict)
+                        logger.debug(f"Deserializzata entità {entity_id} (tipo: {target_class.__name__}) usando from_dict.")
+                    elif hasattr(target_class, 'deserialize') and callable(getattr(target_class, 'deserialize')):
+                        # core.ecs.entity.Entity usa deserialize
+                        entity_to_add = target_class.deserialize(entity_data_dict)
+                        logger.debug(f"Deserializzata entità {entity_id} (tipo: {target_class.__name__}) usando deserialize.")
+                    else:
+                        logger.warning(f"La classe {target_class.__name__} per entità {entity_id} non ha un metodo from_dict né deserialize. Impossibile istanziare.")
+                        entity_to_add = None
+
+                    if entity_to_add:
+                        logger.info(f"[DESERIALIZE_DEBUG] Entità ID: {entity_id}, Tipo Dichiarato: {entity_type_str}, Tipo Istanziato: {type(entity_to_add).__name__}, Dati Entità: {entity_data_dict}")
+                        world.add_entity(entity_to_add)
+                    else:
+                        logger.error(f"Deserializzazione ha restituito None per entità {entity_id} con tipo dichiarato {entity_type_str}. Dati Entità: {entity_data_dict}")
+
+                except ImportError as ie:
+                    logger.error(f"Errore di import per il tipo di entità '{entity_type_str}' durante deserializzazione di {entity_id}: {ie}. Deserializzo come Entity base.")
+                    # Tentativo di fallback a Entity base
+                    try:
+                        fallback_entity = Entity.deserialize(entity_data_dict)
+                        if fallback_entity:
+                            world.add_entity(fallback_entity)
+                        else:
+                            logger.error(f"Anche il fallback a Entity.deserialize è fallito per {entity_id}.")
+                    except Exception as fallback_e:
+                        logger.error(f"Eccezione durante il fallback a Entity.deserialize per {entity_id}: {fallback_e}", exc_info=True)
                 except Exception as e:
-                    logger.error(f"Errore nella deserializzazione dell'entità {entity_id}: {e}")
-                    # Continua con la prossima entità
+                    logger.error(f"Errore generale nella deserializzazione dell'entità specifica {entity_id} (tipo dichiarato: {entity_data_dict.get('tipo')}): {e}", exc_info=True)
+                    # Non aggiungere questa entità se la deserializzazione fallisce gravemente
             
             # Deserializza eventi
             world.events = data.get("events", [])
@@ -703,27 +847,6 @@ class World:
             logger.error(f"Errore generale nella deserializzazione del mondo: {e}")
             return world
         
-    @classmethod
-    def deserialize_msgpack(cls, data_bytes: bytes) -> 'World':
-        """
-        Deserializza un mondo da dati in formato MessagePack
-        
-        Args:
-            data_bytes: Dati serializzati in formato MessagePack
-            
-        Returns:
-            World: Il mondo deserializzato
-        """
-        try:
-            import msgpack
-            data = msgpack.unpackb(data_bytes, raw=False)
-            return cls.deserialize(data)
-        except Exception as e:
-            logger.error(f"Errore nella deserializzazione MessagePack del mondo: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-            return cls()  # Ritorna un mondo vuoto
-        
     def clear(self) -> None:
         """Rimuove tutte le entità e gli eventi dal mondo"""
         # Svuota tutti i sistemi
@@ -738,57 +861,68 @@ class World:
         
         logger.debug("Mondo svuotato completamente")
         
-    def get_player_entity(self) -> Optional['Entity']:
+    def get_player_entity(self) -> Optional[Giocatore]:
         """
-        Recupera l'entità del giocatore
-        
-        Returns:
-            Optional[Entity]: L'entità del giocatore o None se non esiste
+        Recupera l'entità del giocatore, assicurandosi che sia un'istanza di Giocatore.
         """
-        # Cerca le entità con il tag "player"
-        player_entities = self.find_entities_by_tag("player")
-        logger.info(f"Ricerca entità con tag 'player': trovate {len(player_entities)} entità")
-        
-        if player_entities:
-            player_entity = player_entities[0]
-            logger.info(f"Trovata entità giocatore con tag: {player_entity.id} con nome {player_entity.name}")
+        player_entities_tagged = self.find_entities_by_tag("player") 
+        logger.info(f"[get_player_entity] Ricerca entità con tag 'player': trovate {len(player_entities_tagged)} entità.")
+
+        if not player_entities_tagged:
+            logger.error("[get_player_entity] Nessuna entità con tag 'player' trovata.")
+            # Tentativo di fallback: cercare un'istanza di Giocatore non taggata tra tutte le entità
+            # Questo potrebbe essere lento se ci sono molte entità.
+            try:
+                from entities.giocatore import Giocatore as RPGGiocatore # Import specifico
+                for entity_obj in self.entities.values():
+                    if isinstance(entity_obj, RPGGiocatore):
+                        logger.warning(f"[get_player_entity] FALLBACK: Trovato Giocatore (ID: {entity_obj.id}) non taggato. Tento di usarlo e aggiungo tag 'player'.")
+                        # Aggiungi il tag e reindex
+                        if not hasattr(entity_obj, 'tags') or not isinstance(entity_obj.tags, set):
+                            entity_obj.tags = set()
+                        if "player" not in entity_obj.tags:
+                             entity_obj.tags.add("player")
+                             self._reindex_tags_for_entity(entity_obj) # Reindex esplicitamente
+                        return entity_obj # Restituisce la prima istanza di Giocatore trovata
+            except ImportError:
+                logger.error("[get_player_entity] Impossibile importare Giocatore per il fallback.")
             
-            # Verifica se questa è un'entità wrapper con un giocatore legacy
-            if hasattr(player_entity, "_legacy_player"):
-                # Restituisci il giocatore legacy invece dell'entità wrapper
-                # Questo mantiene la compatibilità con il codice esistente
-                legacy_player = getattr(player_entity, "_legacy_player")
-                logger.info(f"Restituisco giocatore legacy: {legacy_player.nome}")
-                return legacy_player
-                
-            return player_entity  # Restituisci la prima entità giocatore trovata
+            logger.error("[get_player_entity] Fallback fallito o Giocatore non importabile. Nessun Giocatore trovato.")
+            return None
+
+        # Abbiamo almeno un'entità con tag 'player'
+        # Se ce n'è più di una, prendiamo la prima e logghiamo un warning.
+        if len(player_entities_tagged) > 1:
+            ids = [getattr(p, 'id', 'N/A') for p in player_entities_tagged]
+            logger.warning(f"[get_player_entity] ATTENZIONE: Trovate {len(player_entities_tagged)} entità con tag 'player' (IDs: {ids}). Verrà usata la prima: {getattr(player_entities_tagged[0], 'id', 'N/A')}.")
         
-        # Piano B: Cerca entità basandoci sul nome
-        logger.warning("Nessuna entità con tag 'player' trovata. Tentativo con nome entità...")
-        for entity in self.entities.values():
-            if entity.name.lower() in ["player", "testplayer"]:
-                logger.info(f"Trovata entità giocatore dal nome: {entity.id} con nome {entity.name}")
-                # Aggiunge automaticamente il tag
-                entity.add_tag("player")
-                
-                # Verifica se questa è un'entità wrapper con un giocatore legacy
-                if hasattr(entity, "_legacy_player"):
-                    legacy_player = getattr(entity, "_legacy_player")
-                    logger.info(f"Restituisco giocatore legacy: {legacy_player.nome}")
-                    return legacy_player
-                    
-                return entity
+        potential_player_entity = player_entities_tagged[0]
+        entity_id = getattr(potential_player_entity, 'id', 'N/A')
+        entity_name = getattr(potential_player_entity, 'nome', getattr(potential_player_entity, 'name', 'N/A'))
+        entity_actual_type_name = type(potential_player_entity).__name__
+
+        logger.info(f"[get_player_entity] Entità con tag 'player' selezionata: ID={entity_id}, Nome='{entity_name}', TipoAttuale='{entity_actual_type_name}'")
+
+        try:
+            from entities.giocatore import Giocatore as RPGGiocatore
+            if isinstance(potential_player_entity, RPGGiocatore):
+                logger.info(f"[get_player_entity] L'entità (ID: {entity_id}) è un'istanza di Giocatore. Perfetto.")
+                return potential_player_entity
+        except ImportError:
+             logger.error(f"[get_player_entity] Impossibile importare Giocatore per controllo istanza su entità {entity_id}.")
+             # Non possiamo confermare, ma se ha il tag player, la restituiamo con un warning.
+             logger.warning(f"[get_player_entity] Restituisco entità {entity_id} come giocatore basandomi sul tag, ma non ho potuto verificare il tipo Giocatore.")
+             return potential_player_entity # Restituisce l'oggetto così com'è
+
+        # Se arriva qui, l'entità taggata come 'player' NON è un'istanza di Giocatore (o non abbiamo potuto verificarlo).
+        logger.warning(f"[get_player_entity] ATTENZIONE: L'entità con tag 'player' (ID: {entity_id}) è di tipo '{entity_actual_type_name}' e non è (o non è stato possibile verificare come) 'Giocatore'.")
         
-        # Piano C: Cerca entità con attributo "è_giocatore"
-        logger.warning("Nessuna entità con nome 'Player' trovata. Tentativo con attributo...")
-        for entity in self.entities.values():
-            if hasattr(entity, "è_giocatore") and entity.è_giocatore:
-                logger.info(f"Trovata entità giocatore dall'attributo: {entity.id}")
-                entity.add_tag("player")
-                return entity
-                
-        # Se non troviamo nessuna entità, restituisci None
-        logger.error("Nessuna entità giocatore trovata con alcun metodo!")
+        # A questo punto, la deserializzazione dovrebbe aver già creato il tipo corretto se 'tipo: Giocatore' era nei dati.
+        # Se è un core.ecs.entity.Entity, è probabile un problema nel file di salvataggio o nella logica di serializzazione precedente.
+        # Non tentiamo una conversione qui, perché potrebbe portare a perdita di dati o stato inconsistente.
+        # Il problema dovrebbe essere risolto a monte (corretta serializzazione o file di salvataggio).
+
+        logger.error(f"[get_player_entity] L'entità con tag 'player' (ID: {entity_id}) non è un'istanza di Giocatore. Questo indica un problema nel salvataggio o nella deserializzazione. Impossibile restituire un Giocatore valido.")
         return None
         
     def inizializza_sistemi(self):
@@ -945,3 +1079,77 @@ class World:
             import traceback
             logger.error(traceback.format_exc())
             return False 
+
+    # --- METODI FSM AGGIUNTI ---
+    def get_current_fsm_state(self) -> Optional['EnhancedBaseState']:
+        return self.current_fsm_state
+
+    def _set_current_fsm_state_internal(self, new_state_instance: Optional['EnhancedBaseState']):
+        """Metodo interno per cambiare lo stato ed eseguire enter/exit."""
+        previous_state = self.current_fsm_state
+        
+        if previous_state and hasattr(previous_state, 'exit') and callable(getattr(previous_state, 'exit')):
+            logger.debug(f"[World FSM - {self.session_id}] Eseguo exit per stato precedente: {type(previous_state).__name__}")
+            previous_state.exit()
+        
+        self.current_fsm_state = new_state_instance
+        logger.info(f"[World FSM - {self.session_id}] Stato FSM corrente impostato a: {type(new_state_instance).__name__ if new_state_instance else 'None'}")
+
+        if new_state_instance:
+            if hasattr(new_state_instance, 'set_game_context') and callable(getattr(new_state_instance, 'set_game_context')):
+                new_state_instance.set_game_context(self) 
+            elif hasattr(new_state_instance, 'gioco'): # Per compatibilità con stati più vecchi
+                new_state_instance.gioco = self
+            
+            # Se gli stati necessitano di un game_state_manager e World ne ha uno:
+            # if hasattr(new_state_instance, 'game_state_manager') and hasattr(self, 'game_state_manager'):
+            #    new_state_instance.game_state_manager = self.game_state_manager
+
+            if hasattr(new_state_instance, 'enter') and callable(getattr(new_state_instance, 'enter')):
+                logger.debug(f"[World FSM - {self.session_id}] Eseguo enter per nuovo stato: {type(new_state_instance).__name__}")
+                new_state_instance.enter()
+        
+        # Esempio di emissione evento EventBus per cambio stato globale
+        # from core.event_bus import EventBus
+        # import core.events as Events 
+        # EventBus.get_instance().emit(Events.GAME_STATE_CHANGED, 
+        #                             session_id=self.session_id,
+        #                             new_state_name=type(new_state_instance).__name__ if new_state_instance else "None")
+
+    def change_fsm_state(self, new_state_instance: 'EnhancedBaseState'):
+        logger.info(f"[World FSM - {self.session_id}] Richiesta change_fsm_state a {type(new_state_instance).__name__}")
+        self.fsm_stack.clear()
+        self._set_current_fsm_state_internal(new_state_instance)
+
+    def push_fsm_state(self, new_state_instance: 'EnhancedBaseState'):
+        logger.info(f"[World FSM - {self.session_id}] Richiesta push_fsm_state con {type(new_state_instance).__name__}")
+        if self.current_fsm_state:
+            if hasattr(self.current_fsm_state, 'pause') and callable(getattr(self.current_fsm_state, 'pause')):
+                 logger.debug(f"[World FSM - {self.session_id}] Eseguo pause per stato corrente: {type(self.current_fsm_state).__name__}")
+                 self.current_fsm_state.pause()
+            elif hasattr(self.current_fsm_state, 'exit') and callable(getattr(self.current_fsm_state, 'exit')): # Fallback se pause non esiste
+                 logger.debug(f"[World FSM - {self.session_id}] Eseguo exit (come pause) per stato corrente: {type(self.current_fsm_state).__name__}")
+                 self.current_fsm_state.exit() # Lo stato attuale esce prima di essere messo nello stack e rimpiazzato
+            self.fsm_stack.append(self.current_fsm_state)
+        self._set_current_fsm_state_internal(new_state_instance)
+
+    def pop_fsm_state(self) -> Optional['EnhancedBaseState']:
+        logger.info(f"[World FSM - {self.session_id}] Richiesta pop_fsm_state. Stack size attuale: {len(self.fsm_stack)}")
+        # L'exit dello stato che viene poppato è già gestito da _set_current_fsm_state_internal
+        # quando imposta il nuovo stato (che sarà quello precedente dallo stack, o None).
+        
+        if self.fsm_stack:
+            previous_state_from_stack = self.fsm_stack.pop()
+            self._set_current_fsm_state_internal(previous_state_from_stack) 
+            # Se si vuole un comportamento di "resume" specifico per gli stati ripristinati:
+            # if previous_state_from_stack and hasattr(previous_state_from_stack, 'resume') and callable(getattr(previous_state_from_stack, 'resume')):
+            #    logger.debug(f"[World FSM - {self.session_id}] Eseguo resume per stato ripristinato: {type(previous_state_from_stack).__name__}")
+            #    previous_state_from_stack.resume()
+            # elif previous_state_from_stack and hasattr(previous_state_from_stack, 'enter'): # fallback a enter
+            #    # L'enter è già chiamato da _set_current_fsm_state_internal
+            #    pass
+            return previous_state_from_stack
+        else:
+            logger.warning(f"[World FSM - {self.session_id}] Tentativo di pop da uno stack FSM vuoto.")
+            self._set_current_fsm_state_internal(None)
+            return None 

@@ -2,7 +2,6 @@ import os
 import json
 import shutil
 import logging
-import msgpack
 from typing import Dict, Any, List, Optional, Union, Tuple, TypeVar, Type, cast
 from pathlib import Path
 
@@ -15,22 +14,20 @@ T = TypeVar('T')
 class DataManager:
     """
     Gestore centralizzato per caricare e salvare i dati del gioco.
-    Supporta sia il formato JSON che MessagePack.
+    Standardizzato su formato JSON.
     """
     
-    def __init__(self, data_dir: str = "data", usa_msgpack: bool = True):
+    def __init__(self, data_dir: str = "data"):
         """
         Inizializza il gestore dati.
         
         Args:
             data_dir: Directory principale dei dati
-            usa_msgpack: Se True, usa MessagePack come formato predefinito
         """
         self.data_dir = data_dir
-        self.usa_msgpack = usa_msgpack
         self._crea_directory_se_necessario(data_dir)
         logger.info(f"DataManager inizializzato con directory {data_dir}")
-        logger.info(f"Formato dati predefinito: {'MessagePack' if usa_msgpack else 'JSON'}")
+        logger.info(f"Formato dati standardizzato: JSON")
     
     def _crea_directory_se_necessario(self, percorso: str) -> None:
         """
@@ -50,14 +47,14 @@ class DataManager:
         Args:
             categoria: Categoria dei dati (es. "mappe", "npc", "items")
             nome_file: Nome del file
-            estensione: Estensione del file (.json o .msgpack)
+            estensione: Estensione del file (default: .json)
             
         Returns:
             str: Percorso completo del file
         """
-        # Se l'estensione non è specificata, usa quella predefinita
+        # Se l'estensione non è specificata, usa .json
         if estensione is None:
-            estensione = ".msgpack" if self.usa_msgpack else ".json"
+            estensione = ".json"
         
         # Assicurati che l'estensione inizi con un punto
         if not estensione.startswith("."):
@@ -75,7 +72,7 @@ class DataManager:
     
     def salva_json(self, categoria: str, nome_file: str, dati: Dict[str, Any]) -> bool:
         """
-        Salva i dati in formato JSON.
+        Salva i dati in un file JSON.
         
         Args:
             categoria: Categoria dei dati
@@ -88,38 +85,16 @@ class DataManager:
         try:
             percorso = self._percorso_completo(categoria, nome_file, ".json")
             with open(percorso, 'w', encoding='utf-8') as f:
-                json.dump(dati, f, ensure_ascii=False, indent=2)
+                json.dump(dati, f, indent=4, ensure_ascii=False)
             logger.debug(f"Dati salvati in {percorso}")
             return True
         except Exception as e:
             logger.error(f"Errore nel salvataggio JSON in {nome_file}: {e}")
             return False
     
-    def salva_msgpack(self, categoria: str, nome_file: str, dati: Dict[str, Any]) -> bool:
-        """
-        Salva i dati in formato MessagePack.
-        
-        Args:
-            categoria: Categoria dei dati
-            nome_file: Nome del file
-            dati: Dati da salvare
-            
-        Returns:
-            bool: True se il salvataggio è riuscito, False altrimenti
-        """
-        try:
-            percorso = self._percorso_completo(categoria, nome_file, ".msgpack")
-            with open(percorso, 'wb') as f:
-                msgpack.pack(dati, f, use_bin_type=True)
-            logger.debug(f"Dati salvati in formato MessagePack in {percorso}")
-            return True
-        except Exception as e:
-            logger.error(f"Errore nel salvataggio MessagePack in {nome_file}: {e}")
-            return False
-    
     def salva(self, categoria: str, nome_file: str, dati: Dict[str, Any]) -> bool:
         """
-        Salva i dati nel formato predefinito (JSON o MessagePack).
+        Salva i dati in formato JSON.
         
         Args:
             categoria: Categoria dei dati
@@ -129,10 +104,7 @@ class DataManager:
         Returns:
             bool: True se il salvataggio è riuscito, False altrimenti
         """
-        if self.usa_msgpack:
-            return self.salva_msgpack(categoria, nome_file, dati)
-        else:
-            return self.salva_json(categoria, nome_file, dati)
+        return self.salva_json(categoria, nome_file, dati)
     
     def carica_json(self, categoria: str, nome_file: str) -> Optional[Dict[str, Any]]:
         """
@@ -161,33 +133,9 @@ class DataManager:
             logger.error(f"Errore nel caricamento JSON da {nome_file}: {e}")
             return None
     
-    def carica_msgpack(self, categoria: str, nome_file: str) -> Optional[Dict[str, Any]]:
-        """
-        Carica i dati da un file MessagePack.
-        
-        Args:
-            categoria: Categoria dei dati
-            nome_file: Nome del file
-            
-        Returns:
-            Optional[Dict[str, Any]]: Dati caricati o None se il caricamento fallisce
-        """
-        try:
-            percorso = self._percorso_completo(categoria, nome_file, ".msgpack")
-            with open(percorso, 'rb') as f:
-                dati = msgpack.unpack(f, raw=False)
-            logger.debug(f"Dati caricati da MessagePack {percorso}")
-            return dati
-        except FileNotFoundError:
-            logger.warning(f"File MessagePack non trovato: {nome_file}")
-            return None
-        except Exception as e:
-            logger.error(f"Errore nel caricamento MessagePack da {nome_file}: {e}")
-            return None
-    
     def carica(self, categoria: str, nome_file: str) -> Optional[Dict[str, Any]]:
         """
-        Carica i dati dal formato predefinito, con fallback all'altro formato.
+        Carica i dati da un file JSON.
         
         Args:
             categoria: Categoria dei dati
@@ -199,23 +147,7 @@ class DataManager:
         # Rimuovi l'estensione dal nome del file se presente
         nome_base = nome_file.rsplit('.', 1)[0] if '.' in nome_file else nome_file
         
-        # Prova prima con il formato predefinito
-        if self.usa_msgpack:
-            dati = self.carica_msgpack(categoria, nome_base)
-            if dati is not None:
-                return dati
-            
-            # Fallback su JSON
-            logger.info(f"Fallback su JSON per {nome_base}")
-            return self.carica_json(categoria, nome_base)
-        else:
-            dati = self.carica_json(categoria, nome_base)
-            if dati is not None:
-                return dati
-            
-            # Fallback su MessagePack
-            logger.info(f"Fallback su MessagePack per {nome_base}")
-            return self.carica_msgpack(categoria, nome_base)
+        return self.carica_json(categoria, nome_base)
     
     def carica_oggetto(self, categoria: str, nome_file: str, 
                       classe: Type[T], metodo_creazione: str = "from_dict") -> Optional[T]:
@@ -281,16 +213,17 @@ class DataManager:
         
         Args:
             categoria: Categoria dei dati
-            estensione: Estensione dei file da elencare (.json o .msgpack)
+            estensione: Estensione dei file da elencare (.json per default)
             
         Returns:
             List[str]: Lista dei nomi dei file senza estensione
         """
-        # Se l'estensione non è specificata, usa entrambe
-        estensioni = [estensione] if estensione else ['.json', '.msgpack'] if self.usa_msgpack else ['.json']
+        # Se l'estensione non è specificata, usa .json
+        estensione = estensione or '.json'
         
-        # Assicurati che le estensioni inizino con un punto
-        estensioni = [f".{e}" if not e.startswith(".") else e for e in estensioni]
+        # Assicurati che l'estensione inizi con un punto
+        if not estensione.startswith("."):
+            estensione = f".{estensione}"
         
         # Percorso della categoria
         categoria_dir = os.path.join(self.data_dir, categoria)
@@ -299,13 +232,12 @@ class DataManager:
         if not os.path.exists(categoria_dir):
             return []
         
-        # Elenco dei file che hanno una delle estensioni specificate
+        # Elenco dei file che hanno l'estensione specificata
         nomi_file = set()
-        for e in estensioni:
-            for nome in os.listdir(categoria_dir):
-                if nome.endswith(e):
-                    # Aggiungi il nome del file senza estensione
-                    nomi_file.add(nome[:-len(e)])
+        for nome in os.listdir(categoria_dir):
+            if nome.endswith(estensione):
+                # Aggiungi il nome del file senza estensione
+                nomi_file.add(nome[:-len(estensione)])
         
         # Converti il set in una lista ordinata
         return sorted(list(nomi_file))
@@ -360,9 +292,8 @@ class DataManager:
         
         # Controlla se esiste con estensione JSON
         percorso_json = self._percorso_completo(categoria, nome_base, ".json")
-        percorso_msgpack = self._percorso_completo(categoria, nome_base, ".msgpack")
         
-        return os.path.exists(percorso_json) or os.path.exists(percorso_msgpack)
+        return os.path.exists(percorso_json)
     
     def elimina_file(self, categoria: str, nome_file: str) -> bool:
         """
@@ -378,29 +309,18 @@ class DataManager:
         # Rimuovi l'estensione dal nome del file se presente
         nome_base = nome_file.rsplit('.', 1)[0] if '.' in nome_file else nome_file
         
-        successo = False
-        
         # Elimina il file JSON se esiste
         percorso_json = self._percorso_completo(categoria, nome_base, ".json")
         if os.path.exists(percorso_json):
             try:
                 os.remove(percorso_json)
                 logger.debug(f"File eliminato: {percorso_json}")
-                successo = True
+                return True
             except Exception as e:
                 logger.error(f"Errore nell'eliminazione di {percorso_json}: {e}")
+                return False
         
-        # Elimina il file MessagePack se esiste
-        percorso_msgpack = self._percorso_completo(categoria, nome_base, ".msgpack")
-        if os.path.exists(percorso_msgpack):
-            try:
-                os.remove(percorso_msgpack)
-                logger.debug(f"File eliminato: {percorso_msgpack}")
-                successo = True
-            except Exception as e:
-                logger.error(f"Errore nell'eliminazione di {percorso_msgpack}: {e}")
-        
-        return successo
+        return False
     
     def copia_file(self, categoria_src: str, nome_file_src: str, 
                   categoria_dest: str, nome_file_dest: str) -> bool:
@@ -510,109 +430,11 @@ class DataManager:
             logger.error(f"Errore nel backup di {categoria_dir}: {e}")
             return False
     
-    def converti_json_a_msgpack(self, categoria: str, nome_file: str) -> bool:
-        """
-        Converte un file JSON in MessagePack.
-        
-        Args:
-            categoria: Categoria dei dati
-            nome_file: Nome del file
-            
-        Returns:
-            bool: True se la conversione è riuscita, False altrimenti
-        """
-        # Rimuovi l'estensione dal nome del file se presente
-        nome_base = nome_file.rsplit('.', 1)[0] if '.' in nome_file else nome_file
-        
-        # Carica i dati dal file JSON
-        dati = self.carica_json(categoria, nome_base)
-        if dati is None:
-            return False
-        
-        # Salva i dati in formato MessagePack
-        return self.salva_msgpack(categoria, nome_base, dati)
-    
-    def converti_msgpack_a_json(self, categoria: str, nome_file: str) -> bool:
-        """
-        Converte un file MessagePack in JSON.
-        
-        Args:
-            categoria: Categoria dei dati
-            nome_file: Nome del file
-            
-        Returns:
-            bool: True se la conversione è riuscita, False altrimenti
-        """
-        # Rimuovi l'estensione dal nome del file se presente
-        nome_base = nome_file.rsplit('.', 1)[0] if '.' in nome_file else nome_file
-        
-        # Carica i dati dal file MessagePack
-        dati = self.carica_msgpack(categoria, nome_base)
-        if dati is None:
-            return False
-        
-        # Salva i dati in formato JSON
-        return self.salva_json(categoria, nome_base, dati)
-    
-    def converti_directory(self, categoria: str, da_json_a_msgpack: bool = True) -> Tuple[int, int]:
-        """
-        Converte tutti i file in una categoria tra JSON e MessagePack.
-        
-        Args:
-            categoria: Categoria dei dati
-            da_json_a_msgpack: Se True, converte da JSON a MessagePack; altrimenti, il contrario
-            
-        Returns:
-            Tuple[int, int]: (numero di file convertiti con successo, numero totale di file)
-        """
-        # Estensione di origine e destinazione
-        estensione_src = ".json" if da_json_a_msgpack else ".msgpack"
-        
-        # Percorso della categoria
-        categoria_dir = os.path.join(self.data_dir, categoria)
-        
-        # Se la directory non esiste, restituisci (0, 0)
-        if not os.path.exists(categoria_dir):
-            return (0, 0)
-        
-        # Elenco dei file con l'estensione di origine
-        file_da_convertire = [
-            nome for nome in os.listdir(categoria_dir)
-            if nome.endswith(estensione_src)
-        ]
-        
-        successi = 0
-        
-        # Converti ogni file
-        for nome_file in file_da_convertire:
-            # Rimuovi l'estensione
-            nome_base = nome_file[:-len(estensione_src)]
-            
-            # Converti il file
-            if da_json_a_msgpack:
-                if self.converti_json_a_msgpack(categoria, nome_base):
-                    successi += 1
-            else:
-                if self.converti_msgpack_a_json(categoria, nome_base):
-                    successi += 1
-        
-        return (successi, len(file_da_convertire))
-    
-    def cambia_formato_predefinito(self, usa_msgpack: bool) -> None:
-        """
-        Cambia il formato predefinito per il salvataggio e caricamento dei dati.
-        
-        Args:
-            usa_msgpack: Se True, usa MessagePack; altrimenti, usa JSON
-        """
-        self.usa_msgpack = usa_msgpack
-        logger.info(f"Formato dati predefinito cambiato a {'MessagePack' if usa_msgpack else 'JSON'}")
-    
     def get_formato_predefinito(self) -> str:
         """
-        Restituisce il formato predefinito.
+        Restituisce il formato dei dati.
         
         Returns:
-            str: "msgpack" o "json"
+            str: "json"
         """
-        return "msgpack" if self.usa_msgpack else "json" 
+        return "json" 

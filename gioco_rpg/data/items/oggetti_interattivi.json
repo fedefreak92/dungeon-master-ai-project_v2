@@ -541,5 +541,53 @@
         "chiusa"
       ]
     }
+  },
+  {
+    "nome": "forziere_tesoro",
+    "tipo": "baule",
+    "descrizione": "Un forziere che sembra contenere un tesoro.",
+    "stato": "chiuso",
+    "richiede_chiave": false,
+    "token": "C",
+    "contenuto": [
+        {"nome": "Moneta d'oro", "tipo": "comune", "valore": 10, "descrizione": "Dieci monete d'oro."}
+    ]
+  },
+  {
+    "nome": "scaffale_pozioni",
+    "tipo": "contenitore", 
+    "descrizione": "Uno scaffale con diverse pozioni.",
+    "stato": "normale",
+    "token": "S",
+    "contenuto": [
+        {"nome": "Pozione di cura leggera", "tipo": "cura_leggera", "effetto": {"cura_leggera": 5}, "valore": 10}
+    ]
+  },
+    {
+    "nome": "scaffale_armi",
+    "tipo": "contenitore", 
+    "descrizione": "Uno scaffale con alcune armi semplici.",
+    "stato": "normale",
+    "token": "S",
+    "contenuto": [
+        {"nome": "Pugnale", "tipo": "arma", "effetto": {"forza": 2}, "valore": 10}
+    ]
+  },
+  {
+    "nome": "baule",
+    "tipo": "baule",
+    "descrizione": "Un semplice baule di legno.",
+    "stato": "chiuso",
+    "richiede_chiave": false,
+    "token": "C",
+    "contenuto": []
+  },
+  {
+    "nome": "pozzo",
+    "tipo": "oggetto_interattivo",
+    "descrizione": "Un vecchio pozzo al centro del villaggio.",
+    "stato": "normale",
+    "token": "P",
+    "stati_possibili": { "normale": [] }
   }
 ]

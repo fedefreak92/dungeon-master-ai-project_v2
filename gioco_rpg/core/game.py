@@ -2,7 +2,6 @@ from world.gestore_mappe import GestitoreMappe
 from core.io_interface import GUI2DIO
 import json
 import ast  # Importa ast per literal_eval
-import msgpack  # Importa msgpack per serializzazione binaria
 
 
 class Game:
@@ -293,7 +292,7 @@ class Game:
 
     def salva(self, file_path="salvataggio.json"):
         """
-        Salva lo stato corrente del gioco in un file JSON o MessagePack
+        Salva lo stato corrente del gioco in un file JSON
         
         Args:
             file_path (str): Percorso del file di salvataggio
@@ -303,15 +302,14 @@ class Game:
         """
         try:
             # Importa il modulo di configurazione
-            from util.config import get_save_path, create_backup, SAVE_FORMAT_VERSION, USE_MSGPACK
+            from util.config import get_save_path, create_backup, SAVE_FORMAT_VERSION
             import logging
             
             logger = logging.getLogger("gioco_rpg")
             
-            # Determina l'estensione in base alla configurazione
-            if USE_MSGPACK and not file_path.endswith('.json'):
-                if not file_path.endswith('.msgpack'):
-                    file_path = file_path + '.msgpack'
+            # Assicurati che il file abbia estensione .json
+            if not file_path.endswith('.json'):
+                file_path = file_path + '.json'
             
             # Converti il percorso usando il modulo di configurazione
             save_path = get_save_path(file_path)
@@ -439,17 +437,9 @@ class Game:
             # Serializza e salva su file
             save_path.parent.mkdir(exist_ok=True, parents=True)  # Assicura che la directory esista
             
-            # Determine il formato di salvataggio (JSON o MessagePack)
-            using_msgpack = USE_MSGPACK and file_path.endswith('.msgpack')
-            
-            if using_msgpack:
-                with open(save_path, 'wb') as f:
-                    msgpack.pack(data, f, use_bin_type=True)
-                logger.info(f"Salvataggio completato in formato MessagePack: {save_path}")
-            else:
-                with open(save_path, 'w', encoding='utf-8') as f:
-                    json.dump(data, f, indent=4, ensure_ascii=False)
-                logger.info(f"Salvataggio completato in formato JSON: {save_path}")
+            with open(save_path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=4, ensure_ascii=False)
+            logger.info(f"Salvataggio completato in formato JSON: {save_path}")
                 
             return True
             
@@ -461,7 +451,7 @@ class Game:
     
     def carica(self, file_path="salvataggio.json"):
         """
-        Carica uno stato di gioco da un file JSON o MessagePack
+        Carica uno stato di gioco da un file JSON
         
         Args:
             file_path (str): Percorso del file di salvataggio
@@ -475,6 +465,11 @@ class Game:
             import logging
             
             logger = logging.getLogger("gioco_rpg")
+            
+            # Assicurati che il file abbia estensione .json
+            if not file_path.endswith('.json'):
+                file_path = file_path + '.json'
+                
             save_path = get_save_path(file_path)
             
             # Verifica esistenza file
@@ -483,19 +478,12 @@ class Game:
                 self.io.mostra_messaggio(f"File di salvataggio non trovato: {save_path}")
                 return False
             
-            # Determina il formato del file in base all'estensione
-            using_msgpack = file_path.endswith('.msgpack')
-            
             # Carica e valida dati
             try:
-                if using_msgpack:
-                    with open(save_path, 'rb') as f:
-                        data = msgpack.unpack(f, raw=False)
-                else:
-                    with open(save_path, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-            except (json.JSONDecodeError, msgpack.exceptions.ExtraData, msgpack.exceptions.UnpackValueError) as e:
-                logger.error(f"File di salvataggio non valido ({using_msgpack and 'MessagePack' or 'JSON'} errato): {e}")
+                with open(save_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+            except json.JSONDecodeError as e:
+                logger.error(f"File di salvataggio non valido (JSON errato): {e}")
                 self.io.mostra_messaggio("File di salvataggio danneggiato")
                 return False
                 
