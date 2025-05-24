@@ -10,6 +10,13 @@ from items.oggetto_interattivo import OggettoInterattivo, Porta, Baule, Leva, Tr
 from util.data_manager import get_data_manager
 from util.safe_loader import SafeLoader
 from util.validators import valida_oggetto, trova_posizione_valida, verifica_coordinate_valide
+from typing import TYPE_CHECKING, Optional
+
+# Importa World per il type hinting del contesto, se necessario
+if TYPE_CHECKING:
+    from core.ecs.world import World
+
+logger = logging.getLogger(__name__)
 
 class OggettiManager:
     """
@@ -233,13 +240,14 @@ class OggettiManager:
         logging.info(f"Oggetto {oggetto.nome} posizionato in ({x}, {y}) su mappa {mappa.nome}")
         return True
     
-    def carica_oggetti_su_mappa(self, mappa, nome_mappa):
+    def carica_oggetti_su_mappa(self, mappa, nome_mappa, world_context: Optional['World'] = None):
         """
         Carica gli oggetti interattivi per una mappa dalle configurazioni JSON.
         
         Args:
             mappa (Mappa): Oggetto mappa in cui posizionare gli oggetti
             nome_mappa (str): Nome della mappa
+            world_context: Contest del mondo (opzionale)
             
         Returns:
             bool: True se l'operazione è riuscita, False in caso di errori gravi
@@ -330,6 +338,14 @@ class OggettiManager:
             for oggetto, x, y in oggetti_da_inserire:
                 # Posiziona l'oggetto sulla mappa
                 mappa.aggiungi_oggetto(oggetto, x, y)
+                logger.debug(f"[CARICA_OGGETTI_SU_MAPPA_DEBUG] Controllo world_context: {world_context is not None}, Oggetto: {getattr(oggetto, 'nome', 'N/A')}")
+                # Se abbiamo un contesto del mondo, aggiungiamo l'entità anche lì
+                if world_context and hasattr(world_context, 'add_entity') and oggetto not in world_context.entities.values():
+                    logger.debug(f"[CARICA_OGGETTI_SU_MAPPA] Aggiungo oggetto '{oggetto.nome}' (ID: {getattr(oggetto, 'id', 'N/A')}) al world_context.")
+                    world_context.add_entity(oggetto)
+                elif world_context and hasattr(world_context, 'add_entity') and oggetto in world_context.entities.values():
+                    logger.debug(f"[CARICA_OGGETTI_SU_MAPPA] Oggetto '{oggetto.nome}' (ID: {getattr(oggetto, 'id', 'N/A')}) già presente nel world_context. Non riaggiungo.")
+                
                 logging.info(f"Oggetto {oggetto.nome} posizionato in ({x}, {y}) su mappa {nome_mappa}")
             
             logging.info(f"Posizionati {len(oggetti_da_inserire)} oggetti su {len(mappe_oggetti)} definiti per la mappa {nome_mappa}")

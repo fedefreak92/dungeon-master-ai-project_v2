@@ -10,6 +10,8 @@ from datetime import datetime
 from collections import deque
 import threading
 from util.asset_manager import get_asset_manager
+from util.data_manager import get_data_manager
+from util.config import DATA_DIR, SAVE_DIR, MAPS_DIR
 
 # Configura il logger
 logger = logging.getLogger(__name__)
@@ -437,4 +439,117 @@ def _generate_sprite_sheets_async():
         duration = time.time() - start_time
         logger.info(f"Generazione sprite sheet completata in {duration:.2f} secondi (success: {result})")
     except Exception as e:
-        logger.error(f"Errore nella generazione asincrona degli sprite sheet: {e}") 
+        logger.error(f"Errore nella generazione asincrona degli sprite sheet: {e}")
+
+@api_diagnostics.route('/diagnostics/data_paths', methods=['GET'])
+def diagnostica_percorsi_dati():
+    """Endpoint per ottenere informazioni diagnostiche sui percorsi dati."""
+    try:
+        # Ottieni il data manager
+        data_manager = get_data_manager()
+        
+        # Esegui diagnostica completa
+        diagnostica = data_manager.diagnose_system_paths()
+        
+        # Aggiungi informazioni sulle directory principali
+        diagnostica["_directories"] = {
+            "DATA_DIR": str(DATA_DIR),
+            "DATA_DIR_exists": DATA_DIR.exists(),
+            "SAVE_DIR": str(SAVE_DIR),
+            "SAVE_DIR_exists": SAVE_DIR.exists(),
+            "MAPS_DIR": str(MAPS_DIR),
+            "MAPS_DIR_exists": MAPS_DIR.exists(),
+        }
+        
+        return jsonify({
+            "success": True,
+            "message": "Diagnostica completata",
+            "data": diagnostica
+        })
+    except Exception as e:
+        logger.error(f"Errore durante la diagnostica: {str(e)}")
+        return jsonify({
+            "success": False,
+            "message": f"Errore durante la diagnostica: {str(e)}",
+            "error": str(e)
+        }), 500
+
+@api_diagnostics.route('/diagnostics/classi', methods=['GET'])
+def diagnostica_classi():
+    """Endpoint per verificare le classi di personaggio."""
+    try:
+        # Ottieni il data manager
+        data_manager = get_data_manager()
+        
+        # Carica le classi
+        classi = data_manager.get_classes()
+        
+        # Raccogli informazioni sulle classi
+        info_classi = {
+            "numero_classi": len(classi) if isinstance(classi, dict) else 0,
+            "nomi_classi": list(classi.keys()) if isinstance(classi, dict) else [],
+            "data_type": type(classi).__name__,
+            "classi_complete": classi if isinstance(classi, dict) else None
+        }
+        
+        return jsonify({
+            "success": True,
+            "message": f"Trovate {info_classi['numero_classi']} classi",
+            "data": info_classi
+        })
+    except Exception as e:
+        logger.error(f"Errore durante la diagnostica delle classi: {str(e)}")
+        return jsonify({
+            "success": False,
+            "message": f"Errore durante la diagnostica delle classi: {str(e)}",
+            "error": str(e)
+        }), 500
+
+@api_diagnostics.route('/diagnostics/all_data', methods=['GET'])
+def diagnostica_tutti_i_dati():
+    """Endpoint per verificare tutti i tipi di dati disponibili."""
+    try:
+        # Ottieni il data manager
+        data_manager = get_data_manager()
+        
+        # Verifica tutti i tipi di dati
+        dati = {}
+        for data_type in data_manager._data_paths.keys():
+            try:
+                dati[data_type] = {
+                    "caricati": True,
+                    "tipo": None,
+                    "dimensione": 0,
+                    "errore": None
+                }
+                
+                # Tenta di caricare i dati
+                data = data_manager.load_data(data_type)
+                
+                # Raccogli informazioni
+                if isinstance(data, dict):
+                    dati[data_type]["tipo"] = "dict"
+                    dati[data_type]["dimensione"] = len(data)
+                    dati[data_type]["chiavi"] = list(data.keys())[:10]  # Limita a 10 chiavi
+                elif isinstance(data, list):
+                    dati[data_type]["tipo"] = "list"
+                    dati[data_type]["dimensione"] = len(data)
+                else:
+                    dati[data_type]["tipo"] = type(data).__name__
+                    dati[data_type]["dimensione"] = -1
+            except Exception as e:
+                dati[data_type]["caricati"] = False
+                dati[data_type]["errore"] = str(e)
+        
+        return jsonify({
+            "success": True,
+            "message": f"Diagnostica completata per {len(dati)} tipi di dati",
+            "data": dati
+        })
+    except Exception as e:
+        logger.error(f"Errore durante la diagnostica di tutti i dati: {str(e)}")
+        return jsonify({
+            "success": False,
+            "message": f"Errore durante la diagnostica di tutti i dati: {str(e)}",
+            "error": str(e)
+        }), 500 

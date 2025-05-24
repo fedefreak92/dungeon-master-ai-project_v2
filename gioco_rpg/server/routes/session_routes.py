@@ -13,10 +13,6 @@ from util.data_manager import get_data_manager
 from core.event_bus import EventBus
 from core.events import EventType
 
-# Aggiungi il supporto per MessagePack
-from server.utils.message_pack_middleware import supports_msgpack, accept_msgpack
-import msgpack
-
 # Configura il logger
 logger = logging.getLogger(__name__)
 
@@ -24,15 +20,10 @@ logger = logging.getLogger(__name__)
 session_routes = Blueprint('session_routes', __name__)
 
 @session_routes.route("/inizia", methods=["POST"])
-@accept_msgpack  # Aggiungi supporto per ricevere dati MessagePack
-@supports_msgpack  # Aggiungi supporto per rispondere con MessagePack
 def inizia_sessione():
     """Inizia una nuova sessione di gioco"""
-    # Gestisci sia richieste JSON che MessagePack
-    if hasattr(request, 'msgpack_data'):
-        data = request.msgpack_data
-    else:
-        data = request.json
+    # Ottieni i dati dalla richiesta
+    data = request.json
     
     # Validazione dei dati
     if not data:
@@ -212,21 +203,14 @@ def inizia_sessione():
         return jsonify({"success": False, "error": f"Errore interno: {str(e)}"}), 500
 
 @session_routes.route('/create', methods=['POST'])
-@accept_msgpack  # Aggiungi supporto per ricevere dati MessagePack
-@supports_msgpack  # Aggiungi supporto per rispondere con MessagePack
 def create_session():
     """Crea una nuova sessione di gioco (endpoint alternativo)"""
-    # Gestisci sia richieste JSON che MessagePack
-    if hasattr(request, 'msgpack_data'):
-        data = request.msgpack_data
-        logger.info("Ricevuti dati MessagePack per create_session")
-    else:
-        # Ottieni i dati dalla richiesta con gestione sicura del content-type
-        try:
-            data = request.get_json(force=True, silent=True) or {}
-        except Exception as e:
-            logger.warning(f"Errore nell'elaborazione del JSON: {e}")
-            data = {}
+    # Ottieni i dati dalla richiesta con gestione sicura del content-type
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+    except Exception as e:
+        logger.warning(f"Errore nell'elaborazione del JSON: {e}")
+        data = {}
     
     nome_personaggio = data.get("nome_personaggio", "Player")
     classe = data.get("classe", "guerriero")
@@ -318,37 +302,24 @@ def create_session():
     })
 
 @session_routes.route('/get/<id_sessione>', methods=['GET'])
-@supports_msgpack
 def get_session_data(id_sessione):
     """
-    Ottiene i dati di una sessione esistente, supportando sia JSON che MessagePack
-    in base all'header Accept del client.
+    Ottiene i dati di una sessione esistente.
     """
     # Controlla se la sessione esiste
     world = get_session(id_sessione)
     if not world:
         return jsonify({"success": False, "error": "Sessione non trovata"}), 404
     
-    # Determina il formato preferito
-    accept_header = request.headers.get('Accept', '')
-    use_msgpack = 'application/msgpack' in accept_header
-    
     # Crea la risposta
     try:
-        # Ottieni i dati serializzati
-        if use_msgpack:
-            # Usa direttamente il metodo serialize_msgpack del mondo
-            data_bytes = world.serialize_msgpack()
-            logger.info(f"Inviando dati sessione {id_sessione} in formato MessagePack, dimensione: {len(data_bytes)} bytes")
-            return Response(data_bytes, mimetype='application/msgpack')
-        else:
-            # Usa la serializzazione JSON standard
-            data = world.serialize()
-            return jsonify({
-                "success": True,
-                "session_id": id_sessione,
-                "data": data
-            })
+        # Usa la serializzazione JSON standard
+        data = world.serialize()
+        return jsonify({
+            "success": True,
+            "session_id": id_sessione,
+            "data": data
+        })
     except Exception as e:
         logger.error(f"Errore nel recupero della sessione {id_sessione}: {e}")
         import traceback
@@ -359,10 +330,9 @@ def get_session_data(id_sessione):
         }), 500
 
 @session_routes.route('/state/<id_sessione>', methods=['GET'])
-@supports_msgpack
 def get_session_state(id_sessione):
     """
-    Ottiene lo stato corrente di una sessione di gioco, supportando sia JSON che MessagePack.
+    Ottiene lo stato corrente di una sessione di gioco.
     Fornisce una risposta più compatta rispetto all'endpoint get_session_data.
     """
     # Controlla se la sessione esiste
@@ -409,18 +379,8 @@ def get_session_state(id_sessione):
                     "map": position.map_name
                 }
         
-        # Determina il formato preferito
-        accept_header = request.headers.get('Accept', '')
-        use_msgpack = 'application/msgpack' in accept_header
-        
-        if use_msgpack:
-            # Serializza in MessagePack
-            data_bytes = msgpack.packb(state_data, use_bin_type=True)
-            logger.info(f"Inviando stato sessione {id_sessione} in formato MessagePack, dimensione: {len(data_bytes)} bytes")
-            return Response(data_bytes, mimetype='application/msgpack')
-        else:
-            # Serializza in JSON
-            return jsonify(state_data)
+        # Serializza in JSON
+        return jsonify(state_data)
             
     except Exception as e:
         logger.error(f"Errore nel recupero dello stato della sessione {id_sessione}: {e}")
@@ -431,4 +391,3 @@ def get_session_state(id_sessione):
             "error": f"Errore nel recupero dello stato: {str(e)}"
         }), 500
 
-# ... existing code ... 

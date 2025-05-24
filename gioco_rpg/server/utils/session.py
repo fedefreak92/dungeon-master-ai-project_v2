@@ -8,6 +8,9 @@ import json
 from datetime import datetime
 from pathlib import Path
 from data.mappe import get_mappa
+from states.mappa.mappa_state import MappaState
+from core.event_bus import EventBus
+from core.events import EventType
 
 # Configura il logger
 logging.basicConfig(level=logging.INFO)
@@ -44,10 +47,9 @@ def get_session(id_sessione):
     """
     logger.info(f"Richiesta sessione con ID: {id_sessione}")
     
-    # Controlla se la sessione è già in memoria
-    if id_sessione in sessioni_attive:
+    world = sessioni_attive.get(id_sessione)
+    if world:
         logger.info(f"Sessione {id_sessione} trovata in memoria")
-        world = sessioni_attive[id_sessione]
         # Verifica integrità della sessione
         if hasattr(world, "entities"):
             logger.info(f"Sessione {id_sessione} valida, contiene {len(world.entities)} entità")
@@ -68,11 +70,7 @@ def get_session(id_sessione):
         return world
     
     logger.info(f"Sessione {id_sessione} non trovata in memoria, tentativo di caricamento da disco")
-    
-    # Altrimenti prova a caricarla dal disco
     world = carica_sessione(id_sessione)
-    
-    # Se è stata caricata con successo, memorizzala nel dizionario delle sessioni attive
     if world:
         logger.info(f"Sessione {id_sessione} caricata con successo da disco")
         sessioni_attive[id_sessione] = world
@@ -94,6 +92,43 @@ def get_session(id_sessione):
                 logger.info(f"Entità con tag 'player' dopo riparazione: {len(player_entities)}")
     else:
         logger.warning(f"Impossibile caricare la sessione {id_sessione} da disco")
+        return None
+
+    # ---> INIZIO MODIFICA: Inizializzazione Stato FSM <----
+    if world: # Assicurati che world esista prima di procedere
+        # Assegna l'ID della sessione all'oggetto world, se non ce l'ha già
+        # Questo è utile per i log dentro i metodi FSM di World
+        if not getattr(world, 'session_id', None):
+            world.session_id = id_sessione
+            logger.info(f"Impostato world.session_id a {id_sessione}")
+
+        # Controlla se uno stato FSM è già attivo (es. caricato da un salvataggio)
+        # e se l'oggetto world ha il metodo per ottenere lo stato FSM.
+        current_fsm_state_exists = False
+        if hasattr(world, 'get_current_fsm_state') and callable(getattr(world, 'get_current_fsm_state')):
+            if world.get_current_fsm_state():
+                current_fsm_state_exists = True
+                logger.info(f"Sessione {id_sessione} (World: {getattr(world, 'id', 'N/A')}) ha già uno stato FSM corrente: {type(world.get_current_fsm_state()).__name__}")
+        
+        if not current_fsm_state_exists:
+            if hasattr(world, 'change_fsm_state') and callable(getattr(world, 'change_fsm_state')):
+                logger.info(f"Nessuno stato FSM corrente per sessione {id_sessione} (World: {getattr(world, 'id', 'N/A')}), inizializzo a MappaState('taverna').")
+                # Crea lo stato iniziale. MappaState ora riceve il game_context (world) automaticamente
+                # quando viene impostato tramite i metodi FSM di World (_set_current_fsm_state_internal).
+                # Il costruttore di MappaState è stato aggiornato per accettare game_state_manager opzionale.
+                # Se MappaState ha bisogno di un GameStateManager specifico, deve essere passato qui
+                # o il World deve fornirlo quando imposta il contesto.
+                initial_state = MappaState(nome_luogo="taverna") # game_state_manager può essere omesso se MappaState lo gestisce o lo prende da World
+                world.change_fsm_state(initial_state) 
+            else:
+                logger.error(f"L'oggetto World per sessione {id_sessione} non ha il metodo change_fsm_state. Impossibile inizializzare lo stato FSM.")
+        
+        # Tentativo di riparazione qui se necessario, dopo che lo stato FSM potrebbe essere stato inizializzato
+        player_entities = world.find_entities_by_tag("player") if hasattr(world, "find_entities_by_tag") else []
+        if not player_entities and hasattr(world, 'id'): # Assicurati che world abbia un id per la riparazione
+            logger.warning(f"Sessione {id_sessione} ancora senza entità giocatore dopo potenziale init FSM, tentativo di riparazione.")
+            riparazione_diretta(world) # Chiama la funzione di riparazione esistente
+    # ---> FINE MODIFICA <----
     
     return world
 
@@ -104,51 +139,36 @@ def salva_sessione(id_sessione, world):
         player_entities = world.find_entities_by_tag("player") if hasattr(world, "find_entities_by_tag") else []
         logger.info(f"Salvataggio sessione {id_sessione}, giocatori presenti: {len(player_entities)}")
         if player_entities:
-            logger.info(f"Giocatore presente con ID: {player_entities[0].id}, nome: {player_entities[0].name}")
-        
+            # Assumiamo che il primo sia il giocatore principale della sessione per il logging
+            player_for_log = player_entities[0]
+            display_name_player_log = getattr(player_for_log, 'nome', getattr(player_for_log, 'name', player_for_log.id))
+            player_x = getattr(player_for_log, 'x', 'N/A')
+            player_y = getattr(player_for_log, 'y', 'N/A')
+            player_map = getattr(player_for_log, 'mappa_corrente', 'N/A')
+            logger.info(f"Giocatore presente con ID: {player_for_log.id}, nome: {display_name_player_log}")
+            logger.info(f"POSIZIONE AL SALVATAGGIO: x={player_x}, y={player_y}, mappa={player_map}")
+
         # Ottieni percorsi come oggetti Path
         session_path = Path(get_session_path(id_sessione))
-        msgpack_session_path = session_path.with_suffix('.msgpack')
         temp_session_path = session_path.with_suffix(session_path.suffix + ".tmp")
-        temp_msgpack_session_path = msgpack_session_path.with_suffix(msgpack_session_path.suffix + ".tmp")
         
         # Crea la directory delle sessioni se non esiste
         session_dir = session_path.parent
         session_dir.mkdir(parents=True, exist_ok=True)
         
-        # Salvataggio usando MessagePack (più veloce)
-        try:
-            # Serializza il mondo ECS con MessagePack
-            world_data_msgpack = world.serialize_msgpack()
-            
-            # Scrivi i dati serializzati nel file temporaneo
-            with open(temp_msgpack_session_path, 'wb') as f:
-                f.write(world_data_msgpack)
-            
-            # Rinomina il file temporaneo per rendere l'operazione atomica
-            if os.path.exists(msgpack_session_path):
-                os.remove(msgpack_session_path)
-            os.rename(temp_msgpack_session_path, msgpack_session_path)
-            
-            logger.info(f"Sessione {id_sessione} salvata con MessagePack in {msgpack_session_path}")
-            return True
-        except Exception as e:
-            logger.error(f"Errore nel salvataggio MessagePack della sessione {id_sessione}: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-            
-            # Fallback su JSON in caso di errore con MessagePack
-            logger.warning(f"Tentativo di fallback su JSON per la sessione {id_sessione}")
-            
         # Serializza il mondo ECS
         world_data = world.serialize()
         
-        # Verifica se ci sono entità player nei dati serializzati
+        # DEBUG: Verifica la posizione del giocatore nei dati serializzati
         if "entities" in world_data:
             player_ids = []
             for entity_id, entity_data in world_data["entities"].items():
                 if "tags" in entity_data and "player" in entity_data["tags"]:
                     player_ids.append(entity_id)
+                    player_x_serialized = entity_data.get('x', 'N/A')
+                    player_y_serialized = entity_data.get('y', 'N/A')
+                    player_map_serialized = entity_data.get('mappa_corrente', 'N/A')
+                    logger.info(f"POSIZIONE NEI DATI SERIALIZZATI: ID={entity_id}, x={player_x_serialized}, y={player_y_serialized}, mappa={player_map_serialized}")
             logger.info(f"Giocatori nei dati serializzati: {len(player_ids)}")
         
         # Verifica che il dizionario sia JSON-serializzabile
@@ -165,13 +185,27 @@ def salva_sessione(id_sessione, world):
                 "temporary_states": {}
             }
         
+        # Salva l'ID sessione nel dizionario del mondo per poterlo ricaricare
+        world_data["session_id_persisted"] = id_sessione
+        
         # Scrivi i dati serializzati nel file temporaneo
-        with open(temp_session_path, 'w') as f:
-            json.dump(world_data, f)
+        with open(temp_session_path, 'w', encoding='utf-8') as f:
+            json.dump(world_data, f, ensure_ascii=False, indent=2)
         
         # Rinomina il file temporaneo per rendere l'operazione atomica
         if os.path.exists(session_path):
+            try:
+                # Crea un backup prima di sovrascrivere
+                backup_path = session_path.with_suffix(session_path.suffix + ".bak")
+                import shutil
+                shutil.copy2(str(session_path), str(backup_path))
+                logger.debug(f"Creato backup della sessione in {backup_path}")
+            except Exception as e:
+                logger.warning(f"Non è stato possibile creare il backup della sessione: {e}")
+            
+            # Rimuovi il file originale
             os.remove(session_path)
+            
         os.rename(temp_session_path, session_path)
         
         logger.info(f"Sessione {id_sessione} salvata con successo")
@@ -187,30 +221,13 @@ def carica_sessione(id_sessione):
     """Carica lo stato del mondo ECS"""
     try:
         session_path = Path(get_session_path(id_sessione))
-        msgpack_session_path = session_path.with_suffix('.msgpack')
         
-        # Tenta prima di caricare da MessagePack (più veloce)
-        if msgpack_session_path.exists():
-            try:
-                # Leggi il file MessagePack
-                with open(msgpack_session_path, 'rb') as f:
-                    data_bytes = f.read()
-                
-                # Deserializza il mondo ECS da MessagePack
-                world = World.deserialize_msgpack(data_bytes)
-                logger.info(f"Sessione {id_sessione} caricata da MessagePack con successo")
-                return world
-            except Exception as e:
-                logger.error(f"Errore nel caricamento MessagePack della sessione {id_sessione}: {e}")
-                logger.warning(f"Tentativo fallback su JSON per la sessione {id_sessione}")
-                # Continua con il caricamento da JSON in caso di errore
-        
-        # Caricamento tradizionale da JSON
+        # Caricamento da JSON
         if not session_path.exists():
             logger.warning(f"File di sessione {session_path} non trovato")
             return None
         
-        # Prova prima con JSON (nuovo formato preferito)
+        # Prova a caricare con JSON (formato principale)
         try:
             with open(session_path, 'r', encoding='utf-8') as f:
                 try:
@@ -259,6 +276,30 @@ def carica_sessione(id_sessione):
         try:
             world = World.deserialize(world_data)
             logger.info(f"Sessione {id_sessione} deserializzata con successo")
+            
+            # AGGIUNTA: Inizializza il GestoreMappe se non è già inizializzato
+            if hasattr(world, 'gestore_mappe') and world.gestore_mappe:
+                # Verifica se le mappe sono caricate
+                if not world.gestore_mappe.mappe or len(world.gestore_mappe.mappe) == 0:
+                    logger.info(f"GestoreMappe trovato ma senza mappe caricate, procedo con l'inizializzazione")
+                    try:
+                        world.gestore_mappe.inizializza_mappe(world)
+                        logger.info(f"GestoreMappe reinizializzato con {len(world.gestore_mappe.mappe)} mappe")
+                    except Exception as init_error:
+                        logger.error(f"Errore nell'inizializzazione del GestoreMappe: {init_error}")
+                else:
+                    logger.info(f"GestoreMappe già inizializzato con {len(world.gestore_mappe.mappe)} mappe")
+            else:
+                # Se il GestoreMappe non esiste, crealo e inizializzalo
+                logger.warning(f"GestoreMappe non trovato nel mondo deserializzato, ne creo uno nuovo")
+                from world.gestore_mappe import GestitoreMappe
+                world.gestore_mappe = GestitoreMappe()
+                try:
+                    world.gestore_mappe.inizializza_mappe(world)
+                    logger.info(f"Nuovo GestoreMappe creato e inizializzato con {len(world.gestore_mappe.mappe)} mappe")
+                except Exception as init_error:
+                    logger.error(f"Errore nella creazione del nuovo GestoreMappe: {init_error}")
+            
             return world
         except Exception as e:
             logger.error(f"Errore nella deserializzazione del mondo della sessione {id_sessione}: {e}")

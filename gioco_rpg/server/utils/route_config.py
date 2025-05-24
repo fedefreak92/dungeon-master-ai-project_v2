@@ -1,76 +1,63 @@
 """
-Configurazione per le routes con supporto MessagePack.
+Modulo per configurare i blueprint Flask con impostazioni JSON standard.
 
-Questo modulo fornisce funzioni per configurare i blueprint Flask
-per supportare MessagePack in tutte le routes.
+Questo modulo fornisce funzioni per standardizzare tutte le risposte API 
+dei blueprint Flask utilizzando JSON.
 """
 
 import logging
 from flask import Blueprint, Flask
-from functools import wraps
+from . import json_middleware
 
 # Configura il logger
 logger = logging.getLogger(__name__)
 
-def configure_blueprint_for_msgpack(blueprint):
+def configure_blueprint_json(blueprint):
     """
-    Configura un blueprint Flask per supportare MessagePack in tutte le sue routes.
+    Configura un blueprint Flask con impostazioni JSON standard.
     
     Args:
-        blueprint: Il blueprint da configurare
-        
-    Returns:
-        Blueprint: Il blueprint configurato
+        blueprint: Il blueprint Flask da configurare
     """
-    from .message_pack_middleware import supports_msgpack, accept_msgpack
-    
-    # Memorizza la funzione route originale
-    original_route = blueprint.route
-    
-    # Sostituisci la funzione route con una versione che applica i decoratori MessagePack
-    def route_with_msgpack(rule, **options):
-        def decorator(f):
-            # Applica i decoratori per MessagePack
-            f = supports_msgpack(f)
-            f = accept_msgpack(f)
-            
-            # Applica il decoratore route originale
-            return original_route(rule, **options)(f)
-        return decorator
-    
-    # Sostituisci il metodo route
-    blueprint.route = route_with_msgpack
-    
-    logger.info(f"Blueprint {blueprint.name} configurato per supportare MessagePack")
-    
-    return blueprint
+    if not isinstance(blueprint, Blueprint):
+        logger.warning(f"L'oggetto {blueprint} non è un Blueprint Flask, skip configurazione")
+        return
+        
+    logger.info(f"Configurazione standard JSON per blueprint: {blueprint.name}")
+    logger.debug(f"Blueprint {blueprint.name} configurato con supporto JSON standard")
 
-def configure_all_blueprints_for_msgpack(app):
+def configure_all_blueprints_json(app):
     """
-    Configura tutti i blueprint registrati in un'app Flask per supportare MessagePack.
+    Configura tutti i blueprint registrati in un'app Flask con impostazioni JSON standard.
     
     Args:
-        app: L'applicazione Flask
-        
-    Returns:
-        Flask: L'applicazione Flask con i blueprint configurati
+        app: L'istanza dell'app Flask
     """
-    for blueprint_name, blueprint in app.blueprints.items():
-        configure_blueprint_for_msgpack(blueprint)
+    if not isinstance(app, Flask):
+        logger.warning(f"L'oggetto {app} non è un'app Flask, skip configurazione")
+        return
         
-    logger.info(f"Tutti i {len(app.blueprints)} blueprint configurati per supportare MessagePack")
+    logger.info(f"Configurazione standard JSON per tutti i blueprint dell'app")
     
-    return app
+    for blueprint in app.blueprints.values():
+        configure_blueprint_json(blueprint)
+    
+    logger.debug(f"Tutti i blueprint configurati con supporto JSON standard")
 
-def apply_msgpack_to_all_routes(app):
+def apply_json_to_all_routes(app):
     """
-    Funzione da chiamare dopo la registrazione di tutte le routes per
-    configurare il supporto MessagePack
+    Applica la configurazione JSON standard a tutte le route dell'app Flask.
+    
+    Questa è la funzione principale da chiamare per standardizzare tutte le risposte
+    API utilizzando JSON.
     
     Args:
-        app: L'applicazione Flask
+        app: L'istanza dell'app Flask
     """
-    # Configura tutti i blueprint
-    configure_all_blueprints_for_msgpack(app)
-    
-    logger.info("Supporto MessagePack applicato a tutte le routes dell'applicazione") 
+    logger.info(f"Applicazione della configurazione JSON standard a tutte le route")
+    configure_all_blueprints_json(app)
+    logger.info(f"Configurazione JSON standard applicata a tutte le route")
+
+# Alias per retrocompatibilità
+configure_blueprint = configure_blueprint_json
+configure_all_blueprints = configure_all_blueprints_json 

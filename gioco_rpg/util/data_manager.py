@@ -59,10 +59,9 @@ class DataHooks:
 class DataManager:
     """
     Gestore per i dati statici del gioco.
-    Carica i dati dai file JSON o MessagePack nella directory 'data'.
+    Carica i dati dai file JSON nella directory 'data'.
     
     Caratteristiche:
-    - Supporto MessagePack per prestazioni migliori
     - Cache intelligente con gestione TTL (time-to-live)
     - Caricamento lazy per ottimizzare le prestazioni
     - Versionamento dei file dati
@@ -91,7 +90,8 @@ class DataManager:
         """Inizializza le directory per i dati."""
         # Configura i percorsi per i diversi tipi di dati
         self._data_paths = {
-            "classi": DATA_DIR / "classes",
+            "classi": DATA_DIR / "classes",  # Aggiornato per puntare alla directory 'classes'
+            "classes": DATA_DIR / "classes",  # Aggiungo il supporto esplicito per 'classes'
             "tutorials": DATA_DIR / "tutorials",
             "achievements": DATA_DIR / "achievements",
             "oggetti": DATA_DIR / "items",
@@ -106,6 +106,7 @@ class DataManager:
         # Mapping tra tipi di dati e entità per la validazione
         self._entity_mapping = {
             "classi": "classe",
+            "classes": "classe",  # Aggiungo mapping anche per 'classes'
             "tutorials": "tutorial",
             "achievements": "achievement",
             "oggetti": "oggetto",
@@ -113,17 +114,6 @@ class DataManager:
             "mostri": "mostro",
             "mappe": "mappa",
         }
-        
-        # Verifico disponibilità MessagePack
-        try:
-            import msgpack
-            self.msgpack_available = True
-            self.use_msgpack = True
-            logger.info("MessagePack disponibile e attivato per i dati di gioco")
-        except ImportError:
-            self.msgpack_available = False
-            self.use_msgpack = False
-            logger.warning("MessagePack non disponibile, utilizzo solo JSON")
         
         # Assicurati che tutte le directory esistano
         for path in self._data_paths.values():
@@ -167,7 +157,7 @@ class DataManager:
     def load_data(self, data_type: str, file_name: Optional[str] = None, 
                  reload: bool = False, validate: bool = True) -> Union[Dict, List]:
         """
-        Carica i dati da un file JSON o MessagePack.
+        Carica i dati da un file JSON.
         
         Args:
             data_type: Tipo di dati da caricare (classi, tutorials, ecc.)
@@ -198,8 +188,9 @@ class DataManager:
         if file_name is None:
             file_name = f"{data_type}.json"
             
-        # Base del nome file (senza estensione)
-        file_base = file_name.rsplit('.', 1)[0]
+        # Assicurati che il nome del file abbia l'estensione .json
+        if not file_name.lower().endswith('.json'):
+            file_name = f"{file_name}.json"
         
         # Chiave per la cache
         cache_key = f"{data_type}/{file_name}"
@@ -217,38 +208,45 @@ class DataManager:
                 except Exception as e:
                     logger.error(f"Errore nell'esecuzione del hook pre-caricamento per {data_type}: {str(e)}")
         
-        # Tenta prima di caricare dal file MessagePack se disponibile
-        data = None
-        file_msgpack = None
-        if self.use_msgpack:
-            msgpack_file_name = f"{file_base}.msgpack"
-            file_msgpack = self._data_paths[data_type] / msgpack_file_name
-            
-            if file_msgpack.exists():
-                try:
-                    data = self._load_msgpack(file_msgpack)
-                    logger.debug(f"Dati caricati da MessagePack: {file_msgpack}")
-                except Exception as e:
-                    logger.warning(f"Errore nel caricamento del file MessagePack {file_msgpack}: {str(e)}")
-                    data = None
+        # Percorso completo del file JSON
+        file_path = self._data_paths[data_type] / file_name
         
-        # Se non è stato possibile caricare da MessagePack, prova con JSON
-        if data is None:
-            # Percorso completo del file JSON
-            file_path = self._data_paths[data_type] / file_name
+        # Se il file non esiste, prova con diverse varianti
+        if not file_path.exists():
+            logger.warning(f"File non trovato: {file_path}, tentativo con varianti...")
             
-            if not file_path.exists():
-                logger.error(f"File non trovato: {file_path}")
-                return {}
-            
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    logger.debug(f"Dati caricati da JSON: {file_path}")
-            except Exception as e:
-                logger.error(f"Errore nel caricamento del file JSON {file_path}: {str(e)}")
-                return {}
+            # Prova con file_name senza estensione + .json
+            if '.' in file_name:
+                nome_base = file_name.rsplit('.', 1)[0]
+                file_path_alt = self._data_paths[data_type] / f"{nome_base}.json"
+                if file_path_alt.exists():
+                    logger.info(f"Trovata alternativa: {file_path_alt}")
+                    file_path = file_path_alt
                 
+            # Prova con il file default del tipo di dati
+            if not file_path.exists():
+                file_path_default = self._data_paths[data_type] / f"{data_type}.json"
+                if file_path_default.exists():
+                    logger.info(f"Utilizzando file default: {file_path_default}")
+                    file_path = file_path_default
+        
+        # Se ancora non esiste, log e exit
+        if not file_path.exists():
+            logger.error(f"File non trovato dopo tentativi alternativi: {file_path}")
+            return {}
+        
+        # Carica i dati dal file JSON
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                logger.info(f"Dati caricati da JSON: {file_path}")
+        except json.JSONDecodeError as e:
+            logger.error(f"Errore nella decodifica JSON del file {file_path}: {str(e)}")
+            return {}
+        except Exception as e:
+            logger.error(f"Errore nel caricamento del file JSON {file_path}: {str(e)}")
+            return {}
+        
         # Gestione del versionamento
         data_version = self._get_data_version(data)
         if data_version is not None and data_version != CURRENT_DATA_VERSION:
@@ -266,7 +264,7 @@ class DataManager:
                 self._auto_generate_schema(data, entity_type)
         
         # Aggiorna la cache
-        self._update_cache(cache_key, data, file_path if file_msgpack is None else file_msgpack)
+        self._update_cache(cache_key, data, file_path)
         
         # Esegui hooks post-caricamento
         if data_type in DataHooks.post_load:
@@ -277,42 +275,6 @@ class DataManager:
                     logger.error(f"Errore nell'esecuzione del hook post-caricamento per {data_type}: {str(e)}")
         
         return data
-    
-    def _load_msgpack(self, file_path: Path) -> Union[Dict, List]:
-        """
-        Carica dati da un file MessagePack.
-        
-        Args:
-            file_path: Percorso del file da caricare
-            
-        Returns:
-            Union[Dict, List]: Dati caricati
-        """
-        import msgpack
-        with open(file_path, 'rb') as f:
-            return msgpack.unpackb(f.read(), raw=False)
-    
-    def _save_msgpack(self, file_path: Path, data: Union[Dict, List]) -> bool:
-        """
-        Salva dati in formato MessagePack.
-        
-        Args:
-            file_path: Percorso del file da salvare
-            data: Dati da salvare
-            
-        Returns:
-            bool: True se il salvataggio è riuscito
-        """
-        import msgpack
-        try:
-            # Crea la directory se non esiste
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            with open(file_path, 'wb') as f:
-                f.write(msgpack.packb(data, use_bin_type=True))
-            return True
-        except Exception as e:
-            logger.error(f"Errore durante il salvataggio MessagePack in {file_path}: {str(e)}")
-            return False
     
     def _get_data_version(self, data: Union[Dict, List]) -> Optional[str]:
         """Estrae la versione dai dati se presente."""
@@ -491,22 +453,13 @@ class DataManager:
         if not path.exists():
             return []
         
-        # Cerca sia file JSON che MessagePack
+        # Cerca solo file JSON
         json_files = [f.name for f in path.glob("*.json")]
-        msgpack_files = [f.name for f in path.glob("*.msgpack")]
-        
-        # Rimuovi l'estensione da tutti i file MessagePack e aggiungi l'estensione .json
-        # per mantenere la compatibilità con il codice esistente
-        msgpack_as_json = [f.replace('.msgpack', '.json') for f in msgpack_files]
-        
-        # Unisci le liste eliminando i duplicati
-        all_files = list(set(json_files + msgpack_as_json))
-        
-        return all_files
+        return json_files
     
     def save_data(self, data_type: str, data: Union[Dict, List], file_name: Optional[str] = None) -> bool:
         """
-        Salva i dati in file JSON e MessagePack (se disponibile).
+        Salva i dati in file JSON.
         
         Args:
             data_type: Tipo di dati
@@ -524,12 +477,8 @@ class DataManager:
         if file_name is None:
             file_name = f"{data_type}.json"
             
-        # Base del nome file (senza estensione)
-        file_base = file_name.rsplit('.', 1)[0]
-        
-        # Percorsi completi dei file
+        # Percorso completo del file JSON
         file_path_json = self._data_paths[data_type] / file_name
-        file_path_msgpack = self._data_paths[data_type] / f"{file_base}.msgpack"
         
         # Esegui hooks pre-salvataggio
         if data_type in DataHooks.pre_save:
@@ -553,14 +502,6 @@ class DataManager:
                     for error in errors:
                         logger.warning(f"Errore di validazione prima del salvataggio in {file_path_json}: {error}")
             
-            # Salva i dati in formato MessagePack se disponibile
-            msgpack_success = False
-            if self.use_msgpack:
-                msgpack_success = self._save_msgpack(file_path_msgpack, data)
-                if msgpack_success:
-                    logger.debug(f"Dati salvati in formato MessagePack: {file_path_msgpack}")
-            
-            # Salva sempre i dati anche in formato JSON per compatibilità
             # Crea la directory padre se non esiste
             os.makedirs(os.path.dirname(file_path_json), exist_ok=True)
             
@@ -581,8 +522,7 @@ class DataManager:
                     except Exception as e:
                         logger.error(f"Errore nell'esecuzione del hook post-salvataggio per {data_type}: {str(e)}")
                         
-            logger.info(f"Dati salvati con successo: {file_path_json}" + 
-                       (f" e {file_path_msgpack}" if msgpack_success else ""))
+            logger.info(f"Dati salvati con successo: {file_path_json}")
             return True
             
         except Exception as e:
@@ -593,8 +533,38 @@ class DataManager:
     
     def get_classes(self) -> Dict:
         """Ottieni informazioni sulle classi di personaggio."""
-        # Carica direttamente da classes.json (unico file che esiste)
-        return self.load_data("classi", "classes.json", validate=False)
+        try:
+            # Tenta di caricare da classi/classes.json (percorso corretto)
+            classi = self.load_data("classes", "classes.json", validate=False)
+            if classi and isinstance(classi, dict) and len(classi) > 0:
+                logger.info(f"Classi caricate correttamente da classes/classes.json: {len(classi)} classi trovate")
+                return classi
+            
+            # Se fallisce, prova con il percorso alternativo
+            classi = self.load_data("classi", "classes.json", validate=False)
+            if classi and isinstance(classi, dict) and len(classi) > 0:
+                logger.info(f"Classi caricate correttamente da classi/classes.json: {len(classi)} classi trovate")
+                return classi
+            
+            # Ultimo tentativo: prova a caricare direttamente
+            file_path = DATA_DIR / "classes" / "classes.json"
+            if file_path.exists():
+                logger.info(f"Tentativo di caricamento diretto da {file_path}")
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        classi = json.load(f)
+                        if classi and isinstance(classi, dict):
+                            logger.info(f"Classi caricate direttamente: {len(classi)} classi trovate")
+                            return classi
+                except Exception as e:
+                    logger.error(f"Errore nel caricamento diretto delle classi: {str(e)}")
+            
+            # Se siamo qui, non è stato possibile caricare le classi
+            logger.error("Impossibile caricare le classi da nessun percorso. Verificare i file e i percorsi.")
+            return {}
+        except Exception as e:
+            logger.error(f"Errore nel caricamento delle classi: {str(e)}")
+            return {}
     
     def get_classe(self, classe_id: str) -> Dict:
         """
@@ -606,24 +576,63 @@ class DataManager:
         Returns:
             dict: Informazioni sulla classe o None se non trovata
         """
-        classi = self.get_classes()
-        
-        # Prima verifica se il classe_id è direttamente una chiave nel dizionario
-        if classe_id in classi:
-            classe_info = classi[classe_id]
-            # Aggiungi l'id alla classe se non presente
-            if "id" not in classe_info:
-                classe_info = classe_info.copy()
-                classe_info["id"] = classe_id
-            return classe_info
-        
-        # Altrimenti cerca tra gli oggetti di una lista
-        if isinstance(classi, list):
-            for classe in classi:
-                if classe.get("id") == classe_id:
-                    return classe
+        try:
+            # Normalizza l'ID della classe (minuscolo)
+            classe_id = classe_id.lower()
+            
+            # Prima ottiene tutte le classi
+            classi = self.get_classes()
+            
+            # Se non ci sono classi, log esplicito
+            if not classi:
+                logger.error(f"Impossibile trovare classi nel sistema. Il file classes.json esiste?")
+                return {}
+                
+            # Verifica se classe_id è una chiave valida nel dizionario
+            if classe_id in classi:
+                classe_info = classi[classe_id]
+                # Aggiungi l'id alla classe se non presente
+                if "id" not in classe_info:
+                    classe_info = classe_info.copy()
+                    classe_info["id"] = classe_id
                     
-        return None
+                # Aggiungi il nome formattato se non presente
+                if "nome" not in classe_info:
+                    classe_info["nome"] = classe_id.capitalize()
+                    
+                logger.info(f"Classe {classe_id} trovata e caricata correttamente")
+                return classe_info
+                
+            # Log dettagliato se la classe non è stata trovata
+            logger.warning(f"Classe {classe_id} non trovata. Classi disponibili: {list(classi.keys())}")
+            
+            # Altrimenti cerca tra gli oggetti di una lista
+            if isinstance(classi, list):
+                for classe in classi:
+                    if classe.get("id") == classe_id:
+                        logger.info(f"Classe {classe_id} trovata in formato lista")
+                        return classe
+                        
+            # Se non troviamo la classe, restituiamo un dizionario base
+            logger.error(f"Classe {classe_id} non trovata in nessun formato")
+            return {
+                "id": classe_id,
+                "nome": classe_id.capitalize(),
+                "descrizione": f"Classe {classe_id.capitalize()} (non trovata)",
+                "statistiche_base": {
+                    "forza": 10, "destrezza": 10, "costituzione": 10,
+                    "intelligenza": 10, "saggezza": 10, "carisma": 10
+                },
+                "hp_base": 10,
+                "mana_base": 5
+            }
+        except Exception as e:
+            logger.error(f"Errore durante il recupero della classe {classe_id}: {str(e)}")
+            return {
+                "id": classe_id,
+                "nome": classe_id.capitalize(),
+                "descrizione": f"Classe {classe_id.capitalize()} (errore di caricamento)"
+            }
     
     def get_tutorials(self) -> Dict:
         """Ottieni i tutorial del gioco."""
@@ -889,6 +898,57 @@ class DataManager:
                     logger.error(f"Impossibile creare directory {percorso}: {str(e)}")
         
         return stato_directory
+
+    def diagnose_system_paths(self) -> Dict:
+        """
+        Diagnostica i problemi di percorso nel sistema.
+        Verifica ogni percorso configurato e fornisce dettagli sullo stato.
+        
+        Returns:
+            Dict: Dizionario con risultati della diagnostica per ogni percorso
+        """
+        result = {}
+        
+        # Controlla ogni percorso configurato
+        for data_type, path in self._data_paths.items():
+            # Costruisci un rapporto per questo tipo di dati
+            report = {
+                "path": str(path),
+                "exists": path.exists(),
+                "is_dir": path.is_dir() if path.exists() else False,
+                "files": [],
+                "json_files": [],
+                "errors": []
+            }
+            
+            # Se il percorso esiste, elenca i file
+            if path.exists() and path.is_dir():
+                try:
+                    all_files = list(path.glob("*"))
+                    report["files"] = [f.name for f in all_files]
+                    report["json_files"] = [f.name for f in all_files if f.name.lower().endswith('.json')]
+                    
+                    # Verifica i file JSON
+                    for json_file in [f for f in all_files if f.name.lower().endswith('.json')]:
+                        try:
+                            with open(json_file, 'r', encoding='utf-8') as f:
+                                json.load(f)
+                        except Exception as e:
+                            report["errors"].append(f"Errore nel file {json_file.name}: {str(e)}")
+                except Exception as e:
+                    report["errors"].append(f"Errore nell'elenco dei file: {str(e)}")
+            
+            result[data_type] = report
+            
+        # Aggiungi risultato globale
+        result["_summary"] = {
+            "valid_paths": sum(1 for r in result.values() if r.get("exists", False)),
+            "total_paths": len(self._data_paths),
+            "json_files_found": sum(len(r.get("json_files", [])) for r in result.values()),
+            "errors_found": sum(len(r.get("errors", [])) for r in result.values())
+        }
+        
+        return result
 
 # Funzione helper per ottenere l'istanza del DataManager
 def get_data_manager() -> DataManager:

@@ -7,11 +7,16 @@ import logging
 import time
 import json
 from pathlib import Path
-from util.config import SAVE_FORMAT_VERSION, USE_MSGPACK
+from util.config import SAVE_FORMAT_VERSION
 from world.managers.mappa_manager import MappaManager
 from world.managers.oggetti_manager import OggettiManager
 from world.managers.npg_manager import NPGManager
 from world.managers.loader_manager import LoaderManager
+from typing import Optional, TYPE_CHECKING
+
+# Forward reference per World per evitare importazioni circolari
+if TYPE_CHECKING:
+    from core.ecs.world import World
 
 class GestitoreMappe:
     """
@@ -33,6 +38,7 @@ class GestitoreMappe:
         self.npg_manager = NPGManager(percorso_npc)
         self.loader_manager = LoaderManager(percorso_mappe)
         self.cache_mappe = {}  # Inizializzazione della cache delle mappe
+        self.world_context: Optional["World"] = None # Usare la stringa "World" per il forward reference effettivo
         
         logging.info("GestitoreMappe inizializzato con successo")
         
@@ -46,8 +52,11 @@ class GestitoreMappe:
         """Restituisce il dizionario delle mappe."""
         return self.mappa_manager.mappe
         
-    def inizializza_mappe(self):
+    def inizializza_mappe(self, world_context: Optional["World"] = None):
         """Crea e configura tutte le mappe del gioco esclusivamente da JSON"""
+        if world_context:
+            self.world_context = world_context
+
         # Carica le mappe da file JSON
         mappe_json = self.carica_mappe_da_json()
         
@@ -59,8 +68,8 @@ class GestitoreMappe:
         for nome, mappa in mappe_json.items():
             self.mappa_manager.aggiungi_mappa(mappa)
             # Carica gli oggetti interattivi e NPG per questa mappa
-            self.oggetti_manager.carica_oggetti_su_mappa(mappa, nome)
-            self.npg_manager.carica_npg_su_mappa(mappa, nome)
+            self.oggetti_manager.carica_oggetti_su_mappa(mappa, nome, self.world_context)
+            self.npg_manager.carica_npg_su_mappa(mappa, nome, self.world_context)
         
         logging.info(f"Caricate {len(mappe_json)} mappe da file JSON")
         
@@ -316,22 +325,7 @@ class GestitoreMappe:
         """
         return self.mappa_manager.to_dict()
     
-    def to_msgpack(self):
-        """
-        Converte il gestore mappe in formato MessagePack.
-        
-        Returns:
-            bytes: Dati serializzati in formato MessagePack
-        """
-        try:
-            import msgpack
-            return msgpack.packb(self.to_dict(), use_bin_type=True)
-        except Exception as e:
-            logging.error(f"Errore nella serializzazione MessagePack del gestore mappe: {e}")
-            # Fallback a dizionario serializzato in JSON e poi convertito in bytes
-            return json.dumps(self.to_dict()).encode()
-        
-    def from_dict(self, data):
+    def from_dict(self, data, world_context: Optional["World"] = None):
         """
         Carica lo stato del gestore mappe da un dizionario.
         
@@ -345,35 +339,16 @@ class GestitoreMappe:
         
         # Ricarica gli oggetti e gli NPC per ogni mappa
         if result:
+            if world_context: # Se fornito, aggiorna il contesto del gestore
+                self.world_context = world_context
+            elif not self.world_context: # Se non fornito e non già presente, logga un avviso
+                logger.warning("GestoreMappe.from_dict chiamato senza world_context e nessun contesto preesistente. Le entità potrebbero non essere aggiunte al mondo ECS.")
+
             for nome_mappa, mappa in self.mappe.items():
-                self.oggetti_manager.carica_oggetti_su_mappa(mappa, nome_mappa)
-                self.npg_manager.carica_npg_su_mappa(mappa, nome_mappa)
+                self.oggetti_manager.carica_oggetti_su_mappa(mappa, nome_mappa, self.world_context)
+                self.npg_manager.carica_npg_su_mappa(mappa, nome_mappa, self.world_context)
                 
         return result
-    
-    def from_msgpack(self, data_bytes):
-        """
-        Carica lo stato del gestore mappe da dati in formato MessagePack.
-        
-        Args:
-            data_bytes (bytes): Dati serializzati in formato MessagePack
-            
-        Returns:
-            bool: True se il caricamento è avvenuto con successo, False altrimenti
-        """
-        try:
-            import msgpack
-            dati = msgpack.unpackb(data_bytes, raw=False)
-            return self.from_dict(dati)
-        except Exception as e:
-            logging.error(f"Errore nella deserializzazione MessagePack del gestore mappe: {e}")
-            try:
-                # Tenta di interpretare i dati come JSON
-                dati = json.loads(data_bytes.decode())
-                return self.from_dict(dati)
-            except Exception as e2:
-                logging.error(f"Errore anche con fallback JSON: {e2}")
-                return False
     
     def salva(self, percorso_file="mappe_salvataggio.json"):
         """
@@ -385,15 +360,9 @@ class GestitoreMappe:
         Returns:
             bool: True se il salvataggio è avvenuto con successo, False altrimenti
         """
-        # Determina se usare MessagePack in base alla configurazione e al nome file
-        use_msgpack = USE_MSGPACK
-        if percorso_file.endswith('.json'):
-            use_msgpack = False
-        elif percorso_file.endswith('.msgpack'):
-            use_msgpack = True
-        elif USE_MSGPACK:
-            # Aggiungi l'estensione corretta
-            percorso_file = percorso_file + '.msgpack'
+        # Aggiungi l'estensione .json se non presente
+        if not percorso_file.endswith('.json'):
+            percorso_file = percorso_file + '.json'
         
         # Ottieni i dati da salvare
         data = self.to_dict()
@@ -402,15 +371,9 @@ class GestitoreMappe:
             filepath = Path(percorso_file)
             filepath.parent.mkdir(exist_ok=True, parents=True)
             
-            if use_msgpack:
-                import msgpack
-                with open(filepath, 'wb') as file:
-                    msgpack.pack(data, file, use_bin_type=True)
-                logging.info(f"Stato delle mappe salvato in formato MessagePack: {filepath}")
-            else:
-                with open(filepath, 'w', encoding='utf-8') as file:
-                    json.dump(data, file, indent=4, ensure_ascii=False)
-                logging.info(f"Stato delle mappe salvato in formato JSON: {filepath}")
+            with open(filepath, 'w', encoding='utf-8') as file:
+                json.dump(data, file, indent=4, ensure_ascii=False)
+            logging.info(f"Stato delle mappe salvato in formato JSON: {filepath}")
             
             # Salva gli oggetti interattivi
             oggetti_result = self.oggetti_manager.salva_oggetti_interattivi_modificati(self.mappe)
@@ -433,31 +396,20 @@ class GestitoreMappe:
             bool: True se il caricamento è avvenuto con successo, False altrimenti
         """
         try:
+            # Aggiungi l'estensione .json se non presente
+            if not percorso_file.endswith('.json'):
+                percorso_file = percorso_file + '.json'
+                
             filepath = Path(percorso_file)
             
             # Verifica se esiste il file specificato
             if not filepath.exists():
-                # Prova con estensione .msgpack se esiste
-                msgpack_path = Path(str(filepath).replace('.json', '.msgpack'))
-                if msgpack_path.exists():
-                    filepath = msgpack_path
-                    logging.info(f"File .json non trovato, usando .msgpack: {filepath}")
-                else:
-                    logging.error(f"File di salvataggio non trovato: {filepath}")
-                    return False
+                logging.error(f"File di salvataggio non trovato: {filepath}")
+                return False
             
-            # Determina il formato in base all'estensione
-            use_msgpack = filepath.suffix.lower() == '.msgpack'
-            
-            if use_msgpack:
-                import msgpack
-                with open(filepath, 'rb') as file:
-                    data = msgpack.unpack(file, raw=False)
-                logging.info(f"Dati delle mappe caricati da MessagePack: {filepath}")
-            else:
-                with open(filepath, 'r', encoding='utf-8') as file:
-                    data = json.load(file)
-                logging.info(f"Dati delle mappe caricati da JSON: {filepath}")
+            with open(filepath, 'r', encoding='utf-8') as file:
+                data = json.load(file)
+            logging.info(f"Dati delle mappe caricati da JSON: {filepath}")
             
             # Processa i dati caricati
             return self.from_dict(data)

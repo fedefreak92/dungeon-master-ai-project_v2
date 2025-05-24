@@ -2,6 +2,7 @@
 Modulo per la serializzazione e deserializzazione dello stato di dialogo
 """
 import core.events as Events
+from states.base.enhanced_base_state import EnhancedBaseState
 
 def to_dict(self):
     """
@@ -11,7 +12,8 @@ def to_dict(self):
         dict: Rappresentazione dello stato in formato dizionario
     """
     # Ottieni il dizionario base
-    data = super().to_dict()
+    # Evita l'uso di super() che può causare problemi quando chiamato indirettamente
+    data = EnhancedBaseState.to_dict(self)
     
     # Aggiungi attributi specifici
     data.update({

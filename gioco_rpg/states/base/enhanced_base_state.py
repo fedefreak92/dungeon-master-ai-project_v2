@@ -120,39 +120,28 @@ class EnhancedBaseState:
         Returns:
             dict: Dizionario con i dati essenziali dello stato
         """
-        # Crea un dizionario vuoto come base
         data = {}
-        
-        # Aggiungi gli attributi di base
         data["nome_stato"] = getattr(self, "nome_stato", self.__class__.__name__)
-        
-        # Filtriamo gli attributi non serializzabili
-        attrs_to_skip = ["gioco", "event_bus", "ui_handler", "menu_handler"]
-        
-        # Itera su tutti gli attributi dell'istanza
+        data["__type__"] = self.__class__.__name__ # Aggiungiamo il tipo esplicito per la deserializzazione
+
+        attrs_to_skip = ["gioco", "event_bus", "ui_handler_instance", "menu_handler_instance", "ui_handler", "menu_handler", "commands"]
+
         for attr_name, attr_value in self.__dict__.items():
-            # Salta gli attributi non serializzabili
-            if attr_name in attrs_to_skip:
+            if attr_name in attrs_to_skip or attr_name.startswith("_") or callable(attr_value):
                 continue
             
-            # Salta riferimenti circolari
-            if attr_name.startswith("_"):
-                continue
-                
-            # Salta le funzioni
-            if callable(attr_value):
-                continue
-                
-            # Salta oggetti complessi non serializzabili
             try:
-                # Tenta una semplice serializzazione
-                if hasattr(attr_value, "to_dict") and callable(getattr(attr_value, "to_dict")):
+                if hasattr(attr_value, 'to_dict') and callable(getattr(attr_value, 'to_dict')):
                     data[attr_name] = attr_value.to_dict()
-                else:
-                    # Per oggetti semplici (int, str, list, dict, etc.)
-                    data[attr_name] = attr_value
-            except:
-                # In caso di errore, salta l'attributo
-                pass
+                elif isinstance(attr_value, (dict, list, str, int, float, bool)) or attr_value is None:
+                    # Tenta di serializzare solo se è un tipo JSON-compatibile noto o un altro dict/list
+                    # Per dict e list, json.dumps gestirà la ricorsione e gli errori interni.
+                    data[attr_name] = attr_value 
+                # Altri tipi complessi non verranno aggiunti se non hanno to_dict
+                # o non sono tipi primitivi/collezioni JSON standard.
+            except Exception as e:
+                # Non aggiungere l'attributo se la sua serializzazione (o il check) fallisce
+                # logging.debug(f"Attributo '{attr_name}' saltato durante la serializzazione di EnhancedBaseState a causa di errore: {e}")
+                pass # Salta l'attributo se c'è un problema
                 
         return data 

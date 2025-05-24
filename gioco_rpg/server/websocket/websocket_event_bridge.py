@@ -259,25 +259,46 @@ class WebSocketEventBridge:
         Registra gli handler per gli eventi EventBus che devono essere propagati
         ai client tramite WebSocket.
         """
+        # Funzione helper per creare wrapper che convertono kwargs in GameEvent
+        def create_event_wrapper(event_type, handler):
+            def wrapper(**kwargs):
+                event = GameEvent(event_type, kwargs)
+                return handler(event)
+            return wrapper
+        
         # Gestione dei player
-        self.event_bus.on(EventType.PLAYER_JOIN, self._handle_player_joined)
-        self.event_bus.on(EventType.PLAYER_LEAVE, self._handle_player_left)
-        self.event_bus.on(EventType.PLAYER_MOVE, self._handle_entity_moved)
+        self.event_bus.on(EventType.PLAYER_JOIN, 
+                         create_event_wrapper(EventType.PLAYER_JOIN, self._handle_player_joined))
+        self.event_bus.on(EventType.PLAYER_LEAVE, 
+                         create_event_wrapper(EventType.PLAYER_LEAVE, self._handle_player_left))
+        self.event_bus.on(EventType.PLAYER_MOVE, 
+                         create_event_wrapper(EventType.PLAYER_MOVE, self._handle_entity_moved))
         
         # Gestione della mappa
-        self.event_bus.on(EventType.MAP_CHANGE, self._handle_map_changed)
-        self.event_bus.on(EventType.ENTITY_SPAWN, self._handle_entity_spawned)
-        self.event_bus.on(EventType.ENTITY_DESPAWN, self._handle_entity_despawned)
-        self.event_bus.on(EventType.ENTITY_MOVED, self._handle_entity_moved)
-        self.event_bus.on(EventType.MOVEMENT_BLOCKED, self._handle_movement_blocked)
-        self.event_bus.on(EventType.UI_UPDATE, self._handle_ui_update)
+        self.event_bus.on(EventType.MAP_CHANGE, 
+                         create_event_wrapper(EventType.MAP_CHANGE, self._handle_map_changed))
+        self.event_bus.on(EventType.ENTITY_SPAWN, 
+                         create_event_wrapper(EventType.ENTITY_SPAWN, self._handle_entity_spawned))
+        self.event_bus.on(EventType.ENTITY_DESPAWN, 
+                         create_event_wrapper(EventType.ENTITY_DESPAWN, self._handle_entity_despawned))
+        self.event_bus.on(EventType.ENTITY_MOVED, 
+                         create_event_wrapper(EventType.ENTITY_MOVED, self._handle_entity_moved))
+        self.event_bus.on(EventType.MOVEMENT_BLOCKED, 
+                         create_event_wrapper(EventType.MOVEMENT_BLOCKED, self._handle_movement_blocked))
+        self.event_bus.on(EventType.UI_UPDATE, 
+                         create_event_wrapper(EventType.UI_UPDATE, self._handle_ui_update))
         
         # Gestione del combattimento
-        self.event_bus.on(EventType.COMBAT_START, self._handle_combat_started)
-        self.event_bus.on(EventType.COMBAT_END, self._handle_combat_ended)
-        self.event_bus.on(EventType.COMBAT_TURN, self._handle_combat_turn)
-        self.event_bus.on(EventType.DAMAGE_DEALT, self._handle_entity_attacked)
-        self.event_bus.on(EventType.DAMAGE_TAKEN, self._handle_entity_damaged)
+        self.event_bus.on(EventType.COMBAT_START, 
+                         create_event_wrapper(EventType.COMBAT_START, self._handle_combat_started))
+        self.event_bus.on(EventType.COMBAT_END, 
+                         create_event_wrapper(EventType.COMBAT_END, self._handle_combat_ended))
+        self.event_bus.on(EventType.COMBAT_TURN, 
+                         create_event_wrapper(EventType.COMBAT_TURN, self._handle_combat_turn))
+        self.event_bus.on(EventType.DAMAGE_DEALT, 
+                         create_event_wrapper(EventType.DAMAGE_DEALT, self._handle_entity_attacked))
+        self.event_bus.on(EventType.DAMAGE_TAKEN, 
+                         create_event_wrapper(EventType.DAMAGE_TAKEN, self._handle_entity_damaged))
         
         # Eventi base sufficienti per avviare il server
         # Altri eventi possono essere aggiunti in seguito

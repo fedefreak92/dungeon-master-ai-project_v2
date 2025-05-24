@@ -1,369 +1,215 @@
-from states.base_state import BaseGameState
-from entities.npg import NPG
-from states.dialogo import DialogoState
+from ..mappa.mappa_state import MappaState
 from entities.giocatore import Giocatore
 from states.inventario import GestioneInventarioState
-from states.prova_abilita import ProvaAbilitaState
 from util.funzioni_utili import avanti
 import logging
+# AGGIUNTO IMPORT PER ITEMFACTORY
+from items.item_factory import ItemFactory
 
-# Importa i moduli specifici del mercato
-from states.mercato.oggetti_interattivi import crea_tutti_oggetti_interattivi
-from states.mercato.menu_handlers import MenuMercatoHandler
-from states.mercato.ui_handlers import UIMercatoHandler
-from states.mercato.movimento import MovimentoMercatoHandler
-from states.mercato.dialogo import DialogoMercatoHandler
+# Import moduli specifici del mercato (RIMOSSI - Gestiti da MappaState o caricati dinamicamente)
+# from states.mercato.oggetti_interattivi import crea_tutti_oggetti_interattivi 
+# from states.mercato.menu_handlers import MenuMercatoHandler
+# from states.mercato.ui_handlers import UIMercatoHandler
+# from states.mercato.movimento import MovimentoMercatoHandler
+# from states.mercato.dialogo import DialogoMercatoHandler
 
-class MercatoState(BaseGameState):
-    """Classe che rappresenta lo stato del mercato"""
+logger = logging.getLogger(__name__) # AGGIUNTO logger
+
+class MercatoState(MappaState):
+    """Classe che rappresenta lo stato del mercato.
+    Ora è una specializzazione leggera di MappaState (LuogoState).
+    """
     
-    def __init__(self, game):
+    def __init__(self, game=None):
         """
         Inizializza lo stato del mercato.
+        Chiama il costruttore della classe base MappaState.
         
         Args:
-            game: L'istanza del gioco
+            game: L'istanza del gioco (opzionale, per contesto iniziale)
         """
-        super().__init__(game)
-        self.nome_stato = "mercato"
+        # MODIFICA: Passare game_state_manager se disponibile da 'game'
+        gsm = game.game_state_manager if game and hasattr(game, 'game_state_manager') else None
+        super().__init__(nome_luogo="mercato", game_state_manager=gsm) # Chiamata corretta a MappaState.__init__
         
-        # Carica gli NPC specifici del mercato
-        self.npg_presenti = {
-            "Araldo": NPG("Araldo"),
-            "Violetta": NPG("Violetta"),
-            "Gundren": NPG("Gundren")
-        }
-        self.nome_npg_attivo = None
-        self.stato_conversazione = "inizio"
-        self.stato_precedente = None
+        # RIMOZIONE ATTRIBUTI DUPLICATI (ora in MappaState)
+        # self.fase_luogo = "menu_principale" 
+        # self.ultimo_input = None
+        # self.dati_contestuali_luogo = {}  
+        # self.ui_aggiornata = False
+        # self.menu_attivo = "principale"
+        # self.oggetto_selezionato = None # Gestire localmente se serve ancora per logica specifica es. vendita
+        # self.npg_selezionato = None # Gestire localmente se serve ancora
+        # self.mostra_mappa = False # Ora è in MappaState
         
-        # Inizializza menu e comandi
-        self._init_commands()
+        # RIMOZIONE CARICAMENTO OGGETTI (ora in MappaState._carica_dati_luogo)
+        # self.oggetti_interattivi = crea_tutti_oggetti_interattivi()
         
-        # Attributi per gestione asincrona
-        self.fase = "menu_principale"
-        self.ultimo_input = None
-        self.dati_contestuali = {}  # Per memorizzare dati tra più fasi
-        
-        # Attributi per l'interfaccia grafica
+        # RIMOZIONE INIZIALIZZAZIONE HANDLER (ora in MappaState._init_handlers)
+        # self.menu_handler = MenuMercatoHandler(self)
+        # self.ui_handler = UIMercatoHandler(self)
+        # self.movimento_handler = MovimentoMercatoHandler(self)
+        # self.dialogo_handler = DialogoMercatoHandler(self)
+
+        # Potrebbe essere necessario mantenere alcuni attributi di stato specifici del mercato?
+        self.oggetto_selezionato_per_vendita = None # Esempio attributo specifico
+
+        if game: # game qui è l'intera istanza GameManager, non solo game_state_manager
+            self.set_game_context(game) # set_game_context è in EnhancedBaseState
+    
+    # RIMOSSO: def esegui(self, gioco): 
+    # La logica principale è ora in MappaState.update() o gestita da eventi.
+    # La logica specifica delle fasi (compra_pozione, vendi_oggetto_lista) dovrà 
+    # essere attivata dai menu handler specifici (se caricati) o dalla logica 
+    # in _handle_azione_specifica_luogo.
+
+    # RIMOSSO: def _visualizza_mappa(self, gioco):
+    # La logica di visualizzazione mappa dovrebbe essere gestita dall'UI handler.
+
+    # RIMOSSO: def _init_commands(self):
+    # I comandi sono inizializzati in MappaState e possono essere estesi dalla config JSON.
+
+    # RIMOSSO: def _cmd_guarda(self, gioco, parametri=None):
+    # Usare _cmd_guarda_ambiente di MappaState.
+    
+    # RIMOSSO: def _cmd_parla(self, gioco, parametri=None):
+    # Gestito da MappaState.process_azione_luogo("dialoga_npg", ...)
+    # o MappaState.process_azione_menu("DIALOGO_ARALDO", ...)
+    
+    # AGGIUNTO: Comando specifico referenziato dalla config JSON
+    def _cmd_compra_mercato(self, gioco, parametri=None):
+        """Comando per iniziare il processo di acquisto nel mercato."""
+        logger.info("Comando 'compra' specifico del mercato eseguito.")
+        # Questo comando potrebbe semplicemente impostare una fase o 
+        # chiamare un metodo dell'handler del menu specifico (se esiste)
+        # per mostrare le opzioni di acquisto.
+        if hasattr(self.menu_handler_instance, 'mostra_menu_compra'):
+             self.menu_handler_instance.mostra_menu_compra(gioco)
+             self.fase_luogo = "compra_oggetti" # Imposta una fase specifica se necessario
+             self.ui_aggiornata = False
+        else:
+             # Fallback se non c'è un menu handler specifico per 'compra'
+             logger.warning("Menu handler specifico per 'compra' non disponibile.")
+             gioco.io.mostra_messaggio("Opzione di acquisto non disponibile.")
+        return True # Indica che il comando è stato gestito
+
+    # AGGIUNTO: Comando specifico referenziato dalla config JSON
+    def _cmd_vendi_mercato(self, gioco, parametri=None):
+        """Comando per iniziare il processo di vendita nel mercato."""
+        logger.info("Comando 'vendi' specifico del mercato eseguito.")
+        if hasattr(self.menu_handler_instance, 'mostra_menu_vendi'):
+             self.menu_handler_instance.mostra_menu_vendi(gioco)
+             self.fase_luogo = "vendi_oggetti" # Imposta una fase specifica
+             self.ui_aggiornata = False
+        else:
+             logger.warning("Menu handler specifico per 'vendi' non disponibile.")
+             gioco.io.mostra_messaggio("Opzione di vendita non disponibile.")
         self.ui_aggiornata = False
-        self.menu_attivo = "principale"
-        self.gioco = None
-        self.oggetto_selezionato = None
-        self.npg_selezionato = None
-        
-        # Carica gli oggetti interattivi del mercato
-        self.oggetti_interattivi = crea_tutti_oggetti_interattivi()
-        
-        # Attributo per tenere traccia della visualizzazione mappa
-        self.mostra_mappa = False
-        
-        # Inizializza i gestori per i vari aspetti del mercato
-        self.menu_handler = MenuMercatoHandler(self)
-        self.ui_handler = UIMercatoHandler(self)
-        self.movimento_handler = MovimentoMercatoHandler(self)
-        self.dialogo_handler = DialogoMercatoHandler(self)
     
-    def esegui(self, gioco):
-        """
-        Esegue lo stato del mercato.
-        
-        Args:
-            gioco: L'istanza del gioco
-        """
-        # Salva il contesto di gioco
-        self.set_game_context(gioco)
-        
-        # Se è la prima visita al mercato, inizializza la posizione e popola la mappa
-        if not hasattr(self, 'prima_visita_completata'):
-            mappa = gioco.gestore_mappe.ottieni_mappa("mercato")
-            if mappa:
-                gioco.gestore_mappe.imposta_mappa_attuale("mercato")
-                x, y = mappa.pos_iniziale_giocatore
-                gioco.giocatore.imposta_posizione("mercato", x, y)
-                # Popola la mappa con gli oggetti interattivi e gli NPG
-                gioco.gestore_mappe.trasferisci_oggetti_da_stato("mercato", self)
-            self.prima_visita_completata = True
-        
-        # Aggiorna il renderer grafico se necessario
-        if not self.ui_aggiornata:
-            self.ui_handler.aggiorna_renderer(gioco)
-            self.ui_aggiornata = True
-            
-        # Gestione asincrona basata sulla fase corrente
-        if self.fase == "menu_principale":
-            self.menu_handler.mostra_menu_principale(gioco)
-        elif self.fase == "compra_pozione":
-            self.menu_handler.mostra_compra_pozione(gioco)
-        elif self.fase == "vendi_oggetto_lista":
-            self.menu_handler.mostra_vendi_oggetto_lista(gioco)
-        elif self.fase == "vendi_oggetto_conferma":
-            self.menu_handler.mostra_vendi_oggetto_conferma(gioco)
-        elif self.fase == "parla_npg_lista":
-            self.menu_handler.mostra_parla_npg_lista(gioco)
-        elif self.fase == "visualizza_mappa":
-            self._visualizza_mappa(gioco)
-        elif self.fase == "esplora_oggetti_lista":
-            self.menu_handler.mostra_esplora_oggetti_lista(gioco)
+    # RIMOSSO: def _cmd_esamina(self, gioco, parametri=None):
+    # Gestito da MappaState._cmd_guarda_ambiente o interazione specifica oggetto.
+
+    # RIMOSSO: def _cmd_inventario(self, gioco, parametri=None):
+    # Dovrebbe essere un comando globale o gestito da MappaState.
     
-    def _visualizza_mappa(self, gioco):
-        """
-        Visualizza la mappa del mercato.
-        
-        Args:
-            gioco: L'istanza del gioco
-        """
-        # Attiva la visualizzazione mappa
-        self.mostra_mappa = True
-        self.ui_aggiornata = False  # Forza l'aggiornamento dell'UI
-        
-        # Usa il movimento handler per visualizzare la mappa
-        self.movimento_handler.visualizza_mappa(gioco)
-        
-        # Torna al menu principale
-        self.fase = "menu_principale"
+    # RIMOSSO: def _cmd_mappa(self, gioco, parametri=None):
+    # Gestito da MappaState._toggle_leggenda o comandi/handler UI specifici.
+
+    # RIMOSSO: def _cmd_aiuto(self, gioco, parametri=None):
+    # Gestito da MappaState o un sistema di aiuto globale.
     
-    def _init_commands(self):
-        """Inizializza i comandi disponibili nel mercato"""
-        self.comandi = {
-            "guarda": self._cmd_guarda,
-            "parla": self._cmd_parla,
-            "compra": self._cmd_compra,
-            "vendi": self._cmd_vendi,
-            "esamina": self._cmd_esamina,
-            "inventario": self._cmd_inventario,
-            "mappa": self._cmd_mappa,
-            "aiuto": self._cmd_aiuto,
-            "esci": self._cmd_esci
-        }
-    
-    def _cmd_guarda(self, gioco, parametri=None):
-        """Comando per guardare l'ambiente circostante"""
-        gioco.io.mostra_messaggio("Ti trovi al mercato del villaggio. Intorno a te ci sono bancarelle, mercanti e avventori.")
-        # Descrivi gli oggetti e gli NPC vicini
-        oggetti_vicini = self.ottieni_oggetti_vicini(gioco, 2)
-        npg_vicini = self.ottieni_npg_vicini(gioco, 2)
-        
-        if oggetti_vicini:
-            nomi_oggetti = ", ".join(oggetti_vicini.keys())
-            gioco.io.mostra_messaggio(f"Vedi: {nomi_oggetti}")
-            
-        if npg_vicini:
-            nomi_npg = ", ".join(npg_vicini.keys())
-            gioco.io.mostra_messaggio(f"Persone vicine: {nomi_npg}")
-        
-        return True
-    
-    def _cmd_parla(self, gioco, parametri=None):
-        """Comando per parlare con un NPC"""
-        if not parametri:
-            self.fase = "parla_npg_lista"
-            return True
-            
-        nome_npg = " ".join(parametri)
-        return self.dialogo_handler.inizia_dialogo(gioco, nome_npg)
-    
-    def _cmd_compra(self, gioco, parametri=None):
-        """Comando per comprare oggetti"""
-        self.fase = "compra_pozione"
-        return True
-    
-    def _cmd_vendi(self, gioco, parametri=None):
-        """Comando per vendere oggetti"""
-        self.fase = "vendi_oggetto_lista"
-        return True
-    
-    def _cmd_esamina(self, gioco, parametri=None):
-        """Comando per esaminare oggetti"""
-        if not parametri:
-            self.fase = "esplora_oggetti_lista"
-            return True
-            
-        nome_oggetto = " ".join(parametri)
-        if nome_oggetto in self.oggetti_interattivi:
-            oggetto = self.oggetti_interattivi[nome_oggetto]
-            gioco.io.mostra_messaggio(f"Esamini {oggetto.nome}: {oggetto.descrizione}")
-            return True
-            
-        gioco.io.mostra_messaggio(f"Non vedi alcun {nome_oggetto} nei paraggi.")
-        return False
-    
-    def _cmd_inventario(self, gioco, parametri=None):
-        """Comando per visualizzare l'inventario"""
-        inventario_state = GestioneInventarioState(gioco)
-        gioco.push_stato(inventario_state)
-        return True
-    
-    def _cmd_mappa(self, gioco, parametri=None):
-        """Comando per visualizzare la mappa"""
-        self.fase = "visualizza_mappa"
-        return True
-    
-    def _cmd_aiuto(self, gioco, parametri=None):
-        """Comando per visualizzare l'aiuto"""
-        gioco.io.mostra_messaggio("Comandi disponibili:")
-        for cmd in self.comandi.keys():
-            gioco.io.mostra_messaggio(f"- {cmd}")
-        return True
-    
-    def _cmd_esci(self, gioco, parametri=None):
-        """Comando per uscire dal mercato"""
-        gioco.io.mostra_messaggio("Lasci il mercato.")
-        gioco.pop_stato()
-        return True
-    
+    # RIMOSSO: def _cmd_esci(self, gioco, parametri=None):
+    # Gestito da MappaState._cmd_torna_indietro.
+
     def to_dict(self):
-        """
-        Serializza lo stato del mercato in un dizionario.
+        data = super().to_dict() # Ottiene il dizionario da MappaState
         
-        Returns:
-            dict: Dizionario rappresentante lo stato
-        """
-        data = super().to_dict()
-        data.update({
-            "nome_stato": self.nome_stato,
-            "fase": self.fase,
-            "npg_presenti": {nome: npg.to_dict() for nome, npg in self.npg_presenti.items()},
-            "nome_npg_attivo": self.nome_npg_attivo,
-            "stato_conversazione": self.stato_conversazione,
-            "mostra_mappa": self.mostra_mappa,
-            # Non serializzare gli handler poiché saranno ricreati all'inizializzazione
-        })
+        oggetto_vendita_data = None
+        if self.oggetto_selezionato_per_vendita:
+            # Assicurarsi che l'oggetto abbia un metodo to_dict()
+            if hasattr(self.oggetto_selezionato_per_vendita, 'to_dict'):
+                oggetto_vendita_data = self.oggetto_selezionato_per_vendita.to_dict()
+            else:
+                logger.warning(f"Oggetto selezionato per vendita '{self.oggetto_selezionato_per_vendita.nome if hasattr(self.oggetto_selezionato_per_vendita, 'nome') else 'Sconosciuto'}' non ha un metodo to_dict(). Non sarà serializzato.")
+        
+        data["oggetto_selezionato_per_vendita_data"] = oggetto_vendita_data
         return data
-    
+
     @classmethod
     def from_dict(cls, data, game=None):
-        """
-        Crea un'istanza di MercatoState da un dizionario serializzato.
+        # Lascia che MappaState.from_dict faccia il grosso del lavoro,
+        # inclusa la creazione dell'istanza di 'cls' (che sarà MercatoState).
+        # MappaState.from_dict è un @classmethod, quindi chiamandolo direttamente
+        # con 'data' e 'game' dovrebbe funzionare, e userà 'cls' (MercatoState qui)
+        # per creare l'istanza.
+        instance = MappaState.from_dict(data, game) # Questo creerà un'istanza di cls (MercatoState)
+                                                    # e la popolerà con gli attributi di MappaState.
         
-        Args:
-            data: Dizionario serializzato
-            game: Istanza del gioco (opzionale)
-            
-        Returns:
-            MercatoState: Nuova istanza deserializzata
-        """
-        instance = cls(game)
-        
-        # Ripristina i dati dello stato base
-        if "nome_stato" in data:
-            instance.nome_stato = data["nome_stato"]
-        if "fase" in data:
-            instance.fase = data["fase"]
-        if "nome_npg_attivo" in data:
-            instance.nome_npg_attivo = data["nome_npg_attivo"]
-        if "stato_conversazione" in data:
-            instance.stato_conversazione = data["stato_conversazione"]
-        if "mostra_mappa" in data:
-            instance.mostra_mappa = data["mostra_mappa"]
-        
-        # Ripristina gli NPC presenti
-        if "npg_presenti" in data:
-            instance.npg_presenti = {}
-            for nome, npg_data in data["npg_presenti"].items():
-                instance.npg_presenti[nome] = NPG.from_dict(npg_data)
-        
+        # Ora aggiungiamo gli attributi specifici di MercatoState
+        # È una buona pratica controllare se l'istanza è del tipo corretto,
+        # anche se in questo flusso dovrebbe esserlo.
+        if isinstance(instance, MercatoState):
+            oggetto_data_serializzato = data.get("oggetto_selezionato_per_vendita_data")
+            if oggetto_data_serializzato:
+                # ItemFactory dovrebbe essere in grado di capire il tipo di item dal dict
+                # e restituire l'istanza dell'item corretto.
+                # Assicurarsi che ItemFactory.crea_item_da_dict esista e funzioni come previsto.
+                try:
+                    instance.oggetto_selezionato_per_vendita = ItemFactory.crea_item_da_dict(oggetto_data_serializzato, game=game)
+                except Exception as e:
+                    logger.error(f"Errore durante la creazione di oggetto_selezionato_per_vendita da ItemFactory: {e}. Dati: {oggetto_data_serializzato}")
+                    instance.oggetto_selezionato_per_vendita = None
+            else:
+                instance.oggetto_selezionato_per_vendita = None
+        else:
+            # Questo non dovrebbe accadere se la catena di chiamate di @classmethod è corretta.
+            logger.error(f"MappaState.from_dict non ha restituito un'istanza di MercatoState come atteso. Tipo restituito: {type(instance)}. L'attributo 'oggetto_selezionato_per_vendita' non sarà ripristinato.")
+            # Se instance non è MercatoState, non avrà l'attributo, quindi non impostarlo.
+
         return instance
-    
-    def __getstate__(self):
-        """
-        Prepara lo stato per la serializzazione pickle.
+
+    # RIMOSSO: def _register_ui_handlers(self, io_handler):
+    # Gli handler sono gestiti da MappaState.
+
+    # RIMOSSO: def _unregister_ui_handlers(self, io_handler):
+    # Gli handler sono gestiti da MappaState.
+
+    # RIMOSSO: def entra(self, gioco=None): # Logica spostata in MappaState.enter
+    # RIMOSSO: def esci(self, gioco=None): # Logica spostata in MappaState.exit
+    # RIMOSSO: def enter(self): # Logica spostata in MappaState.enter
+    # RIMOSSO: def exit(self): # Logica spostata in MappaState.exit
+    # RIMOSSO: def update(self, input_utente=None): # Logica spostata in MappaState.update
+
+    # RIMOSSO: def gestisci_input_specifico_mercato(self, comando, argomenti):
+    # Sostituito da _handle_azione_specifica_luogo e dai metodi _cmd_*.
+
+    # AGGIUNTO: Implementazione del metodo helper per azioni specifiche
+    def _handle_azione_specifica_luogo(self, gioco, azione: str, context: dict):
+        """Gestisce azioni specifiche del mercato come 'compra' e 'vendi'."""
+        logger.info(f"MercatoState gestisce azione specifica: {azione}")
         
-        Returns:
-            dict: Stato serializzabile
-        """
-        state = self.__dict__.copy()
-        # Rimuovi riferimenti non serializzabili
-        state["menu_handler"] = None
-        state["ui_handler"] = None
-        state["movimento_handler"] = None
-        state["dialogo_handler"] = None
+        if azione == "compra":
+            # Potrebbe mostrare un menu specifico o cambiare fase
+            if hasattr(self.menu_handler_instance, 'mostra_menu_compra'):
+                self.menu_handler_instance.mostra_menu_compra(gioco)
+                self.fase_luogo = "compra_oggetti"
+                self.ui_aggiornata = False
+            else:
+                logger.warning("Menu handler specifico per 'compra' non disponibile via azione.")
+                gioco.io.mostra_messaggio("Opzione di acquisto non disponibile.")
         
-        return state
-    
-    def __setstate__(self, state):
-        """
-        Ripristina lo stato dopo la deserializzazione pickle.
+        elif azione == "vendi":
+             if hasattr(self.menu_handler_instance, 'mostra_menu_vendi'):
+                self.menu_handler_instance.mostra_menu_vendi(gioco)
+                self.fase_luogo = "vendi_oggetti"
+             else:
+                logger.warning("Menu handler specifico per 'vendi' non disponibile via azione.")
+                gioco.io.mostra_messaggio("Opzione di vendita non disponibile.")
+             self.ui_aggiornata = False
         
-        Args:
-            state: Stato deserializzato
-        """
-        self.__dict__.update(state)
-        # Ricrea i gestori
-        self.menu_handler = MenuMercatoHandler(self)
-        self.ui_handler = UIMercatoHandler(self)
-        self.movimento_handler = MovimentoMercatoHandler(self)
-        self.dialogo_handler = DialogoMercatoHandler(self)
-    
-    def _register_ui_handlers(self, io_handler):
-        """
-        Registra i gestori di eventi dell'interfaccia utente.
-        
-        Args:
-            io_handler: L'handler IO del gioco
-        """
-        self.ui_handler.register_ui_handlers(io_handler)
-    
-    def _unregister_ui_handlers(self, io_handler):
-        """
-        Deregistra i gestori di eventi dell'interfaccia utente.
-        
-        Args:
-            io_handler: L'handler IO del gioco
-        """
-        self.ui_handler.unregister_ui_handlers(io_handler)
-    
-    def entra(self, gioco=None):
-        """
-        Metodo chiamato quando si entra nello stato mercato.
-        
-        Args:
-            gioco: L'istanza del gioco (opzionale)
-        """
-        super().entra(gioco)
-        
-        if gioco:
-            gioco.io.mostra_messaggio("Sei entrato nel mercato del villaggio.")
-            gioco.io.mostra_messaggio("C'è un'atmosfera vivace, con mercanti che gridano le loro offerte e avventori che contrattano sui prezzi.")
-            
-            # Registra i gestori di eventi UI
-            self._register_ui_handlers(gioco.io)
-    
-    def esci(self, gioco=None):
-        """
-        Metodo chiamato quando si esce dallo stato mercato.
-        
-        Args:
-            gioco: L'istanza del gioco (opzionale)
-        """
-        super().esci(gioco)
-        
-        if gioco:
-            # Deregistra i gestori di eventi UI
-            self._unregister_ui_handlers(gioco.io)
-    
-    def pausa(self, gioco=None):
-        """
-        Metodo chiamato quando lo stato mercato viene temporaneamente sospeso.
-        
-        Args:
-            gioco: L'istanza del gioco (opzionale)
-        """
-        super().pausa(gioco)
-        
-        # Niente di specifico da fare qui, ma potremmo aggiungere logica in futuro
-    
-    def riprendi(self, gioco=None):
-        """
-        Metodo chiamato quando lo stato mercato torna attivo dopo essere stato in pausa.
-        
-        Args:
-            gioco: L'istanza del gioco (opzionale)
-        """
-        super().riprendi(gioco)
-        
-        if gioco:
-            gioco.io.mostra_messaggio("Sei tornato al mercato del villaggio.")
-            
-            # Aggiorna l'interfaccia all'uscita
-            self.ui_aggiornata = False 
+        else:
+            # Se non gestita qui, chiama l'implementazione della classe base (che logga un warning)
+            super()._handle_azione_specifica_luogo(gioco, azione, context)
+
+    # RIMOSSO: def mostra_merci_del_giorno(self):
+    # Logica da integrare nel processo di acquisto/vendita o come evento. 

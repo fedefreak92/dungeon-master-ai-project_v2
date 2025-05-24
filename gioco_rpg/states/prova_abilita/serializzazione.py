@@ -1,6 +1,7 @@
 """
 Funzionalità di serializzazione per lo stato di prova abilità.
 """
+from states.base.enhanced_base_state import EnhancedBaseState
 
 def to_dict(state):
     """
@@ -12,8 +13,9 @@ def to_dict(state):
     Returns:
         dict: Rappresentazione dello stato in formato dizionario
     """
-    # Ottieni il dizionario base usando il metodo della classe padre
-    data = super(type(state), state).to_dict()
+    # Ottieni il dizionario base usando il metodo della classe base
+    # Evita l'uso di super() che può causare problemi quando chiamato indirettamente
+    data = EnhancedBaseState.to_dict(state)
     
     # Aggiungi attributi specifici
     data.update({

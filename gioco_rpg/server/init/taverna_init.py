@@ -48,7 +48,7 @@ def inizializza_taverna_per_sessione(id_sessione):
                 sessione.io = IOInterface(sessione)
                 
             from states.taverna import TavernaState
-            taverna_state = TavernaState(sessione)
+            taverna_state = TavernaState(nome_luogo="taverna")
             sessione.add_state("taverna", taverna_state)
             logger.info(f"Creato nuovo stato taverna per la sessione {id_sessione}")
         

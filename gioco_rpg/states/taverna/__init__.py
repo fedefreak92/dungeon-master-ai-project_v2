@@ -11,8 +11,8 @@ from .taverna_state import TavernaState
 # Esporta i moduli di funzionalità
 from . import movimento
 from . import oggetti_interattivi
-from . import menu_handlers
-from . import ui_handlers
+# from . import taverna_menu_handlers # COMMENTATO - Caricato dinamicamente da MappaState
+# from . import taverna_ui_handlers   # COMMENTATO - Caricato dinamicamente da MappaState
 from . import serializzazione
 from . import dialogo
 from . import combattimento

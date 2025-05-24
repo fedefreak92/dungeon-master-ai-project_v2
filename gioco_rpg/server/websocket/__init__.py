@@ -13,18 +13,21 @@ logger = logging.getLogger(__name__)
 # Variabili globali condivise
 socketio = None
 graphics_renderer = None
+websocket_manager = None
 
-def init_websocket_handlers(socket_io, renderer):
+def init_websocket_handlers(socket_io, renderer, ws_manager):
     """
     Inizializza tutti gli handler WebSocket con i riferimenti richiesti
     
     Args:
         socket_io: Istanza di Flask-SocketIO
         renderer: Istanza del renderer grafico
+        ws_manager: Istanza di WebSocketManager
     """
-    global socketio, graphics_renderer
+    global socketio, graphics_renderer, websocket_manager
     socketio = socket_io
     graphics_renderer = renderer
+    websocket_manager = ws_manager
     
     # Importa e inizializza tutti i moduli di handler
     try:
@@ -84,8 +87,8 @@ def init_websocket_handlers(socket_io, renderer):
         logger.error(f"Errore durante l'importazione degli handler taverna: {e}")
     
     try:
-        from .mercato import register_handlers as register_mercato_handlers
-        register_mercato_handlers(socketio)
+        from .mercato import register_mercato_event_handlers
+        register_mercato_event_handlers(socketio, websocket_manager)
         logger.info("Handler WebSocket mercato registrati")
     except ImportError as e:
         logger.error(f"Errore durante l'importazione degli handler mercato: {e}")

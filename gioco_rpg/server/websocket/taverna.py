@@ -1,17 +1,193 @@
-import logging
-import json
-import requests
-from flask_socketio import emit, join_room
+import asyncio
+# from functools import partial # Non più usato
+from flask_socketio import SocketIO, emit
+from engineio.payload import Payload
 
-# Import moduli locali
-from server.utils.session import get_session, salva_sessione
-from . import socketio, graphics_renderer
-from . import core
+# from বিশ্ব.게임_상태_저장_서비스 import GameStateService # RIMOSSO
+# from entities.giocatore import Giocatore # RIMOSSO se non usato direttamente
+# from server.init.database import db # RIMOSSO
+from util.logging_config import get_logger # MODIFICATO
+# from server.websocket.connection import ConnectionManager, authenticated_async # RIMOSSO
+# from server.websocket.game_events import GameEventService # RIMOSSO
+# from server.websocket.rendering import RenderingService # RIMOSSO
+from server.websocket.websocket_manager import WebSocketManager
+from states.mappa.mappa_state import MappaState
 from core.event_bus import EventBus
-import core.events as Events
 
-# Configura il logger
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__) # AGGIUNTO
+
+Payload.max_decode_packets = 500
+
+WEBSOCKET_TAVERNA_SERVICE_INSTANCE = None
+
+def _get_valid_mappa_state_or_emit_error(sid, nome_luogo_atteso):
+    """
+    Recupera lo stato MappaState valido per il SID e il nome_luogo atteso.
+    Emette un errore via WebSocket e logga se lo stato non è valido.
+    Restituisce (MappaState | None, user_id | None).
+    """
+    websocket_manager = WebSocketManager.get_instance()
+    if not websocket_manager or not hasattr(websocket_manager, 'connection_manager'):
+        emit('errore_stato', {'errore': 'WebSocketManager non inizializzato correttamente.', 'details': 'connection_manager_missing'}, room=sid)
+        logger.error("WebSocketManager o connection_manager non disponibile in _get_valid_mappa_state_or_emit_error.")
+        return None, None 
+        
+    user_id = websocket_manager.connection_manager.get_user_id(sid)
+    if not user_id:
+        emit('errore_stato', {'errore': 'Utente non autenticato o sessione non valida.', 'details': 'user_id_missing'}, room=sid)
+        logger.warning(f"Auth fallita per SID {sid} in _get_valid_mappa_state_or_emit_error.")
+        return None, None
+        
+    player_instance = None
+    # Tenta di ottenere player_instance tramite un metodo diretto se esiste
+    if hasattr(websocket_manager, 'get_player_instance_by_sid'):
+        player_instance = websocket_manager.get_player_instance_by_sid(sid) 
+    
+    # Fallback alla logica con session_id se il metodo diretto non ha funzionato
+    if not player_instance:
+        session_id = websocket_manager.connection_manager.get_session_id(sid)
+        if not session_id:
+            emit('errore_stato', {'errore': 'ID Sessione non trovato per il SID.', 'details': 'session_id_missing'}, room=sid)
+            logger.warning(f"Session ID non trovato per SID {sid} in _get_valid_mappa_state.")
+            return None, user_id # user_id potrebbe essere ancora valido per logging
+        
+        if hasattr(websocket_manager, 'get_player_instance'):
+            player_instance = websocket_manager.get_player_instance(session_id)
+        else:
+            logger.error(f"WebSocketManager non ha il metodo get_player_instance. SID: {sid}")
+            emit('errore_stato', {'errore': 'Errore interno del server (player lookup).', 'details': 'player_lookup_method_missing'}, room=sid)
+            return None, user_id
+
+    if not player_instance:
+        emit('errore_stato', {'errore': f'Istanza giocatore non trovata.', 'details': f'player_instance_missing_for_sid_{sid}'}, room=sid)
+        logger.warning(f"Istanza giocatore non trovata per SID {sid} (user_id: {user_id}).")
+        return None, user_id
+         
+    stato_corrente = player_instance.stato_corrente
+
+    if not stato_corrente:
+        emit('errore_stato', {'errore': f'Stato corrente non trovato per l\'utente {user_id}.', 'details': 'current_state_missing'}, room=sid)
+        logger.warning(f"Stato corrente non trovato per user_id {user_id} (SID: {sid}).")
+        return None, user_id
+
+    if not isinstance(stato_corrente, MappaState):
+        emit('errore_stato', {'errore': 'Tipo di stato non valido. Non sei in un luogo (MappaState).', 'actual_state': type(stato_corrente).__name__}, room=sid)
+        logger.warning(f"Stato non MappaState per user_id {user_id} (SID: {sid}). Stato attuale: {type(stato_corrente).__name__}")
+        return None, user_id
+    
+    if stato_corrente.nome_luogo != nome_luogo_atteso:
+        emit('errore_stato', {'errore': f'Non sei nel luogo corretto. Attualmente in "{stato_corrente.nome_luogo}", atteso "{nome_luogo_atteso}".'}, room=sid)
+        logger.warning(f"Luogo errato per user_id {user_id} (SID: {sid}). Attuale: {stato_corrente.nome_luogo}, Atteso: {nome_luogo_atteso}")
+        return None, user_id
+        
+    # Verifica e tentativo di sincronizzazione del contesto di gioco in MappaState
+    game_context_ok = False
+    if hasattr(stato_corrente, 'gioco') and stato_corrente.gioco and \
+       hasattr(stato_corrente.gioco, 'giocatore') and stato_corrente.gioco.giocatore == player_instance:
+        game_context_ok = True
+
+    if not game_context_ok:
+        logger.warning(f"Contesto di gioco in MappaState (luogo: {stato_corrente.nome_luogo}) non allineato per user_id {user_id} (SID: {sid}). Tentativo di impostazione.")
+        if hasattr(player_instance, 'game_context') and hasattr(stato_corrente, 'set_game_context'): # Assicurati che player_instance abbia game_context
+            stato_corrente.set_game_context(player_instance.game_context) 
+            # Riverifica dopo il tentativo di set_game_context
+            if hasattr(stato_corrente, 'gioco') and stato_corrente.gioco and \
+               hasattr(stato_corrente.gioco, 'giocatore') and stato_corrente.gioco.giocatore == player_instance:
+                game_context_ok = True
+                logger.info(f"Contesto di gioco REIMPOSTATO con successo per user_id {user_id} in MappaState.")
+            
+        if not game_context_ok: # Se ancora non ok dopo il tentativo
+            logger.error(f"FALLIMENTO IMPOSTAZIONE/VERIFICA CONTESTO GIOCO per user_id {user_id} in MappaState '{stato_corrente.nome_stato}'. Player in context: {getattr(getattr(stato_corrente.gioco, 'giocatore', None), 'nome', 'N/A')}, expected: {player_instance.nome}")
+            emit('errore_stato', {'errore': 'Errore interno: contesto di gioco non sincronizzato.', 'details': 'game_context_mismatch'}, room=sid)
+            return None, user_id
+
+    logger.debug(f"Stato valido '{stato_corrente.nome_luogo}' (tipo: {type(stato_corrente).__name__}) recuperato per user_id {user_id} (SID: {sid}).")
+    return stato_corrente, user_id
+
+def register_taverna_websocket_handlers(socketio_instance: SocketIO):
+    """
+    Registra gli handler WebSocket per le interazioni nella taverna.
+    """
+    logger.info("Registrazione handler WebSocket per la Taverna...")
+
+    @socketio_instance.on('muovi_taverna')
+    async def handle_muovi_taverna(sid, data):
+        logger.debug(f"Evento 'muovi_taverna' ricevuto da SID {sid} con dati: {data}")
+        stato_luogo, user_id = _get_valid_mappa_state_or_emit_error(sid, "taverna")
+        if stato_luogo and user_id: 
+            direzione = data.get('direzione')
+            if direzione:
+                # Assumendo che process_azione_luogo sia sincrona e potenzialmente CPU-bound
+                await asyncio.to_thread(stato_luogo.process_azione_luogo, 
+                                        user_id=user_id,
+                                        azione="muovi", 
+                                        dati_azione={"direzione": direzione})
+            else:
+                logger.warning(f"Direzione mancante per 'muovi_taverna' da SID {sid}.")
+                emit('errore_azione', {'errore': 'Direzione mancante per il movimento.', 'event': 'muovi_taverna'}, room=sid)
+
+    @socketio_instance.on('interagisci_oggetto_taverna')
+    async def handle_interagisci_oggetto_taverna(sid, data):
+        logger.debug(f"Evento 'interagisci_oggetto_taverna' ricevuto da SID {sid} con dati: {data}")
+        stato_luogo, user_id = _get_valid_mappa_state_or_emit_error(sid, "taverna")
+        if stato_luogo and user_id:
+            oggetto_id = data.get('oggetto_id')
+            if oggetto_id:
+                await asyncio.to_thread(stato_luogo.process_azione_luogo,
+                                        user_id=user_id, 
+                                        azione="interagisci_oggetto", 
+                                        dati_azione={"oggetto_id": oggetto_id})
+            else:
+                logger.warning(f"ID oggetto mancante per 'interagisci_oggetto_taverna' da SID {sid}.")
+                emit('errore_azione', {'errore': "ID oggetto mancante per l'interazione.", 'event': 'interagisci_oggetto_taverna'}, room=sid)
+
+    @socketio_instance.on('dialoga_npg_taverna')
+    async def handle_dialoga_npg_taverna(sid, data):
+        logger.debug(f"Evento 'dialoga_npg_taverna' ricevuto da SID {sid} con dati: {data}")
+        stato_luogo, user_id = _get_valid_mappa_state_or_emit_error(sid, "taverna")
+        if stato_luogo and user_id:
+            npg_id = data.get('npg_id')
+            opzione_dialogo = data.get('opzione_dialogo') # Può essere None per iniziare
+            if npg_id:
+                await asyncio.to_thread(stato_luogo.process_azione_luogo,
+                                        user_id=user_id, 
+                                        azione="dialoga_npg", 
+                                        dati_azione={"npg_id": npg_id, "opzione": opzione_dialogo})
+            else:
+                logger.warning(f"ID NPG mancante per 'dialoga_npg_taverna' da SID {sid}.")
+                emit('errore_azione', {'errore': 'ID NPG mancante per il dialogo.', 'event': 'dialoga_npg_taverna'}, room=sid)
+    
+    @socketio_instance.on('azione_specifica_taverna')
+    async def handle_azione_specifica_taverna(sid, data):
+        logger.debug(f"Evento 'azione_specifica_taverna' ricevuto da SID {sid} con dati: {data}")
+        stato_luogo, user_id = _get_valid_mappa_state_or_emit_error(sid, "taverna")
+        if stato_luogo and user_id:
+            nome_azione_specifica = data.get('nome_azione') 
+            dati_aggiuntivi = data.get('dati_payload')    
+            
+            if nome_azione_specifica:
+                # L'azione viene passata direttamente a process_azione_luogo,
+                # che poi la delegherà a _handle_azione_specifica_luogo in MappaState o TavernaState.
+                await asyncio.to_thread(stato_luogo.process_azione_luogo,
+                                        user_id=user_id,
+                                        azione=nome_azione_specifica, 
+                                        dati_azione=dati_aggiuntivi if dati_aggiuntivi is not None else {})
+            else:
+                logger.warning(f"Nome azione specifica mancante per 'azione_specifica_taverna' da SID {sid}.")
+                emit('errore_azione', {'errore': 'Nome azione specifica mancante.', 'event': 'azione_specifica_taverna'}, room=sid)
+
+    logger.info("Handler WebSocket per la Taverna registrati con successo.")
+
+def initialize_taverna_websocket_service(sio_param, conn_manager_param, rendering_service_param, game_event_param, websocket_manager_param):
+    # Se questa classe viene usata per più luoghi, potrebbe essere istanziata una volta come LuogoWebService
+    # e gli handler registrati dinamicamente con functools.partial per ogni nome_luogo.
+    global WEBSOCKET_TAVERNA_SERVICE_INSTANCE # Assicura che si riferisca alla variabile globale
+    if WEBSOCKET_TAVERNA_SERVICE_INSTANCE is None:
+        WEBSOCKET_TAVERNA_SERVICE_INSTANCE = TavernaWebsocketService(sio_param)
+    return WEBSOCKET_TAVERNA_SERVICE_INSTANCE
+
+def get_taverna_websocket_service():
+    return WEBSOCKET_TAVERNA_SERVICE_INSTANCE
 
 def handle_taverna_inizializza(data):
     """
@@ -29,6 +205,7 @@ def handle_taverna_inizializza(data):
     # Ottieni la sessione
     sessione = core.get_session(id_sessione)
     if not sessione:
+        emit('error', {'message': 'Stato taverna non disponibile'})
         return
     
     # Ottieni lo stato taverna

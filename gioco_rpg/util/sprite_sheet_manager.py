@@ -7,7 +7,9 @@ import os
 import json
 import logging
 from pathlib import Path
-import msgpack
+import weakref
+from typing import Dict, List, Optional, Tuple, Union, Any
+from functools import lru_cache
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +46,9 @@ class SpriteSheetManager:
         # Dizionario per la mappatura degli sprite singoli ai loro sprite sheet
         self.sprite_to_sheet = {}
         
+        # Cache per sprite sheet (utilizza riferimenti deboli per consentire il garbage collection)
+        self._sprite_sheet_cache = weakref.WeakValueDictionary()
+        
         # Carica tutti gli sprite sheet esistenti
         self.load_all_sprite_sheets()
         
@@ -54,36 +59,37 @@ class SpriteSheetManager:
         Carica tutti gli sprite sheet disponibili nella directory base.
         """
         try:
-            # Trova tutti i file di metadati JSON/MSGPACK degli sprite sheet
+            # Contatori per logging
+            total_sheets = 0
+            total_sprites = 0
+            
+            # Trova tutti i file di metadati JSON degli sprite sheet
             for file_path in Path(self.base_path).glob("**/*.json"):
-                self.load_sprite_sheet_metadata(file_path)
+                if self.load_sprite_sheet_metadata(file_path):
+                    total_sheets += 1
+                    
+            # Conta il numero totale di sprite mappati
+            total_sprites = len(self.sprite_to_sheet)
                 
-            for file_path in Path(self.base_path).glob("**/*.msgpack"):
-                self.load_sprite_sheet_metadata(file_path, is_msgpack=True)
-                
-            logger.info(f"Caricati {len(self.sprite_sheets)} sprite sheet con {len(self.sprite_to_sheet)} sprite mappati")
+            logger.info(f"Caricati {total_sheets} sprite sheet con {total_sprites} sprite mappati")
         except Exception as e:
             logger.error(f"Errore nel caricamento degli sprite sheet: {e}")
+            raise
     
-    def load_sprite_sheet_metadata(self, metadata_path, is_msgpack=False):
+    def load_sprite_sheet_metadata(self, metadata_path):
         """
         Carica i metadati di uno sprite sheet.
         
         Args:
-            metadata_path (str): Percorso al file dei metadati.
-            is_msgpack (bool): True se il file è in formato MessagePack, False se JSON.
+            metadata_path (str): Percorso al file dei metadati JSON.
             
         Returns:
             bool: True se il caricamento è riuscito, False altrimenti.
         """
         try:
-            # Carica i metadati
-            if is_msgpack:
-                with open(metadata_path, "rb") as f:
-                    metadata = msgpack.unpackb(f.read(), raw=False)
-            else:
-                with open(metadata_path, "r", encoding="utf-8") as f:
-                    metadata = json.load(f)
+            # Carica i metadati JSON
+            with open(metadata_path, "r", encoding="utf-8") as f:
+                metadata = json.load(f)
             
             # Ottieni l'ID dello sprite sheet
             sheet_id = metadata.get("id")
@@ -130,9 +136,11 @@ class SpriteSheetManager:
             logger.error(f"Errore nel caricamento dei metadati dello sprite sheet {metadata_path}: {e}")
             return False
     
+    @lru_cache(maxsize=128)
     def get_sprite_info(self, sprite_id):
         """
         Ottiene le informazioni su uno sprite specifico.
+        Utilizza caching LRU per migliorare le prestazioni sugli sprite più utilizzati.
         
         Args:
             sprite_id (str): L'ID dello sprite.
@@ -153,6 +161,29 @@ class SpriteSheetManager:
             dict: Le informazioni sullo sprite sheet o None se non trovato.
         """
         return self.sprite_sheets.get(sheet_id)
+    
+    def get_or_load_sprite_sheet(self, sheet_id):
+        """
+        Ottiene uno sprite sheet dalla cache o lo carica se non è presente.
+        
+        Args:
+            sheet_id (str): ID dello sprite sheet.
+            
+        Returns:
+            dict: Informazioni sullo sprite sheet o None se non trovato.
+        """
+        # Verifica se è già nella cache
+        if sheet_id in self._sprite_sheet_cache:
+            return self._sprite_sheet_cache[sheet_id]
+        
+        # Carica le informazioni dello sprite sheet
+        sheet_info = self.get_sprite_sheet_info(sheet_id)
+        if sheet_info:
+            # Memorizza nella cache
+            self._sprite_sheet_cache[sheet_id] = sheet_info
+            return sheet_info
+        
+        return None
     
     def create_sprite_sheet(self, sheet_id, sprites, output_path=None, size=(2048, 2048)):
         """
@@ -181,7 +212,6 @@ class SpriteSheetManager:
             # Ottieni i percorsi completi per l'immagine e i metadati
             image_path = f"{output_path}.png"
             json_path = f"{output_path}.json"
-            msgpack_path = f"{output_path}.msgpack"
             
             # Importa Pillow per la manipolazione delle immagini
             try:
@@ -204,24 +234,51 @@ class SpriteSheetManager:
                 }
             }
             
+            # Posiziona gli sprite sull'immagine utilizzando algoritmo di packing
+            return self._pack_sprites_in_sheet(sprites, sheet_image, metadata, image_path, json_path)
+        
+        except Exception as e:
+            logger.error(f"Errore nella creazione dello sprite sheet {sheet_id}: {e}")
+            return False
+    
+    def _pack_sprites_in_sheet(self, sprites, sheet_image, metadata, image_path, json_path):
+        """
+        Posiziona gli sprite su uno sheet utilizzando un algoritmo di packing semplice.
+        
+        Args:
+            sprites (list): Lista di percorsi agli sprite.
+            sheet_image (PIL.Image): Immagine dello sheet.
+            metadata (dict): Metadati dello sheet.
+            image_path (str): Percorso output immagine.
+            json_path (str): Percorso output JSON.
+            
+        Returns:
+            bool: True se l'operazione è riuscita, False altrimenti.
+        """
+        try:
+            from PIL import Image
+            
+            # Larghezza e altezza totali dello sheet
+            sheet_width, sheet_height = sheet_image.size
+            
             # Posiziona gli sprite sull'immagine
             x, y = 0, 0
             max_height = 0
             
-            for i, sprite_path in enumerate(sprites):
+            for sprite_path in sprites:
                 try:
                     # Apri l'immagine dello sprite
                     sprite_image = Image.open(sprite_path)
                     sprite_width, sprite_height = sprite_image.size
                     
                     # Se l'immagine è troppo grande per la riga corrente, vai alla riga successiva
-                    if x + sprite_width > size[0]:
+                    if x + sprite_width > sheet_width:
                         x = 0
                         y += max_height
                         max_height = 0
                     
                     # Se l'immagine è troppo grande per lo sheet, salta
-                    if y + sprite_height > size[1]:
+                    if y + sprite_height > sheet_height:
                         logger.warning(f"Sprite {sprite_path} troppo grande per lo sheet, saltato.")
                         continue
                     
@@ -251,18 +308,21 @@ class SpriteSheetManager:
                     continue
             
             # Salva l'immagine dello sprite sheet
-            sheet_image.save(image_path)
+            sheet_image.save(image_path, optimize=True)
             
             # Salva i metadati in formato JSON
             with open(json_path, "w", encoding="utf-8") as f:
                 json.dump(metadata, f, indent=2)
             
-            # Salva i metadati in formato MessagePack
-            with open(msgpack_path, "wb") as f:
-                f.write(msgpack.packb(metadata, use_bin_type=True))
-            
             # Aggiorna il dizionario degli sprite sheet
-            self.sprite_sheets[sheet_id] = metadata
+            sheet_id = metadata["id"]
+            self.sprite_sheets[sheet_id] = {
+                "id": sheet_id,
+                "image": image_path,
+                "frames": metadata["frames"],
+                "animations": metadata.get("animations", {}),
+                "meta": metadata.get("meta", {})
+            }
             
             # Aggiorna la mappatura degli sprite
             for frame_id, frame_data in metadata["frames"].items():
@@ -271,13 +331,16 @@ class SpriteSheetManager:
                     "frame": frame_data
                 }
             
+            # Pulisci la cache lru
+            self.get_sprite_info.cache_clear()
+            
             logger.info(f"Sprite sheet creato con successo: {sheet_id} ({len(metadata['frames'])} sprites)")
             return True
         
         except Exception as e:
-            logger.error(f"Errore nella creazione dello sprite sheet {sheet_id}: {e}")
+            logger.error(f"Errore nel packing degli sprite: {e}")
             return False
-    
+            
     def generate_sprite_sheet_from_directory(self, directory, sheet_id=None, recursive=False):
         """
         Genera uno sprite sheet da tutti gli sprite in una directory.
@@ -316,15 +379,63 @@ class SpriteSheetManager:
                 logger.warning(f"Nessuno sprite trovato nella directory {directory}")
                 return False
             
+            # Calcola dimensioni ottimali per lo sprite sheet
+            size = self._calculate_optimal_sheet_size(sprite_paths)
+            
             # Prepara il percorso di output
             output_path = os.path.join(self.base_path, sheet_id)
             
             # Crea lo sprite sheet
-            return self.create_sprite_sheet(sheet_id, sprite_paths, output_path)
+            return self.create_sprite_sheet(sheet_id, sprite_paths, output_path, size)
         
         except Exception as e:
             logger.error(f"Errore nella generazione dello sprite sheet dalla directory {directory}: {e}")
             return False
+    
+    def _calculate_optimal_sheet_size(self, sprite_paths, max_size=4096):
+        """
+        Calcola le dimensioni ottimali per uno sprite sheet in base agli sprite da inserire.
+        
+        Args:
+            sprite_paths (list): Lista di percorsi agli sprite.
+            max_size (int): Dimensione massima consentita per lo sprite sheet.
+            
+        Returns:
+            tuple: Dimensioni (larghezza, altezza) ottimali.
+        """
+        from PIL import Image
+        
+        # Calcola l'area totale necessaria
+        total_area = 0
+        max_width = 0
+        max_height = 0
+        
+        for path in sprite_paths:
+            try:
+                img = Image.open(path)
+                w, h = img.size
+                total_area += w * h
+                max_width = max(max_width, w)
+                max_height = max(max_height, h)
+            except Exception as e:
+                logger.error(f"Errore nell'apertura dello sprite {path}: {e}")
+        
+        # Aggiungi un margine del 10% per evitare di riempire troppo lo sheet
+        total_area *= 1.1
+        
+        # Calcola il lato di un quadrato che potrebbe contenere tutti gli sprite
+        side = int(total_area ** 0.5)
+        
+        # Arrotonda al multiplo di 128 superiore per ottimizzare la texture
+        side = ((side + 127) // 128) * 128
+        
+        # Limita le dimensioni massime
+        side = min(side, max_size)
+        
+        # Assicurati che possa contenere almeno lo sprite più grande
+        side = max(side, max(max_width, max_height))
+        
+        return (side, side)
             
     def get_sprite_data_url(self, sprite_id):
         """
@@ -342,7 +453,7 @@ class SpriteSheetManager:
         if sprite_info:
             # Lo sprite è in uno sprite sheet
             sheet_id = sprite_info["sheet_id"]
-            sheet_info = self.get_sprite_sheet_info(sheet_id)
+            sheet_info = self.get_or_load_sprite_sheet(sheet_id)
             
             if sheet_info:
                 return {
@@ -351,9 +462,17 @@ class SpriteSheetManager:
                     "frame": sprite_info["frame"]["frame"]
                 }
         
-        # Altrimenti, potrebbe essere uno sprite singolo
-        # Questo dipende dall'implementazione specifica
+        # Sprite non trovato
+        logger.warning(f"Sprite non trovato: {sprite_id}")
         return None
+    
+    def clear_cache(self):
+        """
+        Pulisce la cache degli sprite sheet.
+        """
+        self._sprite_sheet_cache.clear()
+        self.get_sprite_info.cache_clear()
+        logger.debug("Cache degli sprite sheet pulita")
 
 # Singleton globale
 _sprite_sheet_manager = None

@@ -2,13 +2,12 @@ from flask import request, jsonify, send_file, Blueprint, abort
 import os
 import logging
 import re
-import traceback
+import json
 
 # Import moduli locali
 from util.asset_manager import get_asset_manager
 from server.websocket.assets import notify_asset_update
 from util.sprite_sheet_manager import get_sprite_sheet_manager
-import json
 
 # Configura il logger
 logger = logging.getLogger(__name__)
@@ -108,63 +107,32 @@ def update_assets():
         
         # Aggiorna tutti gli asset
         logger.info("Avvio aggiornamento degli asset")
-        updated = asset_manager.update_all()
+        result = asset_manager.update_all()
         
-        # Gestisci il caso in cui update_all restituisca un bool invece di una lista
-        if isinstance(updated, bool):
-            updated_count = 0
-            updated_list = []
-            update_success = updated
-            logger.info(f"Aggiornamento completato con stato: {update_success}")
-        else:
-            updated_count = len(updated)
-            updated_list = updated
-            update_success = True
-            logger.info(f"Aggiornamento completato, {updated_count} asset aggiornati")
-        
-        # Tenta di importare e verificare che socketio sia disponibile
-        try:
-            from server.websocket.assets import socketio, notify_asset_update
-            from server.app import socketio as app_socketio
-            from flask_socketio import SocketIO
-            
-            socketio_available = socketio is not None
-            logger.info(f"SocketIO disponibile dal modulo assets: {socketio_available}")
-            
-            if socketio is None and app_socketio is not None:
-                logger.info("Tentativo di usare socketio dall'app")
-                # Tenta di fare riferimento al socketio dell'app
-                from server.websocket import assets
-                assets.socketio = app_socketio
-                socketio_available = True
+        if result:
+            # Ottieni la nuova versione
+            current_version = int(asset_manager.manifest.get("last_updated", 0))
             
             # Notifica i client dell'aggiornamento
-            if socketio_available:
-                logger.info("Invio notifica WebSocket per l'aggiornamento")
-                notification_sent = notify_asset_update("all", "update_all")
-                if notification_sent:
-                    logger.info("Notifica WebSocket inviata con successo")
-                else:
-                    logger.warning("Invio della notifica WebSocket fallito")
-            else:
-                logger.warning("Impossibile inviare notifica WebSocket per l'aggiornamento degli asset (socketio non disponibile)")
-        except ImportError as e:
-            logger.error(f"Errore nell'importazione dei moduli necessari per la notifica: {str(e)}")
-        except Exception as e:
-            logger.error(f"Errore nell'invio della notifica WebSocket: {str(e)}")
-            logger.error(traceback.format_exc())
-        
-        # Restituisci una risposta positiva
-        return jsonify({
-            'success': True,
-            'message': 'Assets aggiornati con successo',
-            'updated': updated_count,
-            'assets': updated_list
-        })
+            notify_asset_update("all", "update_all")
+            
+            # Restituisci una risposta positiva
+            return jsonify({
+                'success': True,
+                'message': 'Assets aggiornati con successo',
+                'version': current_version,
+                'sprites': len(asset_manager.sprites),
+                'tiles': len(asset_manager.tiles),
+                'ui_elements': len(asset_manager.ui_elements)
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Errore nell\'aggiornamento degli asset'
+            }), 500
     except Exception as e:
         # Log dell'errore
         logger.error(f"Errore nell'aggiornamento degli asset: {str(e)}")
-        logger.error(traceback.format_exc())
         return jsonify({
             'success': False,
             'error': str(e)
@@ -174,7 +142,6 @@ def update_assets():
 @assets_routes.route('/assets/update', methods=['POST'])
 def update_assets_absolute():
     """Route alias per /assets/update per compatibilità con i test."""
-    logger.info("Ricevuta richiesta su /assets/update (percorso assoluto)")
     return update_assets()
 
 @assets_routes.route("/assets/file/<path:asset_path>", methods=["GET"])
@@ -187,11 +154,6 @@ def get_asset_file(asset_path):
     if path_traversal_pattern.search(asset_path):
         logger.warning(f"Tentativo di path traversal rilevato: {asset_path}")
         return jsonify({"errore": "Percorso non valido o non autorizzato"}), 403
-    
-    # Gestione specifica per il test di path traversal che usa ../../../config/config.json
-    if "config/config.json" in asset_path:
-        logger.warning(f"Tentativo di accesso a file di configurazione: {asset_path}")
-        return jsonify({"errore": "Accesso negato"}), 403
     
     try:
         asset_manager = get_asset_manager()
@@ -376,9 +338,7 @@ def get_spritesheet_image(filename):
             # Prova con le estensioni
             search_paths.extend([
                 os.path.join(sprite_sheet_manager.base_path, f"{filename}.png"),
-                os.path.join(asset_manager.base_path, 'spritesheets', f"{filename}.png"),
-                os.path.join(sprite_sheet_manager.base_path, f"{filename}.jpg"),
-                os.path.join(asset_manager.base_path, 'spritesheets', f"{filename}.jpg")
+                os.path.join(asset_manager.base_path, 'spritesheets', f"{filename}.png")
             ])
         
         # Cerca il file
@@ -387,19 +347,8 @@ def get_spritesheet_image(filename):
                 logger.info(f"Sprite sheet trovato: {path}")
                 return send_file(path)
         
-        # Fallback a un'immagine di default
-        fallback_paths = [
-            os.path.join(asset_manager.base_path, 'fallback', 'placeholder.png'),
-            os.path.join(asset_manager.base_path, 'player.png')
-        ]
-        
-        for path in fallback_paths:
-            if os.path.exists(path) and os.path.isfile(path):
-                logger.warning(f"Sprite sheet non trovato, uso fallback: {path}")
-                return send_file(path)
-        
-        # Se non troviamo nemmeno il fallback, restituisci un errore
-        logger.error(f"Sprite sheet non trovato e nessun fallback disponibile: {filename}")
+        # Se non troviamo lo sprite sheet, restituisci un errore
+        logger.error(f"Sprite sheet non trovato: {filename}")
         return jsonify({
             'error': 'Sprite sheet non trovato'
         }), 404

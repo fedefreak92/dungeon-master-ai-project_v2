@@ -42,33 +42,58 @@ def handle_request_map_data(data):
             
         # Ottieni la mappa corrente
         map_name = position_component.map_name
-        map_entities = sessione.get_entities_in_map(map_name)
         
-        # Costruisci i dati della mappa
-        map_data = {
-            'name': map_name,
-            'player_position': {
-                'x': position_component.x,
-                'y': position_component.y
-            },
-            'entities': []
+        # Carica i dati della mappa
+        from util.asset_manager import get_asset_manager
+        asset_manager = get_asset_manager()
+        map_data = asset_manager.get_map_data(map_name)
+        
+        if not map_data:
+            emit('error', {'message': f'Mappa {map_name} non trovata'})
+            return
+        
+        # Assicurati che ci sia una backgroundImage per il nuovo renderer
+        if not "backgroundImage" in map_data:
+            map_data["backgroundImage"] = f"assets/maps/{map_name}_background.png"
+        
+        # Semplifica la griglia a valori binari (0 = percorribile, 1 = ostacolo)
+        if "griglia" in map_data and isinstance(map_data["griglia"], list):
+            for y in range(len(map_data["griglia"])):
+                if isinstance(map_data["griglia"][y], list):
+                    for x in range(len(map_data["griglia"][y])):
+                        # Converti tutti i valori non-zero a 1 (ostacolo)
+                        map_data["griglia"][y][x] = 1 if map_data["griglia"][y][x] != 0 else 0
+        
+        # Aggiungi la posizione del giocatore
+        map_data["player_position"] = {
+            "x": position_component.x,
+            "y": position_component.y
         }
         
-        # Aggiungi tutte le entità presenti sulla mappa
+        # Ottieni entità sulla mappa (oggetti e NPC)
+        map_entities = sessione.get_entities_in_map(map_name)
+        
+        # Prepara una lista di entità formattate per il client
+        entities_data = []
         for entity in map_entities:
+            if entity.id == player_entity.id:
+                continue  # Il giocatore è già gestito separatamente
+                
             entity_pos = entity.get_component("position")
             entity_render = entity.get_component("renderable")
             
             if entity_pos and entity_render:
-                map_data['entities'].append({
-                    'id': entity.id,
-                    'name': entity.name,
-                    'x': entity_pos.x,
-                    'y': entity_pos.y,
-                    'sprite': entity_render.sprite,
-                    'layer': entity_render.layer,
-                    'tags': entity.tags
+                entities_data.append({
+                    "id": entity.id,
+                    "nome": entity.name,
+                    "type": "npc" if entity.has_tag("npc") else "object",
+                    "x": entity_pos.x,
+                    "y": entity_pos.y,
+                    "sprite": entity_render.sprite
                 })
+        
+        # Aggiungi la lista di entità ai dati della mappa
+        map_data["entities"] = entities_data
         
         emit('map_data', map_data)
     except Exception as e:
@@ -97,13 +122,14 @@ def handle_request_assets(data):
         assets = asset_manager.get_all_tilesets()
     elif tipo_asset == 'ui':
         assets = asset_manager.get_all_ui_elements()
+    elif tipo_asset == 'backgrounds':
+        # Aggiungi un nuovo tipo di asset per le immagini di sfondo
+        assets = asset_manager.get_all_backgrounds()
     else:
         # Restituisci tutti gli asset raggruppati per tipo
         assets = {
             'sprites': asset_manager.get_all_sprites(),
-            'tiles': asset_manager.get_all_tiles(),
-            'animations': asset_manager.get_all_animations(),
-            'tilesets': asset_manager.get_all_tilesets(),
+            'backgrounds': asset_manager.get_all_backgrounds(),
             'ui': asset_manager.get_all_ui_elements()
         }
     
@@ -130,29 +156,10 @@ def handle_request_render_update(data):
     # Raccogli tutti gli eventi di rendering dal sistema ECS
     render_events = []
     
-    # 1. Raccogli eventi dal RenderSystem
-    render_system = sessione.get_system("render")
-    if render_system:
-        render_events.extend(render_system.get_render_events())
-    
-    # 2. Raccogli eventi dal GraphicsRenderer
+    # Raccogli eventi dal GraphicsRenderer
     renderer_events = graphics_renderer.get_renderer_events()
     if renderer_events:
         render_events.extend(renderer_events)
-        
-    # 3. Raccogli eventi dalle entità con componenti di rendering
-    for entity in sessione.get_entities_with_component("renderable"):
-        if hasattr(entity, "get_render_events"):
-            entity_events = entity.get_render_events()
-            if entity_events:
-                render_events.extend(entity_events)
-    
-    # 4. Sistema di particelle
-    for entity in sessione.get_entities_with_component("particle"):
-        if hasattr(entity, "get_render_events"):
-            particle_events = entity.get_render_events()
-            if particle_events:
-                render_events.extend(particle_events)
     
     # Invia aggiornamenti al client
     if render_events:
@@ -325,6 +332,10 @@ def render_taverna(taverna_state, sessione):
         "fase": taverna_state.fase
     }
     
+    # Assicurati che ci sia un'immagine di sfondo
+    if "mappa" in render_data and not "backgroundImage" in render_data["mappa"]:
+        render_data["mappa"]["backgroundImage"] = "assets/maps/taverna_background.png"
+    
     # Emetti evento di rendering
     room_id = f"session_{sessione.sessione_id}"
     socketio.emit('render_update', render_data, room=room_id)
@@ -364,6 +375,10 @@ def render_mercato(mercato_state, sessione):
         "oggetti": [obj.to_dict() for id_obj, obj in mercato_state.oggetti_interattivi.items() if hasattr(obj, "to_dict")],
         "fase": mercato_state.fase
     }
+    
+    # Assicurati che ci sia un'immagine di sfondo
+    if "mappa" in render_data and not "backgroundImage" in render_data["mappa"]:
+        render_data["mappa"]["backgroundImage"] = "assets/maps/mercato_background.png"
     
     # Emetti evento di rendering
     room_id = f"session_{sessione.sessione_id}"

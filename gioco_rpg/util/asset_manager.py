@@ -6,12 +6,11 @@ Fornisce funzionalità per caricare, registrare e gestire asset come sprite, til
 import os
 import json
 import logging
-import tempfile
-import shutil
 import time
 import traceback
 import atexit
 from pathlib import Path
+from typing import Dict, List, Optional, Tuple, Union, Any
 
 # Importa il gestore degli sprite sheet
 from util.sprite_sheet_manager import get_sprite_sheet_manager
@@ -20,50 +19,6 @@ logger = logging.getLogger(__name__)
 
 # Singleton globale
 _global_asset_manager = None
-
-# Classe per limitare il number di messaggi di log ripetitivi
-class LogThrottler:
-    def __init__(self, max_occurrences=3, reset_interval=300):
-        self.log_counts = {}
-        self.max_occurrences = max_occurrences
-        self.reset_interval = reset_interval  # secondi
-        self.last_reset = time.time()
-    
-    def should_log(self, message):
-        # Reset periodico
-        current_time = time.time()
-        if current_time - self.last_reset > self.reset_interval:
-            self.log_counts.clear()
-            self.last_reset = current_time
-            
-        # Incrementa contatore per questo messaggio
-        count = self.log_counts.get(message, 0) + 1
-        self.log_counts[message] = count
-        
-        # Log solo se sotto la soglia o un multiplo della soglia
-        # (permette di loggare "logged N times" periodicamente)
-        return count <= self.max_occurrences or count % (self.max_occurrences * 5) == 0
-
-# Inizializza il throttler
-log_throttler = LogThrottler()
-
-def throttled_log(level, message, logger=logger):
-    """Logga un messaggio solo se non è stato loggato troppe volte."""
-    if log_throttler.should_log(message):
-        count = log_throttler.log_counts.get(message, 1)
-        if count > log_throttler.max_occurrences:
-            message = f"{message} (ripetuto {count} volte)"
-        
-        if level == logging.DEBUG:
-            logger.debug(message)
-        elif level == logging.INFO:
-            logger.info(message)
-        elif level == logging.WARNING:
-            logger.warning(message)
-        elif level == logging.ERROR:
-            logger.error(message)
-        elif level == logging.CRITICAL:
-            logger.critical(message)
 
 def cleanup_assets():
     """
@@ -103,6 +58,16 @@ class AssetManager:
     
     # Registro di tutti gli AssetManager aperti per garantire la pulizia
     _open_managers = []
+    
+    # Tipi di asset supportati
+    ASSET_TYPES = {
+        "sprites": "sprite",
+        "tiles": "tile",
+        "animations": "animation",
+        "tilesets": "tileset",
+        "ui": "ui",
+        "maps": "background"
+    }
     
     @classmethod
     def close_all(cls):
@@ -151,6 +116,7 @@ class AssetManager:
         self.animations = {}
         self.tilesets = {}
         self.ui_elements = {}
+        self.backgrounds = {}
         
         # Percorso del manifest
         self.manifest_path = os.path.join(self.base_path, "manifest.json")
@@ -163,7 +129,8 @@ class AssetManager:
             "tiles": self.tiles,
             "animations": self.animations,
             "tilesets": self.tilesets,
-            "ui_elements": self.ui_elements
+            "ui_elements": self.ui_elements,
+            "backgrounds": self.backgrounds
         }
         
         # Inizializza il gestore degli sprite sheet
@@ -227,6 +194,7 @@ class AssetManager:
                 self.animations = self.manifest.get("animations", {})
                 self.tilesets = self.manifest.get("tilesets", {})
                 self.ui_elements = self.manifest.get("ui_elements", {})
+                self.backgrounds = self.manifest.get("backgrounds", {})
                 
                 logger.info(f"Manifest caricato con successo: {len(self.sprites)} sprites, {len(self.tiles)} tiles")
                 return True
@@ -240,17 +208,13 @@ class AssetManager:
     
     def save_manifest(self):
         """
-        Salva il manifest degli asset con meccanismi di resilienza.
-        Utilizza tre metodi diversi per assicurare che il file venga creato:
-        1. Usa un file temporaneo e lo sposta (il più sicuro)
-        2. Scrittura diretta se il primo metodo fallisce
-        3. Scrittura tramite Path se le prime due falliscono
+        Salva il manifest degli asset.
         
         Returns:
             bool: True se il manifest è stato salvato con successo, False altrimenti.
         """
         try:
-            # Aggiungi le directory necessarie
+            # Crea le directory necessarie
             os.makedirs(os.path.dirname(self.manifest_path), exist_ok=True)
             
             # Aggiorna i dati del manifest
@@ -261,102 +225,114 @@ class AssetManager:
                 "tiles": self.tiles,
                 "animations": self.animations,
                 "tilesets": self.tilesets,
-                "ui_elements": self.ui_elements
+                "ui_elements": self.ui_elements,
+                "backgrounds": self.backgrounds
             })
             
-            # METODO 1: Usa un file temporaneo per la scrittura sicura
-            success = self._save_manifest_temp_method(self.manifest)
+            # Salva il manifest
+            with open(self.manifest_path, "w", encoding="utf-8") as f:
+                json.dump(self.manifest, f, indent=2, ensure_ascii=False)
+                
+            logger.info(f"Manifest salvato con successo in {self.manifest_path}")
+            return True
             
-            # METODO 2: Scrittura diretta (fallback)
-            if not success:
-                logger.warning("Usando metodo fallback per salvataggio manifest")
-                success = self._save_manifest_direct_method(self.manifest)
-            
-            # METODO 3: Usa Path (ultimo tentativo)
-            if not success:
-                logger.warning("Usando metodo Path per salvataggio manifest (ultimo tentativo)")
-                success = self._save_manifest_path_method(self.manifest)
-            
-            # Verifica finale
-            if os.path.exists(self.manifest_path):
-                logger.info(f"Manifest salvato con successo in {self.manifest_path}")
-                return True
-            else:
-                logger.error(f"Impossibile creare il manifest nonostante multipli tentativi")
-                return False
-        
         except Exception as e:
-            logger.error(f"Errore generale nel salvataggio del manifest: {e}")
+            logger.error(f"Errore nel salvataggio del manifest: {e}")
             logger.debug(traceback.format_exc())
             return False
     
-    def _save_manifest_temp_method(self, manifest_data):
-        """Salva il manifest usando un file temporaneo."""
-        try:
-            # Crea un file temporaneo nella stessa directory
-            fd, temp_path = tempfile.mkstemp(dir=os.path.dirname(self.manifest_path), suffix=".json")
-            try:
-                # Chiudi il file descriptor
-                os.close(fd)
-                
-                # Scrivi nel file temporaneo
-                with open(temp_path, "w", encoding="utf-8") as f:
-                    json.dump(manifest_data, f, indent=2, ensure_ascii=False)
-                
-                # Su Windows, assicurati che il file di destinazione non esista
-                if os.path.exists(self.manifest_path):
-                    try:
-                        os.unlink(self.manifest_path)
-                    except Exception as e:
-                        logger.warning(f"Impossibile rimuovere manifest esistente: {e}")
-                
-                # Sposta il file temporaneo nella posizione finale
-                shutil.move(temp_path, self.manifest_path)
-                
-                # Verifica
-                if os.path.exists(self.manifest_path):
-                    logger.debug(f"Manifest salvato con metodo file temporaneo")
-                    return True
-            finally:
-                # Rimuovi il file temporaneo se esiste ancora
-                if os.path.exists(temp_path):
-                    try:
-                        os.unlink(temp_path)
-                    except:
-                        pass
-        except Exception as e:
-            logger.error(f"Errore con metodo file temporaneo: {e}")
+    def register_asset(self, asset_type: str, asset_id: str, name: str, file_path: str, 
+                     **kwargs) -> bool:
+        """
+        Registra un asset nel registro appropriato.
         
-        return False
-    
-    def _save_manifest_direct_method(self, manifest_data):
-        """Salva il manifest con scrittura diretta."""
-        try:
-            with open(self.manifest_path, "w", encoding="utf-8") as f:
-                json.dump(manifest_data, f, indent=2, ensure_ascii=False)
+        Args:
+            asset_type (str): Tipo di asset (sprite, tile, ui, ecc.)
+            asset_id (str): ID univoco per questo asset
+            name (str): Nome descrittivo
+            file_path (str): Percorso relativo al file dell'asset
+            **kwargs: Attributi specifici per tipo di asset
             
-            if os.path.exists(self.manifest_path):
-                logger.debug("Manifest salvato con metodo diretto")
-                return True
-        except Exception as e:
-            logger.error(f"Errore con metodo diretto: {e}")
-        
-        return False
-    
-    def _save_manifest_path_method(self, manifest_data):
-        """Salva il manifest usando pathlib.Path."""
+        Returns:
+            bool: True se l'asset è stato registrato con successo, False altrimenti
+        """
         try:
-            # Usa Path per la scrittura
-            manifest_path = Path(self.manifest_path)
-            manifest_path.write_text(json.dumps(manifest_data, indent=2, ensure_ascii=False), encoding="utf-8")
+            # Trova il registro appropriato
+            registry = None
+            if asset_type == "sprite":
+                registry = self.sprites
+            elif asset_type == "tile":
+                registry = self.tiles
+            elif asset_type == "ui":
+                registry = self.ui_elements
+            elif asset_type == "animation":
+                registry = self.animations
+            elif asset_type == "tileset":
+                registry = self.tilesets
+            elif asset_type == "background":
+                registry = self.backgrounds
+            else:
+                logger.error(f"Tipo di asset non supportato: {asset_type}")
+                return False
             
-            if os.path.exists(self.manifest_path):
-                logger.debug("Manifest salvato con metodo Path")
-                return True
+            # Verifica che il file esista
+            abs_path = os.path.join(self.base_path, file_path)
+            if not os.path.exists(abs_path):
+                logger.warning(f"File asset {asset_id} non trovato: {file_path}")
+                return False
+                
+            # Crea l'asset base
+            asset_data = {
+                "id": asset_id,
+                "name": name,
+                "file": file_path,
+                "tags": kwargs.get("tags", []),
+                "last_updated": time.time()
+            }
+            
+            # Aggiungi attributi specifici per tipo
+            if asset_type == "sprite":
+                asset_data.update({
+                    "dimensions": kwargs.get("dimensions"),
+                    "offset": kwargs.get("offset")
+                })
+            elif asset_type == "tile":
+                asset_data.update({
+                    "dimensions": kwargs.get("dimensions"),
+                    "properties": kwargs.get("properties", {})
+                })
+            elif asset_type == "ui":
+                asset_data.update({
+                    "dimensions": kwargs.get("dimensions", {"width": 64, "height": 32}),
+                    "type": "ui"
+                })
+                # Aggiungi anche il percorso normalizzato
+                if os.path.isabs(file_path):
+                    asset_data["path"] = os.path.relpath(file_path, self.base_path).replace("\\", "/")
+                else:
+                    asset_data["path"] = file_path.replace("\\", "/")
+            elif asset_type == "background":
+                asset_data.update({
+                    "dimensions": kwargs.get("dimensions"),
+                    "map_id": kwargs.get("map_id")
+                })
+                # Aggiungi anche il percorso normalizzato
+                if os.path.isabs(file_path):
+                    asset_data["path"] = os.path.relpath(file_path, self.base_path).replace("\\", "/")
+                else:
+                    asset_data["path"] = file_path.replace("\\", "/")
+            
+            # Registra l'asset
+            registry[asset_id] = asset_data
+            
+            logger.debug(f"{asset_type.capitalize()} registrato: {asset_id}")
+            
+            return True
+            
         except Exception as e:
-            logger.error(f"Errore con metodo Path: {e}")
-        
-        return False
+            logger.error(f"Errore nella registrazione dell'asset {asset_type}/{asset_id}: {e}")
+            logger.debug(traceback.format_exc())
+            return False
     
     def register_sprite(self, sprite_id, name, file_path, dimensions=None, offset=None, tags=None):
         """
@@ -373,39 +349,15 @@ class AssetManager:
         Returns:
             bool: True se lo sprite è stato registrato con successo, False altrimenti
         """
-        try:
-            # Verifica se il file esiste
-            abs_path = os.path.join(self.base_path, file_path)
-            if not os.path.exists(abs_path):
-                fallback_path = os.path.join(self.base_path, "fallback", file_path)
-                if os.path.exists(fallback_path):
-                    throttled_log(logging.WARNING, f"Sprite {sprite_id} non trovato, uso fallback: {fallback_path}")
-                    file_path = os.path.join("fallback", file_path)
-                    abs_path = fallback_path
-                else:
-                    throttled_log(logging.WARNING, f"Sprite {sprite_id} non trovato e nessun fallback disponibile: {file_path}")
-                    return False
-            
-            # Registrazione sprite
-            self.sprites[sprite_id] = {
-                "id": sprite_id,
-                "name": name,
-                "file": file_path,
-                "dimensions": dimensions,
-                "offset": offset,
-                "tags": tags or []
-            }
-            
-            throttled_log(logging.DEBUG, f"Sprite registrato: {sprite_id}")
-            
-            # Aggiorna il manifest
-            self.manifest["sprites"] = self.sprites
-            
-            return True
-        except Exception as e:
-            logger.error(f"Errore nella registrazione dello sprite {sprite_id}: {e}")
-            logger.debug(traceback.format_exc())
-            return False
+        return self.register_asset(
+            asset_type="sprite",
+            asset_id=sprite_id,
+            name=name,
+            file_path=file_path,
+            dimensions=dimensions,
+            offset=offset,
+            tags=tags or []
+        )
     
     def register_tile(self, tile_id, name, file_path, dimensions=None, properties=None, tags=None):
         """
@@ -422,39 +374,15 @@ class AssetManager:
         Returns:
             bool: True se il tile è stato registrato con successo, False altrimenti
         """
-        try:
-            # Verifica se il file esiste
-            abs_path = os.path.join(self.base_path, file_path)
-            if not os.path.exists(abs_path):
-                fallback_path = os.path.join(self.base_path, "fallback", file_path)
-                if os.path.exists(fallback_path):
-                    throttled_log(logging.WARNING, f"Tile {tile_id} non trovato, uso fallback: {fallback_path}")
-                    file_path = os.path.join("fallback", file_path)
-                    abs_path = fallback_path
-                else:
-                    throttled_log(logging.WARNING, f"Tile {tile_id} non trovato e nessun fallback disponibile: {file_path}")
-                    return False
-            
-            # Registrazione tile
-            self.tiles[tile_id] = {
-                "id": tile_id,
-                "name": name,
-                "file": file_path,
-                "dimensions": dimensions,
-                "properties": properties or {},
-                "tags": tags or []
-            }
-            
-            throttled_log(logging.DEBUG, f"Tile registrato: {tile_id}")
-            
-            # Aggiorna il manifest
-            self.manifest["tiles"] = self.tiles
-            
-            return True
-        except Exception as e:
-            logger.error(f"Errore nella registrazione del tile {tile_id}: {e}")
-            logger.debug(traceback.format_exc())
-            return False
+        return self.register_asset(
+            asset_type="tile", 
+            asset_id=tile_id,
+            name=name,
+            file_path=file_path,
+            dimensions=dimensions,
+            properties=properties,
+            tags=tags or []
+        )
     
     def register_ui_element(self, ui_id, name, file_path, dimensions=None, tags=None):
         """
@@ -470,42 +398,39 @@ class AssetManager:
         Returns:
             bool: True se l'elemento UI è stato registrato con successo, False altrimenti.
         """
-        try:
-            # Normalizza il percorso del file
-            if os.path.isabs(file_path):
-                # Se è un percorso assoluto, rendilo relativo alla directory di base
-                rel_path = os.path.relpath(file_path, self.base_path)
-            else:
-                # Altrimenti, lo consideriamo già relativo
-                rel_path = file_path.replace("\\", "/")
-            
-            # Ottieni solo il nome del file
-            file_name = os.path.basename(file_path)
-            
-            # Crea il dizionario dell'elemento UI
-            ui_data = {
-                "id": ui_id,
-                "name": name,
-                "file": file_name,
-                "path": rel_path,
-                "type": "ui",
-                "dimensions": dimensions if dimensions else {"width": 64, "height": 32},
-                "tags": tags if tags else []
-            }
-            
-            # Registra l'elemento UI
-            self.ui_elements[ui_id] = ui_data
-            
-            logger.debug(f"Elemento UI registrato: {ui_id} ({rel_path})")
-            
-            # Salva il manifest
-            self.save_manifest()
-            
-            return True
+        return self.register_asset(
+            asset_type="ui",
+            asset_id=ui_id,
+            name=name,
+            file_path=file_path,
+            dimensions=dimensions,
+            tags=tags or []
+        )
+    
+    def register_background(self, background_id, name, file_path, map_id=None, dimensions=None, tags=None):
+        """
+        Registra un'immagine di sfondo per una mappa.
         
-        except Exception as e:
-            logger.error(f"Errore nella registrazione dell'elemento UI {ui_id}: {e}")
-            return False
+        Args:
+            background_id (str): ID univoco dell'immagine di sfondo.
+            name (str): Nome leggibile dell'immagine di sfondo.
+            file_path (str): Percorso del file relativo alla directory degli asset.
+            map_id (str, optional): ID della mappa associata.
+            dimensions (dict, optional): Dimensioni dell'immagine {"width": w, "height": h}.
+            tags (list, optional): Tag associati all'immagine di sfondo.
+        
+        Returns:
+            bool: True se l'immagine di sfondo è stata registrata con successo, False altrimenti.
+        """
+        return self.register_asset(
+            asset_type="background",
+            asset_id=background_id,
+            name=name,
+            file_path=file_path,
+            map_id=map_id,
+            dimensions=dimensions,
+            tags=tags or []
+        )
     
     def scan_sprites(self, directory=None):
         """
@@ -521,25 +446,7 @@ class AssetManager:
         if directory is None:
             directory = os.path.join(self.base_path, "sprites")
         
-        count = 0
-        
-        if os.path.exists(directory):
-            for file_name in os.listdir(directory):
-                file_path = os.path.join(directory, file_name)
-                
-                # Verifica che sia un file e un'immagine
-                if os.path.isfile(file_path) and file_name.lower().endswith(('.png', '.jpg', '.jpeg')):
-                    # Estrai l'ID dal nome del file (senza estensione)
-                    sprite_id = os.path.splitext(file_name)[0]
-                    
-                    # Registra lo sprite
-                    self.register_sprite(
-                        sprite_id=sprite_id,
-                        name=sprite_id.capitalize(),
-                        file_path=os.path.relpath(file_path, self.base_path)
-                    )
-                    
-                    count += 1
+        count = self._scan_assets_in_directory(directory, "sprite")
         
         logger.info(f"Scansione sprite completata: {count} sprite registrati da {directory}")
         
@@ -559,25 +466,7 @@ class AssetManager:
         if directory is None:
             directory = os.path.join(self.base_path, "tiles")
         
-        count = 0
-        
-        if os.path.exists(directory):
-            for file_name in os.listdir(directory):
-                file_path = os.path.join(directory, file_name)
-                
-                # Verifica che sia un file e un'immagine
-                if os.path.isfile(file_path) and file_name.lower().endswith(('.png', '.jpg', '.jpeg')):
-                    # Estrai l'ID dal nome del file (senza estensione)
-                    tile_id = os.path.splitext(file_name)[0]
-                    
-                    # Registra il tile
-                    self.register_tile(
-                        tile_id=tile_id,
-                        name=tile_id.capitalize(),
-                        file_path=os.path.relpath(file_path, self.base_path)
-                    )
-                    
-                    count += 1
+        count = self._scan_assets_in_directory(directory, "tile")
         
         logger.info(f"Scansione tile completata: {count} tile registrati da {directory}")
         
@@ -597,114 +486,157 @@ class AssetManager:
         if directory is None:
             directory = os.path.join(self.base_path, "ui")
         
-        count = 0
-        
-        if os.path.exists(directory):
-            for file_name in os.listdir(directory):
-                file_path = os.path.join(directory, file_name)
-                
-                # Verifica che sia un file e un'immagine
-                if os.path.isfile(file_path) and file_name.lower().endswith(('.png', '.jpg', '.jpeg')):
-                    # Estrai l'ID dal nome del file (senza estensione)
-                    ui_id = os.path.splitext(file_name)[0]
-                    
-                    # Registra l'elemento UI
-                    self.register_ui_element(
-                        ui_id=ui_id,
-                        name=ui_id.capitalize(),
-                        file_path=os.path.relpath(file_path, self.base_path)
-                    )
-                    
-                    count += 1
+        count = self._scan_assets_in_directory(directory, "ui")
         
         logger.info(f"Scansione elementi UI completata: {count} elementi registrati da {directory}")
         
         return count
     
-    def update_all(self):
+    def scan_backgrounds(self, directory=None):
         """
-        Aggiorna tutti gli asset scansionando tutte le directory.
-        
-        Returns:
-            bool: True se l'aggiornamento è stato completato con successo, False altrimenti.
-        """
-        try:
-            # Scansiona tutti i tipi di asset
-            logger.info(f"Avvio scansione di tutti gli asset da {self.base_path}")
-            logger.debug(f"Directory sprites: {os.path.join(self.base_path, 'sprites')}, esiste: {os.path.exists(os.path.join(self.base_path, 'sprites'))}")
-            logger.debug(f"Directory tiles: {os.path.join(self.base_path, 'tiles')}, esiste: {os.path.exists(os.path.join(self.base_path, 'tiles'))}")
-            logger.debug(f"Directory ui: {os.path.join(self.base_path, 'ui')}, esiste: {os.path.exists(os.path.join(self.base_path, 'ui'))}")
-            
-            # Verifica i contenuti delle directory
-            self._log_directory_contents(os.path.join(self.base_path, 'sprites'), "sprites")
-            self._log_directory_contents(os.path.join(self.base_path, 'tiles'), "tiles")
-            self._log_directory_contents(os.path.join(self.base_path, 'ui'), "ui")
-            
-            # Prima della scansione, registra cosa c'è nei dizionari
-            logger.debug(f"Sprite prima della scansione: {list(self.sprites.keys())}")
-            logger.debug(f"Tiles prima della scansione: {list(self.tiles.keys())}")
-            logger.debug(f"UI prima della scansione: {list(self.ui_elements.keys())}")
-            
-            sprites_count = self.scan_sprites()
-            tiles_count = self.scan_tiles()
-            ui_count = self.scan_ui_elements()
-            
-            # Dopo la scansione, verifica cosa è stato registrato
-            logger.debug(f"Sprite dopo la scansione: {list(self.sprites.keys())}")
-            logger.debug(f"Tiles dopo la scansione: {list(self.tiles.keys())}")
-            logger.debug(f"UI dopo la scansione: {list(self.ui_elements.keys())}")
-            
-            # Salva il manifest aggiornato
-            result = self.save_manifest()
-            
-            # Verifica che il manifest esista dopo il salvataggio
-            manifest_exists = os.path.exists(self.manifest_path)
-            logger.debug(f"Manifest dopo salvataggio: {self.manifest_path}, esiste: {manifest_exists}")
-            
-            if manifest_exists:
-                try:
-                    with open(self.manifest_path, "r", encoding="utf-8") as f:
-                        manifest_data = json.load(f)
-                    logger.debug(f"Contenuto manifest - sprite: {list(manifest_data.get('sprites', {}).keys())}")
-                    logger.debug(f"Contenuto manifest - tiles: {list(manifest_data.get('tiles', {}).keys())}")
-                except Exception as e:
-                    logger.error(f"Errore nella lettura del manifest dopo salvataggio: {e}")
-            
-            # Log dei risultati
-            total = sprites_count + tiles_count + ui_count
-            logger.info(f"Aggiornamento completato: {total} asset totali registrati")
-            logger.debug(f"Asset registrati: {sprites_count} sprites, {tiles_count} tiles, {ui_count} elementi UI")
-            
-            return result
-        
-        except Exception as e:
-            logger.error(f"Errore nell'aggiornamento di tutti gli asset: {e}")
-            logger.debug(traceback.format_exc())
-            return False
-            
-    def _log_directory_contents(self, directory, dir_type):
-        """
-        Registra il contenuto di una directory per debugging.
+        Scansiona i file delle immagini di sfondo e li registra.
         
         Args:
-            directory (str): Il percorso della directory da verificare.
-            dir_type (str): Il tipo di directory (per il logging).
+            directory (str, optional): Directory specifica da scansionare.
+                                     Se non specificata, usa 'maps' nella directory di base.
+        
+        Returns:
+            int: Il numero di immagini di sfondo scansionate e registrate.
         """
-        try:
-            if os.path.exists(directory):
-                files = os.listdir(directory)
-                logger.debug(f"Contenuto directory {dir_type}: {files}")
-                
-                # Verifica se i file possono essere letti
-                for file_name in files:
-                    file_path = os.path.join(directory, file_name)
-                    if os.path.isfile(file_path):
-                        readable = os.access(file_path, os.R_OK)
-                        logger.debug(f"File {file_path} leggibile: {readable}")
-            else:
-                logger.debug(f"Directory {dir_type} non esiste: {directory}")
-        except Exception as e:
-            logger.error(f"Errore nella verifica della directory {dir_type}: {e}")
+        if directory is None:
+            directory = os.path.join(self.base_path, "maps")
+        
+        count = self._scan_assets_in_directory(directory, "background")
+        
+        logger.info(f"Scansione immagini di sfondo completata: {count} immagini registrate da {directory}")
+        
+        return count
+    
+    def _scan_assets_in_directory(self, directory, asset_type):
+        """
+        Scansiona una singola directory per un tipo specifico di asset.
+        
+        Args:
+            directory (str): Percorso della directory da scansionare.
+            asset_type (str): Tipo di asset atteso ('sprite', 'tile', ecc.).
+            
+        Returns:
+            dict: Dizionario degli asset trovati nel formato {asset_id: info}.
+        """
+        assets_found = {}
+        if not os.path.isdir(directory):
+            logger.warning(f"Directory non trovata per la scansione: {directory}")
+            return assets_found
+
+        logger.debug(f"Scansione directory: {directory} per tipo: {asset_type}")
+        for filename in os.listdir(directory):
+            full_file_path = os.path.join(directory, filename)
+            if os.path.isfile(full_file_path):
+                # Qui potresti aggiungere controlli sull'estensione del file se necessario
+                # es: if filename.lower().endswith(('.png', '.jpg')):
+
+                asset_id = Path(filename).stem # Usa nome file senza estensione come ID
+                name = asset_id # Default name è l'ID
+                # Calcola il percorso relativo rispetto a self.base_path
+                try:
+                    relative_path = os.path.relpath(full_file_path, self.base_path).replace("\\", "/")
+                except ValueError:
+                    # Se i percorsi sono su drive diversi, usa il percorso completo
+                    relative_path = full_file_path.replace("\\", "/")
+
+                # Determina quale funzione di registrazione chiamare
+                registered_successfully = False
+                if asset_type == "sprite":
+                    registered_successfully = self.register_sprite(sprite_id=asset_id, name=name, file_path=relative_path)
+                elif asset_type == "tile":
+                    registered_successfully = self.register_tile(tile_id=asset_id, name=name, file_path=relative_path)
+                elif asset_type == "ui": # Assumendo che 'ui' sia il tipo corretto per ui_elements
+                    registered_successfully = self.register_ui_element(ui_id=asset_id, name=name, file_path=relative_path)
+                elif asset_type == "background":
+                    registered_successfully = self.register_background(background_id=asset_id, name=name, file_path=relative_path)
+                elif asset_type == "animation":
+                    # Assumiamo esista un metodo register_animation
+                    registered_successfully = self.register_animation(animation_id=asset_id, name=name, file_path=relative_path)
+                elif asset_type == "tileset":
+                    # Assumiamo esista un metodo register_tileset
+                    registered_successfully = self.register_tileset(tileset_id=asset_id, name=name, file_path=relative_path)
+                else:
+                    logger.warning(f"Tipo asset '{asset_type}' non gestito durante scansione specifica per file {filename}")
+
+                if registered_successfully:
+                    assets_found[asset_id] = {"name": name, "path": relative_path}
+                # else: # Log opzionale se la registrazione fallisce
+                    # logger.warning(f"Registrazione fallita per asset {asset_id} ({asset_type}) in {relative_path}")
+
+        return assets_found
+    
+    def update_all(self):
+        """
+        Scansiona tutte le directory degli asset e aggiorna il manifest.
+        """
+        logger.info(f"Avvio scansione di tutti gli asset da {self.base_path}")
+        all_assets_found = {}
+        has_changes = False
+        
+        # Scansiona le directory specifiche per ogni tipo di asset
+        asset_directories = {
+            "sprites": os.path.join(self.base_path, "sprites"),
+            "tiles": os.path.join(self.base_path, "tiles"),
+            "animations": os.path.join(self.base_path, "animations"),
+            "tilesets": os.path.join(self.base_path, "tilesets"),
+            "ui_elements": os.path.join(self.base_path, "ui"),
+            "backgrounds": os.path.join(self.base_path, "maps") # Sfondo mappe in /maps ? verificare
+        }
+        
+        for asset_folder_name, asset_type in self.ASSET_TYPES.items():
+             directory_to_scan = os.path.join(self.base_path, asset_folder_name)
+             if os.path.isdir(directory_to_scan):
+                 try:
+                     logger.debug(f"Scansione directory {directory_to_scan} per tipo {asset_type}")
+                     found_in_dir = self._scan_assets_in_directory(directory_to_scan, asset_type)
+                     # Unisci i risultati (questo sovrascriverà eventuali ID duplicati tra tipi diversi, 
+                     # ma gli ID dovrebbero essere univoci globalmente o per tipo a seconda del design)
+                     all_assets_found.update(found_in_dir) 
+                     # Verifica se ci sono stati cambiamenti reali (più complesso, per ora salva sempre)
+                     has_changes = True # Semplificato: assume sempre cambiamenti se la scansione avviene
+                 except Exception as e:
+                      logger.error(f"Errore durante la scansione di {directory_to_scan} per {asset_type}: {e}", exc_info=True)
+             else:
+                 logger.warning(f"Directory non trovata per tipo {asset_type}: {directory_to_scan}")
+
+        # Se sono stati trovati cambiamenti (semplificato a sempre vero se scansione eseguita)
+        if has_changes:
+             logger.info("Rilevati cambiamenti negli asset, salvataggio manifest...")
+             self.save_manifest()
+        else:
+             logger.info("Nessun cambiamento rilevato negli asset.")
+
+    def get_asset_info(self, asset_type: str, asset_id: str) -> Optional[Dict]:
+        """
+        Ottiene le informazioni su un asset specifico.
+        
+        Args:
+            asset_type (str): Tipo di asset ('sprite', 'tile', 'ui', ecc.)
+            asset_id (str): L'ID dell'asset.
+            
+        Returns:
+            dict: Le informazioni sull'asset o None se non trovato.
+        """
+        if asset_type == "sprite":
+            return self.get_sprite_info(asset_id)
+        elif asset_type == "tile":
+            return self.get_tile_info(asset_id)
+        elif asset_type == "ui":
+            return self.get_ui_element_info(asset_id)
+        elif asset_type == "animation":
+            return self.animations.get(asset_id)
+        elif asset_type == "tileset":
+            return self.tilesets.get(asset_id)
+        elif asset_type == "background":
+            return self.backgrounds.get(asset_id)
+        else:
+            logger.warning(f"Tipo di asset non supportato: {asset_type}")
+            return None
 
     def get_sprite_info(self, sprite_id):
         """
@@ -770,6 +702,75 @@ class AssetManager:
         """
         return self.ui_elements.get(ui_id)
     
+    def get_background_info(self, background_id):
+        """
+        Ottiene le informazioni su un'immagine di sfondo specifica.
+        
+        Args:
+            background_id (str): L'ID dell'immagine di sfondo.
+            
+        Returns:
+            dict: Le informazioni sull'immagine di sfondo o None se non trovata.
+        """
+        return self.backgrounds.get(background_id)
+    
+    def get_map_data(self, map_id):
+        """
+        Ottiene i dati di una mappa dal file JSON corrispondente.
+        
+        Args:
+            map_id (str): L'ID della mappa.
+            
+        Returns:
+            dict: I dati della mappa o None se non trovata.
+        """
+        try:
+            # Percorso del file JSON della mappa
+            map_path = os.path.join(os.getcwd(), "gioco_rpg", "data", "mappe", f"{map_id}.json")
+            
+            # Verifica se il file esiste
+            if not os.path.exists(map_path):
+                logger.warning(f"File mappa non trovato: {map_path}")
+                return None
+            
+            # Carica il file JSON
+            with open(map_path, "r", encoding="utf-8") as f:
+                map_data = json.load(f)
+            
+            # Verifica che esista un'immagine di sfondo per questa mappa
+            background_id = f"{map_id}_background"
+            
+            # Verifica se l'immagine di sfondo è registrata
+            background_info = self.get_background_info(background_id)
+            
+            # Se non è registrata, controlla se esiste il file e registralo
+            if not background_info:
+                # Verifico se esiste un'immagine di sfondo nel percorso standard
+                background_path = os.path.join(self.base_path, "maps", f"{background_id}.png")
+                if os.path.exists(background_path):
+                    # Registra l'immagine di sfondo
+                    self.register_background(
+                        background_id=background_id,
+                        name=f"Sfondo {map_id}",
+                        file_path=os.path.relpath(background_path, self.base_path),
+                        map_id=map_id
+                    )
+                    background_info = self.get_background_info(background_id)
+            
+            # Se abbiamo trovato un'immagine di sfondo, aggiungila ai dati della mappa
+            if background_info:
+                map_data["backgroundImage"] = background_info.get("path", f"assets/maps/{background_id}.png")
+            else:
+                # Usa un percorso predefinito se non è stata trovata un'immagine specifica
+                map_data["backgroundImage"] = f"assets/maps/{map_id}_background.png"
+            
+            return map_data
+            
+        except Exception as e:
+            logger.error(f"Errore nel caricamento dei dati della mappa {map_id}: {e}")
+            logger.debug(traceback.format_exc())
+            return None
+    
     def get_all_sprites(self):
         """Restituisce tutti gli sprite registrati"""
         return self.sprites
@@ -790,6 +791,43 @@ class AssetManager:
         """Restituisce tutti gli elementi UI registrati"""
         return self.ui_elements
     
+    def get_all_backgrounds(self):
+        """Restituisce tutte le immagini di sfondo registrate"""
+        return self.backgrounds
+    
+    def get_all_assets(self, asset_type=None):
+        """
+        Restituisce tutti gli asset di un tipo specifico o tutti gli asset.
+        
+        Args:
+            asset_type (str, optional): Tipo di asset. Se None, restituisce tutti gli asset.
+            
+        Returns:
+            dict: Dizionario di asset.
+        """
+        if asset_type == "sprite":
+            return self.sprites
+        elif asset_type == "tile":
+            return self.tiles
+        elif asset_type == "ui":
+            return self.ui_elements
+        elif asset_type == "animation":
+            return self.animations
+        elif asset_type == "tileset":
+            return self.tilesets
+        elif asset_type == "background":
+            return self.backgrounds
+        else:
+            # Restituisce tutti gli asset
+            return {
+                "sprites": self.sprites,
+                "tiles": self.tiles,
+                "animations": self.animations,
+                "tilesets": self.tilesets,
+                "ui_elements": self.ui_elements,
+                "backgrounds": self.backgrounds
+            }
+    
     def get_asset_path(self, asset_type, asset_id):
         """
         Ottiene il percorso completo di un asset.
@@ -801,19 +839,11 @@ class AssetManager:
         Returns:
             str: Il percorso completo dell'asset o None se non trovato.
         """
-        asset_info = None
-        
-        # Seleziona il tipo di asset
-        if asset_type == "sprites":
-            asset_info = self.get_sprite_info(asset_id)
-        elif asset_type == "tiles":
-            asset_info = self.get_tile_info(asset_id)
-        elif asset_type == "ui":
-            asset_info = self.get_ui_element_info(asset_id)
+        asset_info = self.get_asset_info(asset_type, asset_id)
         
         # Se l'asset è trovato, restituisci il percorso completo
         if asset_info:
-            return os.path.join(self.base_path, asset_info["path"])
+            return os.path.join(self.base_path, asset_info.get("path", asset_info.get("file", "")))
         
         return None
 
@@ -853,6 +883,72 @@ class AssetManager:
                             success = True
         
         return success
+
+    def check_for_missing_directories(self):
+        # Implementa la logica per controllare la presenza di directory mancanti
+        # Questo metodo può essere implementato in base alle esigenze specifiche del tuo progetto
+        pass
+
+    def scan_all_assets(self, force_rescan=False):
+        # Implementa la logica per scansionare tutti gli asset
+        # Questo metodo può essere implementato in base alle esigenze specifiche del tuo progetto
+        pass
+
+    def register_animation(self, animation_id: str, name: str, file_path: str, **kwargs) -> bool:
+        """
+        Registra un'animazione (placeholder).
+        Le animazioni potrebbero essere definiti principalmente tramite file JSON che
+        aggregano frame individuali, piuttosto che essere singoli file immagine da registrare qui.
+
+        Args:
+            animation_id (str): ID univoco dell'animazione.
+            name (str): Nome descrittivo.
+            file_path (str): Percorso relativo al file dell'asset.
+            kwargs (dict, optional): Dati aggiuntivi per l'animazione (es. frame_rate, loop).
+            
+        Returns:
+            bool: True se l'animazione è stata registrata/gestita, False altrimenti.
+        """
+        # Placeholder - l'utente ha indicato che file specifici di animazione potrebbero non esistere
+        # o essere gestiti diversamente (es. definiti in JSON).
+        # Questa implementazione evita l'AttributeError e permette la scansione.
+        logger.info(f"Placeholder: Tentativo di registrare animazione '{animation_id}' da '{file_path}'. Questa funzionalità non è completamente implementata per la registrazione di file individuali.")
+        # Potresti voler aggiungere l'asset al dizionario self.animations se necessario,
+        # anche senza una logica di caricamento file complessa.
+        # self.animations[animation_id] = {"id": animation_id, "name": name, "file": file_path, "path": file_path, **kwargs}
+        return self.register_asset(
+            asset_type="animation",
+            asset_id=animation_id,
+            name=name,
+            file_path=file_path,
+            **kwargs
+        )
+
+    def register_tileset(self, tileset_id: str, name: str, file_path: str, **kwargs) -> bool:
+        """
+        Registra un tileset (placeholder).
+        I tileset potrebbero essere definiti principalmente tramite file JSON che
+        aggregano tile individuali, piuttosto che essere singoli file immagine da registrare qui.
+
+        Args:
+            tileset_id (str): ID univoco del tileset.
+            name (str): Nome descrittivo.
+            file_path (str): Percorso relativo al file dell'asset.
+            kwargs (dict, optional): Dati aggiuntivi per il tileset.
+
+        Returns:
+            bool: True se il tileset è stato registrato/gestito, False altrimenti.
+        """
+        # Placeholder - i tileset sono spesso definiti da JSON.
+        logger.info(f"Placeholder: Tentativo di registrare tileset '{tileset_id}' da '{file_path}'. I tileset sono tipicamente definiti da file JSON.")
+        # self.tilesets[tileset_id] = {"id": tileset_id, "name": name, "file": file_path, "path": file_path, **kwargs}
+        return self.register_asset(
+            asset_type="tileset",
+            asset_id=tileset_id,
+            name=name,
+            file_path=file_path,
+            **kwargs
+        )
 
 # Registra la pulizia globale all'uscita
 atexit.register(AssetManager.close_all) 

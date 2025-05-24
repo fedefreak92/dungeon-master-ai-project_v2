@@ -25,11 +25,16 @@ from server.websocket.websocket_manager import WebSocketManager
 from server.websocket.session_auth import SessionAuthManager
 from server.utils.session import get_session_manager
 
-# Aggiungi il percorso della directory principale al sys.path per assicurarsi che tutti i moduli siano importabili
-current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if current_dir not in sys.path:
-    sys.path.insert(0, current_dir)
-    print(f"Aggiunto {current_dir} al sys.path")
+# Aggiungi il percorso della directory principale del progetto (gioco_rpg_backendonly)
+# al sys.path per assicurarsi che tutti i moduli siano importabili
+# __file__ è C:\...\gioco_rpg_backendonly\gioco_rpg\server\app.py
+server_app_dir = os.path.dirname(os.path.abspath(__file__)) # ...\gioco_rpg\server
+gioco_rpg_dir = os.path.dirname(server_app_dir) # ...\gioco_rpg
+project_root_dir = os.path.dirname(gioco_rpg_dir) # ...\gioco_rpg_backendonly
+
+if project_root_dir not in sys.path:
+    sys.path.insert(0, project_root_dir)
+    print(f"Aggiunto {project_root_dir} (project_root_dir) al sys.path da app.py")
 
 # Import moduli locali
 from server.routes.base_routes import base_routes
@@ -44,6 +49,12 @@ from core.graphics_renderer import GraphicsRenderer
 from server.routes.api_diagnostics import api_diagnostics
 # Importa il nostro nuovo WebSocketManager
 from server.websocket.websocket_manager import WebSocketManager
+
+# AGGIUNTO: Inizializzazione delle variabili globali per SocketIO e WebSocketManager
+socketio_instance = None
+websocket_manager_instance = None
+session_auth_manager_instance = None
+graphics_renderer_instance = None
 
 # Importa i blueprint API con gestione degli errori
 try:
@@ -496,7 +507,8 @@ def create_app(config=None):
     app.socket_manager = socket_manager
     
     # Registra le route
-    register_routes(app)
+    # Commento questa chiamata perché i blueprint sono già registrati manualmente sopra
+    # register_routes(app)
     
     # Stato di salute
     @app.route('/health')
@@ -509,9 +521,9 @@ def create_app(config=None):
         
         return jsonify({
             'status': 'ok',
-            'websocket_connections': app.websocket_connections,
+            'websocket_connections': app.websocket_connections if hasattr(app, 'websocket_connections') else 0,
             'active_sessions': active_sessions,
-            'authenticated_sessions': app.session_auth_manager.get_active_sessions_count()
+            'authenticated_sessions': session_auth_manager_instance.get_active_sessions_count() if session_auth_manager_instance else 0
         })
     
     # Esegui pulizia sessioni scadute periodicamente
@@ -520,11 +532,11 @@ def create_app(config=None):
         """
         Pulisce le sessioni JWT scadute prima di ogni richiesta
         """
-        if hasattr(app, 'session_auth_manager') and app.session_auth_manager:
-            # Esegui pulizia solo ogni 100 richieste (valore approssimativo)
+        global session_auth_manager_instance
+        if session_auth_manager_instance:
             import random
             if random.random() < 0.01:  # 1% delle richieste
-                app.session_auth_manager.cleanup_expired_sessions()
+                session_auth_manager_instance.cleanup_expired_sessions()
     
     logger.info("Applicazione Flask inizializzata")
     return app
@@ -564,59 +576,54 @@ def create_socketio(app):
         from flask_socketio import SocketIO
         
         # Verifica se è già presente un'istanza globale
-        global_socketio = getattr(app, '_socketio_instance', None)
-        
-        if global_socketio:
-            logger.info("Riutilizzo istanza SocketIO globale esistente")
-            socketio = global_socketio
-        else:
+        global socketio_instance, websocket_manager_instance
+
+        if socketio_instance is None:
             logger.info("Creazione nuova istanza SocketIO globale con parametri ottimali")
-            socketio = SocketIO(
-                app, 
-                cors_allowed_origins=cors_allowed, 
-                async_mode='eventlet',
-                ping_timeout=ping_timeout,      
-                ping_interval=ping_interval,
-                always_connect=True,
-                manage_session=False,
-                transports=['websocket'],  # Solo websocket, no polling
-                engineio_logger=True,  # Sempre abilitato per debug
-                logger=True,           # Sempre abilitato per debug
-                max_http_buffer_size=10e7  # Aumenta la dimensione del buffer per messaggi grandi
-            )
+            websocket_manager_instance = WebSocketManager(app=app)
+            socketio_instance = websocket_manager_instance.socketio
             
-            # Aggiunta di eventi di log per la connessione
-            @socketio.on('connect')
-            def handle_socket_connect():
-                logger.info(f"Evento connect SocketIO ricevuto - SID: {request.sid}")
-                return True
-            
-            @socketio.on('disconnect')
-            def handle_socket_disconnect():
-                logger.info(f"Evento disconnect SocketIO ricevuto - SID: {request.sid}")
-                return True
-                
-            @socketio.on_error()
-            def handle_socket_error(e):
-                logger.error(f"Errore SocketIO: {str(e)}")
-                return False
-            
-            # Salva il riferimento globale
-            app._socketio_instance = socketio
+            # AGGIUNTO: Inizializza SessionAuthManager con app e socketio_instance
+            global session_auth_manager_instance
+            if session_auth_manager_instance is None:
+                session_auth_manager_instance = SessionAuthManager(app=app, socketio=socketio_instance)
+                logger.info("SessionAuthManager inizializzato e associato all'app.")
+
+            try:
+                from server.websocket.websocket_event_bridge import WebSocketEventBridge
+                ws_bridge = WebSocketEventBridge.get_instance()
+                ws_bridge.set_socketio(socketio_instance)
+                logger.info("Istanza SocketIO impostata nel WebSocketEventBridge")
+            except Exception as e:
+                logger.error(f"Errore durante l'inizializzazione di WebSocketEventBridge: {e}", exc_info=True)
+
+        else:
+            logger.info("Utilizzo istanza SocketIO globale esistente")
+            if websocket_manager_instance is None:
+                logger.warning("Istanza WebSocketManager globale non trovata, creandone una nuova.")
+                websocket_manager_instance = WebSocketManager(app=app, socketio=socketio_instance)
+            # Assicurati che anche SessionAuthManager sia aggiornato se necessario
+            if session_auth_manager_instance:
+                 session_auth_manager_instance.init_app(app, socketio_instance)
+
+        # Inizializza/Aggiorna GraphicsRenderer
+        global graphics_renderer_instance
+        if graphics_renderer_instance is None:
+            graphics_renderer_instance = GraphicsRenderer(socket_io=socketio_instance)
+            logger.info("GraphicsRenderer inizializzato con SocketIO.")
+        else:
+            graphics_renderer_instance.set_socket_io(socketio_instance)
+            logger.info("GraphicsRenderer esistente aggiornato con SocketIO.")
         
-        # Configura il websocket_manager nell'app per accesso futuro
-        from server.websocket.websocket_manager import WebSocketManager
-        websocket_manager = WebSocketManager(app, socketio)
-        app.websocket_manager = websocket_manager
+        init_websocket_handlers(socketio_instance, graphics_renderer_instance, websocket_manager_instance)
         
-        # Configura il socketio nel modulo di sessione
         from server.utils.session import set_socketio
-        set_socketio(socketio)
+        set_socketio(socketio_instance)
         
         # Configura CORS per supportare WebSocket
         app.config['CORS_HEADERS'] = 'Content-Type, Authorization'
         
-        return socketio
+        return socketio_instance
     except Exception as e:
         logger.error(f"Errore durante la creazione dell'istanza SocketIO: {e}")
         raise
@@ -637,39 +644,24 @@ def setup():
     # Crea istanza SocketIO
     socketio = create_socketio(app)
     
-    # Configura SessionAuthManager se supporta set_socketio
-    try:
-        from server.websocket.session_auth import SessionAuthManager
-        session_auth_manager = SessionAuthManager()
-        if hasattr(session_auth_manager, 'set_socketio'):
-            session_auth_manager.set_socketio(socketio)
-            logger.info("SessionAuthManager configurato con socketio")
-    except Exception as e:
-        logger.warning(f"Impossibile configurare SessionAuthManager: {e}")
-    
+    global session_auth_manager_instance
+    # if session_auth_manager_instance is None: # Controllo ridondante se create_socketio funziona
+    #     logger.warning("SessionAuthManager non inizializzato da create_socketio, tentativo di inizializzazione tardiva.")
+    #     session_auth_manager_instance = SessionAuthManager(app=app, socketio=socketio)
+
     # Imposta l'istanza socketio nel modulo utils.session
     from server.utils.session import set_socketio
     set_socketio(socketio)
     
-    # Configura il renderer grafico
-    from core.graphics_renderer import GraphicsRenderer
-    graphics_renderer = GraphicsRenderer()
-    
     # Importa WebSocketEventBridge dopo aver creato socketio
     try:
         from server.websocket.websocket_event_bridge import WebSocketEventBridge
-        # Ottieni l'istanza esistente o creane una nuova
         websocket_bridge = WebSocketEventBridge.get_instance()
-        # Imposta l'istanza SocketIO solo se non è stata già impostata
         if websocket_bridge.socketio is None:
             websocket_bridge.set_socketio(socketio)
         logger.info("WebSocketEventBridge inizializzato correttamente")
     except Exception as e:
         logger.error(f"Errore durante inizializzazione WebSocketEventBridge: {e}")
-    
-    # Inizializza gli handler WebSocket
-    from server.websocket import init_websocket_handlers
-    init_websocket_handlers(socketio, graphics_renderer)
     
     # Inizializza l'asset manager
     try:

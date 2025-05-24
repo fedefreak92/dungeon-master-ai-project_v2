@@ -19,12 +19,9 @@ MAPS_DIR = BASE_DIR / "data" / "mappe"  # Aggiungo la cartella per le mappe
 for directory in [DATA_DIR, SAVE_DIR, SESSIONS_DIR, BACKUPS_DIR, MAPS_DIR]:
     directory.mkdir(exist_ok=True, parents=True)
 
-# Configurazione formato dati
-USE_MSGPACK = True  # Usa MessagePack come formato predefinito per i salvataggi
-
 # Costanti per i percorsi di salvataggio
-DEFAULT_SAVE_PATH = SAVE_DIR / ("salvataggio.msgpack" if USE_MSGPACK else "salvataggio.json")
-DEFAULT_MAP_SAVE_PATH = SAVE_DIR / ("mappe_salvataggio.msgpack" if USE_MSGPACK else "mappe_salvataggio.json")
+DEFAULT_SAVE_PATH = SAVE_DIR / "salvataggio.json"
+DEFAULT_MAP_SAVE_PATH = SAVE_DIR / "mappe_salvataggio.json"
 DEFAULT_SESSION_PREFIX = "sessione_"
 DEFAULT_BACKUP_PREFIX = "backup_"
 
@@ -45,11 +42,8 @@ def get_save_path(filename=None):
         return DEFAULT_SAVE_PATH
     
     # Se il nome del file non ha estensione, aggiungi quella predefinita
-    if not (filename.lower().endswith('.json') or filename.lower().endswith('.msgpack')):
-        if USE_MSGPACK:
-            filename += '.msgpack'
-        else:
-            filename += '.json'
+    if not filename.lower().endswith('.json'):
+        filename += '.json'
     
     return SAVE_DIR / filename
 
@@ -65,17 +59,13 @@ def get_standardized_paths(filename=None):
     """
     # Normalizza il nome file
     if filename:
-        if not (filename.lower().endswith('.json') or filename.lower().endswith('.msgpack')):
-            if USE_MSGPACK:
-                filename += '.msgpack'
-            else:
-                filename += '.json'
+        if not filename.lower().endswith('.json'):
+            filename += '.json'
     else:
-        filename = "salvataggio.msgpack" if USE_MSGPACK else "salvataggio.json"
+        filename = "salvataggio.json"
     
     base_filename = filename
-    ext = '.msgpack' if USE_MSGPACK else '.json'
-    map_filename = f"mappe_{base_filename.rsplit('.', 1)[0]}{ext}"
+    map_filename = f"mappe_{base_filename.rsplit('.', 1)[0]}.json"
     
     return {
         "save": SAVE_DIR / base_filename,
@@ -155,28 +145,13 @@ def list_save_files():
     Returns:
         list: Lista di nomi di file di salvataggio
     """
-    # Cerca tutti i file di salvataggio con diverse estensioni
+    # Cerca tutti i file di salvataggio JSON
     json_files = [f.name for f in SAVE_DIR.glob("*.json")]
-    msgpack_files = [f.name for f in SAVE_DIR.glob("*.msgpack")]
-    dat_files = [f.name for f in SAVE_DIR.glob("*.dat")]
-    pickle_files = [f.name for f in SAVE_DIR.glob("*.pickle")]
-    no_ext_files = [f.name for f in SAVE_DIR.glob("*") if f.is_file() and "." not in f.name]
     
-    # Combina tutti i file trovati
-    all_files = json_files + msgpack_files + dat_files + pickle_files + no_ext_files
+    # Ordina alfabeticamente
+    json_files.sort()
     
-    # Rimuovi duplicati (file con lo stesso nome base ma estensioni diverse)
-    unique_files = []
-    base_names = set()
-    
-    for file_name in all_files:
-        # Estrai il nome base senza estensione
-        base_name = file_name.rsplit('.', 1)[0] if '.' in file_name else file_name
-        if base_name not in base_names:
-            base_names.add(base_name)
-            unique_files.append(file_name)
-    
-    return unique_files
+    return json_files
 
 def list_backup_files():
     """
@@ -185,7 +160,9 @@ def list_backup_files():
     Returns:
         list: Lista di nomi di file di backup
     """
-    return [f.name for f in BACKUPS_DIR.glob("*.json") or f in BACKUPS_DIR.glob("*.msgpack")]
+    backup_files = [f.name for f in BACKUPS_DIR.glob("*.json")]
+    backup_files.sort()
+    return backup_files
 
 def validate_save_data(data):
     """
@@ -270,22 +247,11 @@ def delete_save_file(filename):
     # Ottieni il percorso del file
     file_path = get_save_path(filename)
     
-    # Controlla se il file esiste con estensioni diverse
+    # Controlla se il file esiste
     if not file_path.exists():
-        # Prova altre estensioni possibili
-        base_path = str(file_path).rsplit('.', 1)[0] if '.' in str(file_path) else str(file_path)
-        possible_paths = [
-            Path(f"{base_path}"),  # Senza estensione
-            Path(f"{base_path}.json"),
-            Path(f"{base_path}.dat"),
-            Path(f"{base_path}.pickle")
-        ]
-        
-        # Cerca il primo percorso esistente
-        for path in possible_paths:
-            if path.exists():
-                file_path = path
-                break
+        # Prova ad aggiungere l'estensione .json se non presente
+        if not filename.endswith('.json'):
+            file_path = get_save_path(f"{filename}.json")
     
     try:
         if file_path.exists():

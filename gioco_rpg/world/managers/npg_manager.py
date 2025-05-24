@@ -11,6 +11,13 @@ from util.data_manager import get_data_manager
 from util.safe_loader import SafeLoader
 from util.validators import valida_npc, trova_posizione_valida
 
+logger = logging.getLogger(__name__)
+
+# Importa World per il type hinting del contesto, se necessario
+from typing import TYPE_CHECKING, Optional # Aggiunto Optional
+if TYPE_CHECKING:
+    from core.ecs.world import World # Assicurati che World sia importabile
+
 class NPGManager:
     """
     Manager per la gestione degli NPC (Non Player Characters).
@@ -272,13 +279,14 @@ class NPGManager:
         logging.info(f"NPC {npg.nome} posizionato in ({x}, {y}) su mappa {mappa.nome}")
         return True
     
-    def carica_npg_su_mappa(self, mappa, nome_mappa):
+    def carica_npg_su_mappa(self, mappa, nome_mappa, world_context: Optional['World'] = None):
         """
         Carica gli NPC per una mappa dalle configurazioni JSON.
         
         Args:
             mappa (Mappa): Oggetto mappa in cui posizionare gli NPC
             nome_mappa (str): Nome della mappa
+            world_context: Contest del mondo, se necessario
             
         Returns:
             bool: True se l'operazione è riuscita, False in caso di errori gravi
@@ -312,7 +320,14 @@ class NPGManager:
                 # Posiziona l'NPG sulla mappa
                 x, y = posizione
                 self.posiziona_npc_su_mappa(mappa, npg, x, y)
-                
+                logger.debug(f"[CARICA_NPG_SU_MAPPA_DEBUG] Controllo world_context: {world_context is not None}, NPC: {npg.nome if hasattr(npg, 'nome') else 'N/A'}") # NUOVO LOG
+                # Se abbiamo un contesto del mondo, aggiungiamo l'entità anche lì
+                if world_context and hasattr(world_context, 'add_entity') and npg not in world_context.entities.values():
+                    logger.debug(f"[CARICA_NPG_SU_MAPPA] Aggiungo NPC '{npg.nome}' (ID: {npg.id}) al world_context.")
+                    world_context.add_entity(npg)
+                elif world_context and hasattr(world_context, 'add_entity') and npg in world_context.entities.values():
+                    logger.debug(f"[CARICA_NPG_SU_MAPPA] NPC '{npg.nome}' (ID: {npg.id}) già presente nel world_context. Non riaggiungo.")
+            
             return True
         except Exception as e:
             logging.error(f"Errore durante il caricamento degli NPG per la mappa {nome_mappa}: {e}")

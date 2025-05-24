@@ -51,7 +51,7 @@ class MovementSystem:
         Gestisce la richiesta di movimento del giocatore.
         
         Args:
-            direction: Direzione del movimento ('north', 'south', 'east', 'west')
+            direction: Direzione del movimento (supporta sia inglese che italiano)
             player_id: ID del giocatore (opzionale, usa il giocatore principale se None)
         """
         # Ottieni il giocatore (può essere specifico o default)
@@ -59,16 +59,38 @@ class MovementSystem:
         if not player:
             logger.warning(f"Player {player_id} non trovato")
             return
+        
+        # Mappa per conversione direzioni italiano/inglese
+        direction_map = {
+            # Italiano
+            'nord': 'north',
+            'sud': 'south',
+            'est': 'east',
+            'ovest': 'west',
+            # Inglese (mapping a se stesso)
+            'north': 'north',
+            'south': 'south',
+            'east': 'east',
+            'west': 'west',
+            # Alias comuni inglesi
+            'up': 'north',
+            'down': 'south',
+            'left': 'west',
+            'right': 'east'
+        }
+        
+        # Normalizza la direzione
+        normalized_direction = direction_map.get(direction.lower(), None)
+        if not normalized_direction:
+            logger.warning(f"Direzione non valida: {direction}")
+            return
             
         # Calcola nuova posizione
         new_x, new_y = player.x, player.y
-        if direction == "north": new_y -= 1
-        elif direction == "south": new_y += 1
-        elif direction == "east": new_x += 1
-        elif direction == "west": new_x -= 1
-        else:
-            logger.warning(f"Direzione non valida: {direction}")
-            return
+        if normalized_direction == "north": new_y -= 1
+        elif normalized_direction == "south": new_y += 1
+        elif normalized_direction == "east": new_x += 1
+        elif normalized_direction == "west": new_x -= 1
         
         # Esegui il movimento
         self._move_entity(player, new_x, new_y)

@@ -87,7 +87,36 @@ class Mappa:
     def ottieni_porta_a(self, x, y):
         """Restituisce la destinazione della porta alla posizione specificata o None"""
         return self.porte.get((x, y))
+
+    def ottieni_trigger_transizione_a(self, x, y):
+        """
+        Verifica se la casella (x, y) è un trigger di transizione (es. una porta).
+        Restituisce le informazioni sulla destinazione se è un trigger, altrimenti None.
+        """
+        porta_info = self.porte.get((x,y))
+        if porta_info:
+            # self.porte memorizza (mappa_dest, x_dest, y_dest)
+            # ma Entita.muovi si aspetta un dizionario
+            mappa_dest, pos_dest_tuple = porta_info # pos_dest_tuple è già (x_dest, y_dest)
+            return {
+                "destinazione_mappa": mappa_dest,
+                "pos_destinazione": pos_dest_tuple 
+            }
+        # In futuro, potrebbero esserci altri tipi di trigger qui (es. aree speciali)
+        return None
         
+    def get_triggers_at(self, x, y):
+        """
+        Restituisce una lista di trigger presenti alle coordinate (x,y).
+        TODO: Implementare la logica per caricare e recuperare i trigger.
+              I trigger potrebbero essere definiti nel file JSON della mappa.
+        """
+        # Placeholder: attualmente non ci sono trigger definiti a livello di mappa in questo modo.
+        # In una implementazione futura, qui si consulterebbe una struttura dati
+        # (es. self.triggers[(x,y)]) caricata dal file della mappa.
+        logger.debug(f"Mappa.get_triggers_at({x},{y}) chiamato, ma non ancora implementato per restituire dati reali.")
+        return [] # Restituisce una lista vuota per ora
+
     def is_posizione_valida(self, x, y):
         """Verifica se la posizione è valida e attraversabile"""
         if 0 <= x < self.larghezza and 0 <= y < self.altezza:

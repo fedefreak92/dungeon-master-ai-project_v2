@@ -99,12 +99,17 @@ def handle_connect():
     # Associa il SID con session_id
     if session_id:
         from server.websocket.websocket_event_bridge import WebSocketEventBridge
+        from server.utils.session import socket_sessioni
         
         # Registra questa connessione nel bridge
         logger.info(f"Registrando sessione {session_id} con SID {sid} nel WebSocketEventBridge")
         try:
             WebSocketEventBridge.get_instance().register_session(sid, session_id)
             logger.info(f"Sessione {session_id} registrata correttamente con SID {sid}")
+            
+            # IMPORTANTE: Registra anche in socket_sessioni per compatibilità con game_events.py
+            socket_sessioni[sid] = session_id
+            logger.info(f"Client {sid} registrato in socket_sessioni con session_id {session_id}")
             
             # --- AGGIUNTA JOIN_ROOM --- 
             room_id = f"session_{session_id}"
@@ -150,6 +155,17 @@ def handle_disconnect(sid=None):
     client_info = get_client_info(sid)
     if client_info:
         logger.info(f"Client disconnesso: SessionID={client_info.get('session_id')}, IP={client_info.get('ip')}")
+    
+    # IMPORTANTE: Rimuovi il client da socket_sessioni
+    if sid in socket_sessioni:
+        session_id = socket_sessioni[sid]
+        del socket_sessioni[sid]
+        logger.info(f"Client {sid} rimosso da socket_sessioni (session_id: {session_id})")
+        
+        # Lascia anche la room della sessione
+        room_id = f"session_{session_id}"
+        leave_room(room_id)
+        logger.info(f"Client {sid} rimosso dalla stanza {room_id}")
     
     try:
         from server.websocket.websocket_event_bridge import WebSocketEventBridge
@@ -571,4 +587,90 @@ def register_handlers(socketio_instance):
         
     except Exception as e:
         logger.error(f"Errore durante la registrazione degli handler di connessione: {e}")
-        logger.error(traceback.format_exc()) 
+        logger.error(traceback.format_exc())
+
+@socketio.on('game_loaded')
+def handle_game_loaded(data):
+    """
+    Gestisce l'evento di caricamento gioco completato
+    Viene inviato dal client quando un salvataggio è stato caricato con successo
+    """
+    session_id = data.get('sessionId')
+    save_name = data.get('saveName')
+    
+    if not session_id:
+        logger.warning("Ricevuto evento game_loaded senza sessionId")
+        return
+    
+    logger.info(f"Client segnala caricamento del salvataggio '{save_name}' completato nella sessione {session_id}")
+    
+    # IMPORTANTE: Riassocia il client alla sessione dopo il caricamento
+    client_id = request.sid
+    socket_sessioni[client_id] = session_id
+    logger.info(f"Client {client_id} riassociato alla sessione {session_id} dopo caricamento salvataggio")
+    
+    # Aggiungi il client alla stanza della sessione se non già fatto
+    join_room(f"session_{session_id}")
+    
+    try:
+        # Emetti un evento di conferma
+        emit('game_load_confirmed', {
+            'session_id': session_id, 
+            'save_name': save_name,
+            'timestamp': time.time()
+        })
+        
+        # Ottengo informazioni sulla mappa caricata
+        world = None
+        map_id = "taverna"  # Mappa di default
+        player_position = {"x": 5, "y": 5}  # Posizione di default
+        
+        try:
+            from server.utils.session import get_session
+            world = get_session(session_id)
+            if world:
+                # Cerca di estrarre informazioni sulla mappa dal salvataggio
+                player_entities = world.find_entities_by_tag("player")
+                if player_entities:
+                    player = player_entities[0]
+                    if hasattr(player, "mappa_corrente"):
+                        map_id = player.mappa_corrente
+                    if hasattr(player, "x") and hasattr(player, "y"):
+                        player_position = {"x": player.x, "y": player.y}
+                
+                logger.info(f"Informazioni mappa estratte dal salvataggio: {map_id} pos:{player_position}")
+        except Exception as e:
+            logger.warning(f"Impossibile estrarre informazioni sulla mappa: {e}")
+        
+        # Emetti evento map_change_complete per segnalare che la mappa è pronta
+        emit('map_change_complete', {
+            'mapId': map_id,
+            'position': player_position,
+            'fromSave': True
+        })
+        logger.info(f"Emesso map_change_complete per la mappa {map_id}")
+        
+        # Richiedi aggiornamento dello stato di gioco
+        emit('request_game_state_update', {'session_id': session_id}, to=f"session_{session_id}")
+        
+        logger.info(f"Richiesto aggiornamento dello stato di gioco per la sessione {session_id}")
+        
+        # Emetti evento sulla EventBus per notificare altri componenti
+        try:
+            from core.event_bus import EventBus
+            from core.events import EventType
+            
+            # Ottieni il mondo dalla sessione
+            world = get_world_from_session(session_id)
+            if world:
+                event_bus = EventBus.get_instance()
+                event_bus.emit(EventType.GAME_LOADED_CONFIRMED, 
+                              session_id=session_id,
+                              save_name=save_name,
+                              socket_id=request.sid)
+        except Exception as e:
+            logger.warning(f"Impossibile emettere evento EventBus per game_loaded: {e}")
+            
+    except Exception as e:
+        logger.error(f"Errore nella gestione dell'evento game_loaded: {e}")
+        emit('error', {'message': f"Errore nell'aggiornamento dello stato dopo il caricamento: {str(e)}"}) 

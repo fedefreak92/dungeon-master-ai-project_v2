@@ -2,583 +2,210 @@ import logging
 import json
 import requests
 from flask_socketio import emit, join_room
+import asyncio
+from flask_socketio import SocketIO, leave_room
+from engineio.payload import Payload
+# from বিশ্ব.게임_상태_저장_서비스 import GameStateService # Commentato
+from entities.giocatore import Giocatore
+from util.logging_config import get_logger
+# from server.websocket.connection import ConnectionManager, authenticated_async # RIMOSSO
+# from server.websocket.game_events import GameEventService # RIMOSSO
+# from server.websocket.rendering import RenderingService # RIMOSSO
+from server.websocket.websocket_manager import WebSocketManager
+from states.mappa.mappa_state import MappaState
+import functools
 
 # Import moduli locali
-from server.utils.session import get_session, salva_sessione
-from . import socketio, graphics_renderer
-from . import core
+# from server.utils.session import get_session, salva_sessione # Probabilmente non necessari qui
+# from . import socketio, graphics_renderer # Probabilmente non necessari qui se si usa WebSocketManager
+# from . import core # Probabilmente non necessario qui
 
-# Configura il logger
-logger = logging.getLogger(__name__)
+Payload.max_decode_packets = 500
 
-def handle_mercato_inizializza(data):
-    """
-    Inizializza lo stato mercato e invia i dati iniziali al client
-    
-    Args:
-        data (dict): Contiene id_sessione e eventuali parametri aggiuntivi
-    """
-    # Valida i dati richiesti
-    if not core.validate_request_data(data, ['id_sessione']):
-        return
+WEBSOCKET_MERCATO_SERVICE_INSTANCE = None
+
+logger = get_logger(__name__)
+
+# Funzione helper (riutilizzata o adattata da taverna.py)
+def _get_valid_mappa_state_or_emit_error(sid, nome_luogo_atteso):
+    websocket_manager = WebSocketManager.get_instance()
+    if not websocket_manager or not hasattr(websocket_manager, 'connection_manager'): 
+        emit('errore_stato', {'errore': 'WebSocketManager non inizializzato correttamente.'}, room=sid)
+        logger.error("WebSocketManager o connection_manager non disponibile in _get_valid_mappa_state.")
+        return None, None 
         
-    id_sessione = data['id_sessione']
+    user_id = websocket_manager.connection_manager.get_user_id(sid)
+    if not user_id:
+        emit('errore_stato', {'errore': 'Utente non autenticato o sessione non valida.'}, room=sid)
+        logger.warning(f"Auth fallita per SID {sid} in _get_valid_mappa_state_or_emit_error.")
+        return None, None
+
+    # Ottieni session_id e poi giocatore da WebSocketManager
+    session_id = websocket_manager.connection_manager.get_session_id(sid) # Metodo ipotetico
+    if not session_id:
+         emit('errore_stato', {'errore': 'ID Sessione non trovato per il SID.'}, room=sid)
+         logger.warning(f"Session ID non trovato per SID {sid}.")
+         return None, user_id
+
+    giocatore = websocket_manager.get_player_instance(session_id) # Metodo ipotetico
+    if not giocatore:
+         emit('errore_stato', {'errore': f'Istanza giocatore non trovata per sessione {session_id}.'}, room=sid)
+         logger.warning(f"Istanza giocatore non trovata per session_id {session_id} (SID: {sid}).")
+         return None, user_id
+         
+    stato_corrente = giocatore.stato_corrente
+
+    # Validazione stato
+    if not stato_corrente:
+        emit('errore_stato', {'errore': f'Stato corrente non trovato per l\'utente {user_id}.'}, room=sid)
+        logger.warning(f"Stato corrente non trovato per user_id {user_id} (SID: {sid}, session_id: {session_id}).")
+        return None, user_id
+
+    if not isinstance(stato_corrente, MappaState):
+        emit('errore_stato', {'errore': 'Tipo di stato non valido. Non sei in un luogo (MappaState).'}, room=sid)
+        logger.warning(f"Stato non MappaState per user_id {user_id} (SID: {sid}). Stato: {type(stato_corrente).__name__}")
+        return None, user_id
     
-    # Ottieni la sessione
-    sessione = core.get_session(id_sessione)
-    if not sessione:
-        return
-    
-    # Ottieni lo stato mercato
-    mercato_state = sessione.get_state("mercato")
-    if not mercato_state:
-        emit('error', {'message': 'Stato mercato non disponibile'})
-        return
-    
-    # Crea il room_id per questa sessione
-    room_id = f"session_{id_sessione}"
-    join_room(room_id)
-    
-    # Preparazione dati iniziali
-    dati_mercato = {
-        "stato": mercato_state.to_dict(),
-        "npg_presenti": {nome: npg.to_dict() for nome, npg in mercato_state.npg_presenti.items()},
-        "oggetti_interattivi": {id: obj.to_dict() for id, obj in mercato_state.oggetti_interattivi.items()}
-    }
-    
-    # Ottieni la mappa del mercato se disponibile
+    if stato_corrente.nome_luogo != nome_luogo_atteso:
+        emit('errore_stato', {'errore': f'Non sei nel luogo corretto. Attualmente in "{stato_corrente.nome_luogo}", atteso "{nome_luogo_atteso}".'}, room=sid)
+        logger.warning(f"Luogo errato per user_id {user_id} (SID: {sid}). Attuale: {stato_corrente.nome_luogo}, Atteso: {nome_luogo_atteso}")
+        return None, user_id
+        
+    logger.debug(f"Stato valido {stato_corrente.nome_luogo} recuperato per user_id {user_id} (SID: {sid}).")
+    return stato_corrente, user_id
+
+class MercatoWebsocketService:
+    def __init__(self, sio_param, websocket_manager_param, rendering_service_param, game_event_service_param):
+        self.sio = sio_param
+        self.websocket_manager = websocket_manager_param
+        self.rendering_service = rendering_service_param
+        self.game_event_service = game_event_service_param
+        self.register_mercato_events()
+
+        global WEBSOCKET_MERCATO_SERVICE_INSTANCE
+        WEBSOCKET_MERCATO_SERVICE_INSTANCE = self
+
+    def register_mercato_events(self):
+        event_handlers = {
+            "richiedi_stato_mercato": self.handle_richiedi_stato_luogo,
+            "azione_mercato": self.handle_azione_in_luogo,
+            "compra_oggetto_mercato": self.handle_compra_oggetto_in_luogo,
+            "vendi_oggetto_mercato": self.handle_vendi_oggetto_in_luogo,
+            "parla_npg_mercato": self.handle_parla_npg_in_luogo,
+        }
+        for event, handler_method in event_handlers.items():
+            specific_handler = functools.partial(handler_method, nome_luogo_specifico="mercato")
+            self.sio.on(event, specific_handler) # Rimosso decorator
+
+    async def _get_valid_mappa_state_or_emit_error(self, sid, nome_luogo_atteso: str):
+        # Usa la funzione helper globale
+        stato, user_id = _get_valid_mappa_state_or_emit_error(sid, nome_luogo_atteso)
+        # Se la classe necessita di user_id, salvarlo o passarlo
+        # Esempio: self.current_user_id = user_id 
+        return stato # Restituisce solo lo stato per coerenza con la vecchia firma (se non serve user_id altrove nella classe)
+
+    # Adattare gli handler per usare la funzione helper
+    async def handle_richiedi_stato_luogo(self, sid, data=None, nome_luogo_specifico="mercato"):
+        logger.debug(f"Luogo ({nome_luogo_specifico}): Ricevuta richiesta stato da SID: {sid}, data: {data}")
+        stato_luogo, user_id = _get_valid_mappa_state_or_emit_error(sid, nome_luogo_specifico)
+        if not stato_luogo: return
+        try:
+            dati_stato_luogo = stato_luogo.to_dict_per_client() if hasattr(stato_luogo, 'to_dict_per_client') else stato_luogo.to_dict()
+            await self.sio.emit(f'stato_{nome_luogo_specifico}', dati_stato_luogo, room=sid)
+        except Exception as e:
+            logger.error(f"Errore invio stato mercato: {e}")
+            await self.sio.emit('errore_generico', {'messaggio': 'Errore recupero stato mercato.'}, room=sid)
+
+    async def handle_azione_in_luogo(self, sid, data, nome_luogo_specifico="mercato"):
+        logger.debug(f"Luogo ({nome_luogo_specifico}): Ricevuta azione da SID: {sid}, data: {data}")
+        stato_luogo, user_id = _get_valid_mappa_state_or_emit_error(sid, nome_luogo_specifico)
+        if not stato_luogo or not user_id: return
+        azione = data.get('azione')
+        parametri = data.get('parametri', {})
+        if not azione:
+            await self.sio.emit('errore_azione', {'messaggio': 'Azione mancante'}, room=sid)
+            return
+        try:
+            risultato_azione = await stato_luogo.process_azione_luogo(user_id, azione, parametri)
+            # Emettere risultato o affidarsi a eventi da RenderingService
+        except Exception as e:
+             await self.sio.emit('errore_azione', {'messaggio': f'Errore esecuzione azione: {str(e)}'}, room=sid)
+
+    async def handle_compra_oggetto_in_luogo(self, sid, data, nome_luogo_specifico="mercato"):
+        logger.debug(f"Luogo ({nome_luogo_specifico}): Ricevuta richiesta compra: {data}")
+        stato_luogo, user_id = _get_valid_mappa_state_or_emit_error(sid, nome_luogo_specifico)
+        if not stato_luogo or not user_id: return
+
+        try:
+            item_id = data.get('item_id') # Assumendo che il client invii 'item_id'
+            quantita = data.get('quantita', 1)
+            if not item_id:
+                 await self.sio.emit('errore_azione', {'messaggio': 'ID oggetto mancante per comprare'}, room=sid)
+                 return
+            # Chiama il metodo generico dello stato
+            await stato_luogo.process_azione_luogo(user_id, "compra", {"item_id": item_id, "quantita": quantita})
+        except Exception as e:
+             await self.sio.emit('errore_azione', {'messaggio': f'Errore durante acquisto: {str(e)}'}, room=sid)
+
+    async def handle_vendi_oggetto_in_luogo(self, sid, data, nome_luogo_specifico="mercato"):
+        logger.debug(f"Luogo ({nome_luogo_specifico}): Ricevuta richiesta vendi: {data}")
+        stato_luogo, user_id = _get_valid_mappa_state_or_emit_error(sid, nome_luogo_specifico)
+        if not stato_luogo or not user_id: return
+        try:
+            item_id = data.get('item_id') # Assumendo che il client invii 'item_id'
+            quantita = data.get('quantita', 1)
+            if not item_id:
+                 await self.sio.emit('errore_azione', {'messaggio': 'ID oggetto mancante per vendere'}, room=sid)
+                 return
+            # Chiama il metodo generico dello stato
+            await stato_luogo.process_azione_luogo(user_id, "vendi", {"item_id": item_id, "quantita": quantita})
+        except Exception as e:
+             await self.sio.emit('errore_azione', {'messaggio': f'Errore durante vendita: {str(e)}'}, room=sid)
+
+    async def handle_parla_npg_in_luogo(self, sid, data, nome_luogo_specifico="mercato"):
+        logger.debug(f"Luogo ({nome_luogo_specifico}): Ricevuta richiesta parla NPG: {data}")
+        stato_luogo, user_id = _get_valid_mappa_state_or_emit_error(sid, nome_luogo_specifico)
+        if not stato_luogo or not user_id: return
+        try:
+            npg_id = data.get('npg_id')
+            opzione = data.get('opzione') # Opzionale
+            if not npg_id:
+                await self.sio.emit('errore_azione', {'messaggio': 'ID NPG mancante per dialogo'}, room=sid)
+                return
+            # Chiama il metodo generico dello stato
+            await stato_luogo.process_azione_luogo(user_id, "dialoga_npg", {"npg_id": npg_id, "opzione": opzione})
+        except Exception as e:
+            await self.sio.emit('errore_azione', {'messaggio': f'Errore durante dialogo NPG: {str(e)}'}, room=sid)
+
+def register_mercato_event_handlers(sio_instance, websocket_manager_instance):
+    """Registra gli handler inizializzando il servizio basato su classe."""
     try:
-        mappa = sessione.gestore_mappe.ottieni_mappa("mercato")
-        if mappa:
-            dati_mercato["mappa"] = mappa.to_dict()
-            # Aggiungi la posizione del giocatore
-            giocatore = sessione.giocatore
-            posizione = giocatore.get_posizione("mercato")
-            dati_mercato["posizione_giocatore"] = {"x": posizione[0], "y": posizione[1]}
+        # RIMOSSO: websocket_manager = WebSocketManager.get_instance()
+        # Ottieni altre dipendenze se necessario (RenderingService, GameEventService)
+        # rendering_service = RenderingService.get_instance() # Esempio se servisse
+        # game_event_service = GameEventService.get_instance() # Esempio se servisse
+        
+        # USA websocket_manager_instance passato come argomento
+        if not websocket_manager_instance:
+             logger.error("WebSocketManager non disponibile durante la registrazione degli handler del mercato.")
+             return
+             
+        # Passa le dipendenze necessarie al costruttore di MercatoWebsocketService
+        # Adatta questa chiamata in base alle reali dipendenze del costruttore
+        # Assumiamo che MercatoWebsocketService necessiti solo di sio_instance e websocket_manager_instance
+        # e che rendering_service e game_event_service non siano più direttamente usati da MercatoWebsocketService
+        # o siano accessibili tramite websocket_manager_instance se necessario.
+        initialize_mercato_websocket_service(sio_instance, websocket_manager_instance, None, None) 
+        logger.info("Servizio WebSocket Mercato (basato su classe) inizializzato e handler registrati.")
     except Exception as e:
-        logger.error(f"Errore nel recupero della mappa: {e}")
-    
-    # Invia i dati iniziali al client
-    emit('mercato_inizializzato', dati_mercato)
-    
-    # Aggiorna il renderer
-    try:
-        graphics_renderer.render_mercato(mercato_state, sessione)
-    except Exception as e:
-        logger.error(f"Errore durante il rendering del mercato: {e}")
+        logger.error(f"Errore durante l'inizializzazione del servizio WebSocket Mercato: {e}", exc_info=True)
 
-def handle_mercato_interagisci(data):
-    """
-    Gestisce l'interazione con un oggetto nel mercato
-    
-    Args:
-        data (dict): Contiene id_sessione e oggetto_id
-    """
-    # Valida i dati richiesti
-    if not core.validate_request_data(data, ['id_sessione', 'oggetto_id']):
-        return
-        
-    id_sessione = data['id_sessione']
-    oggetto_id = data['oggetto_id']
-    
-    # Crea il room_id per questa sessione
-    room_id = f"session_{id_sessione}"
-    
-    try:
-        # Usa l'endpoint per interagire con l'oggetto
-        response = requests.post(
-            "http://localhost:5000/game/mercato/interagisci",
-            json={
-                "id_sessione": id_sessione,
-                "oggetto_id": oggetto_id
-            }
-        )
-        
-        if response.status_code == 200:
-            result_data = response.json()
-            
-            # Emetti evento per aggiornare l'interfaccia
-            emit('mercato_oggetto_interagito', {
-                'oggetto_id': oggetto_id,
-                'risultato': result_data.get('risultato')
-            })
-            
-            # Emetti anche un evento per tutti i client nella stessa sessione
-            socketio.emit('mercato_oggetto_interagito', {
-                'oggetto_id': oggetto_id,
-                'risultato': result_data.get('risultato')
-            }, room=room_id)
-            
-            # Aggiorna il renderer se necessario
-            sessione = core.get_session(id_sessione)
-            if sessione:
-                mercato_state = sessione.get_state("mercato")
-                if mercato_state:
-                    graphics_renderer.render_mercato(mercato_state, sessione)
-        else:
-            emit('error', {'message': 'Errore nell\'interazione con l\'oggetto'})
-    except Exception as e:
-        logger.error(f"Errore nell'interazione con l'oggetto: {e}")
-        emit('error', {'message': f'Errore interno: {str(e)}'})
+def initialize_mercato_websocket_service(sio_param, websocket_manager_param, rendering_service_param, game_event_service_param):
+    global WEBSOCKET_MERCATO_SERVICE_INSTANCE
+    if WEBSOCKET_MERCATO_SERVICE_INSTANCE is None:
+        # Passa le dipendenze ricevute al costruttore
+        WEBSOCKET_MERCATO_SERVICE_INSTANCE = MercatoWebsocketService(sio_param, websocket_manager_param, rendering_service_param, game_event_service_param)
+    return WEBSOCKET_MERCATO_SERVICE_INSTANCE
 
-def handle_mercato_dialoga(data):
-    """
-    Gestisce il dialogo con un NPG nel mercato
-    
-    Args:
-        data (dict): Contiene id_sessione, npg_nome e opzionalmente opzione_scelta
-    """
-    # Valida i dati richiesti
-    if not core.validate_request_data(data, ['id_sessione', 'npg_nome']):
-        return
-        
-    id_sessione = data['id_sessione']
-    npg_nome = data['npg_nome']
-    opzione_scelta = data.get('opzione_scelta')
-    
-    # Crea il room_id per questa sessione
-    room_id = f"session_{id_sessione}"
-    
-    try:
-        # Usa l'endpoint per dialogare con l'NPG
-        response = requests.post(
-            "http://localhost:5000/game/mercato/dialoga",
-            json={
-                "id_sessione": id_sessione,
-                "npg_nome": npg_nome,
-                "opzione_scelta": opzione_scelta
-            }
-        )
-        
-        if response.status_code == 200:
-            result_data = response.json()
-            
-            # Emetti evento per aggiornare l'interfaccia
-            emit('mercato_dialogo_aggiornato', {
-                'npg_nome': npg_nome,
-                'dialogo': result_data.get('dialogo')
-            })
-            
-            # Emetti anche un evento per tutti i client nella stessa sessione
-            socketio.emit('mercato_dialogo_aggiornato', {
-                'npg_nome': npg_nome,
-                'dialogo': result_data.get('dialogo')
-            }, room=room_id)
-        else:
-            emit('error', {'message': 'Errore nel dialogo con l\'NPG'})
-    except Exception as e:
-        logger.error(f"Errore nel dialogo con l'NPG: {e}")
-        emit('error', {'message': f'Errore interno: {str(e)}'})
-
-def handle_mercato_menu(data):
-    """
-    Gestisce l'interazione con i menu del mercato
-    
-    Args:
-        data (dict): Contiene id_sessione, menu_id e opzionalmente scelta
-    """
-    # Valida i dati richiesti
-    if not core.validate_request_data(data, ['id_sessione', 'menu_id']):
-        return
-        
-    id_sessione = data['id_sessione']
-    menu_id = data['menu_id']
-    scelta = data.get('scelta')
-    
-    # Crea il room_id per questa sessione
-    room_id = f"session_{id_sessione}"
-    
-    try:
-        # Usa l'endpoint per gestire il menu
-        response = requests.post(
-            "http://localhost:5000/game/mercato/menu",
-            json={
-                "id_sessione": id_sessione,
-                "menu_id": menu_id,
-                "scelta": scelta
-            }
-        )
-        
-        if response.status_code == 200:
-            result_data = response.json()
-            
-            # Emetti evento per aggiornare l'interfaccia
-            emit('mercato_menu_aggiornato', {
-                'menu_id': menu_id,
-                'risultato': result_data.get('risultato')
-            })
-            
-            # Emetti anche un evento per tutti i client nella stessa sessione
-            socketio.emit('mercato_menu_aggiornato', {
-                'menu_id': menu_id,
-                'risultato': result_data.get('risultato')
-            }, room=room_id)
-            
-            # Aggiorna il renderer se necessario
-            sessione = core.get_session(id_sessione)
-            if sessione:
-                mercato_state = sessione.get_state("mercato")
-                if mercato_state:
-                    graphics_renderer.render_mercato(mercato_state, sessione)
-        else:
-            emit('error', {'message': 'Errore nella gestione del menu'})
-    except Exception as e:
-        logger.error(f"Errore nella gestione del menu: {e}")
-        emit('error', {'message': f'Errore interno: {str(e)}'})
-
-def handle_mercato_movimento(data):
-    """
-    Gestisce il movimento nel mercato
-    
-    Args:
-        data (dict): Contiene id_sessione e direzione
-    """
-    # Valida i dati richiesti
-    if not core.validate_request_data(data, ['id_sessione', 'direzione']):
-        return
-        
-    id_sessione = data['id_sessione']
-    direzione = data['direzione']
-    
-    # Crea il room_id per questa sessione
-    room_id = f"session_{id_sessione}"
-    
-    try:
-        # Usa l'endpoint per gestire il movimento
-        response = requests.post(
-            "http://localhost:5000/game/mercato/movimento",
-            json={
-                "id_sessione": id_sessione,
-                "direzione": direzione
-            }
-        )
-        
-        if response.status_code == 200:
-            result_data = response.json()
-            
-            # Emetti evento per aggiornare l'interfaccia
-            emit('mercato_movimento_eseguito', {
-                'direzione': direzione,
-                'posizione': result_data.get('posizione'),
-                'evento': result_data.get('evento')
-            })
-            
-            # Emetti anche un evento per tutti i client nella stessa sessione
-            socketio.emit('mercato_movimento_eseguito', {
-                'direzione': direzione,
-                'posizione': result_data.get('posizione'),
-                'evento': result_data.get('evento')
-            }, room=room_id)
-            
-            # Aggiorna il renderer se necessario
-            sessione = core.get_session(id_sessione)
-            if sessione:
-                mercato_state = sessione.get_state("mercato")
-                if mercato_state:
-                    graphics_renderer.render_mercato(mercato_state, sessione)
-        else:
-            emit('error', {'message': 'Errore nel movimento'})
-    except Exception as e:
-        logger.error(f"Errore nel movimento: {e}")
-        emit('error', {'message': f'Errore interno: {str(e)}'})
-
-def handle_mercato_transizione(data):
-    """
-    Gestisce le transizioni tra il mercato e altri stati
-    
-    Args:
-        data (dict): Contiene id_sessione, stato_destinazione e parametri
-    """
-    # Valida i dati richiesti
-    if not core.validate_request_data(data, ['id_sessione', 'stato_destinazione']):
-        return
-        
-    id_sessione = data['id_sessione']
-    stato_destinazione = data['stato_destinazione']
-    parametri = data.get('parametri', {})
-    
-    # Crea il room_id per questa sessione
-    room_id = f"session_{id_sessione}"
-    
-    try:
-        # Usa l'endpoint per gestire la transizione
-        response = requests.post(
-            "http://localhost:5000/game/mercato/transizione",
-            json={
-                "id_sessione": id_sessione,
-                "stato_destinazione": stato_destinazione,
-                "parametri": parametri
-            }
-        )
-        
-        if response.status_code == 200:
-            result_data = response.json()
-            
-            # Emetti evento per aggiornare l'interfaccia
-            emit('mercato_transizione_completata', {
-                'stato_destinazione': stato_destinazione,
-                'success': True
-            })
-            
-            # Emetti anche un evento per tutti i client nella stessa sessione
-            socketio.emit('mercato_transizione_completata', {
-                'stato_destinazione': stato_destinazione,
-                'success': True
-            }, room=room_id)
-        else:
-            emit('error', {'message': 'Errore nella transizione di stato'})
-    except Exception as e:
-        logger.error(f"Errore nella transizione di stato: {e}")
-        emit('error', {'message': f'Errore interno: {str(e)}'})
-
-def handle_mercato_compra(data):
-    """
-    Gestisce l'acquisto di un oggetto nel mercato
-    
-    Args:
-        data (dict): Contiene id_sessione e oggetto_id
-    """
-    # Valida i dati richiesti
-    if not core.validate_request_data(data, ['id_sessione', 'oggetto_id']):
-        return
-        
-    id_sessione = data['id_sessione']
-    oggetto_id = data['oggetto_id']
-    
-    # Crea il room_id per questa sessione
-    room_id = f"session_{id_sessione}"
-    
-    try:
-        # Usa l'endpoint per comprare l'oggetto
-        response = requests.post(
-            "http://localhost:5000/game/mercato/compra",
-            json={
-                "id_sessione": id_sessione,
-                "oggetto_id": oggetto_id
-            }
-        )
-        
-        if response.status_code == 200:
-            result_data = response.json()
-            
-            # Emetti evento per aggiornare l'interfaccia
-            emit('mercato_acquisto_completato', {
-                'oggetto_id': oggetto_id,
-                'messaggio': result_data.get('messaggio'),
-                'monete_rimanenti': result_data.get('monete_rimanenti')
-            })
-            
-            # Emetti anche un evento per tutti i client nella stessa sessione
-            socketio.emit('mercato_acquisto_completato', {
-                'oggetto_id': oggetto_id,
-                'messaggio': result_data.get('messaggio'),
-                'monete_rimanenti': result_data.get('monete_rimanenti')
-            }, room=room_id)
-        else:
-            emit('error', {'message': 'Errore nell\'acquisto dell\'oggetto'})
-    except Exception as e:
-        logger.error(f"Errore nell'acquisto dell'oggetto: {e}")
-        emit('error', {'message': f'Errore interno: {str(e)}'})
-
-def handle_mercato_vendi(data):
-    """
-    Gestisce la vendita di un oggetto nel mercato
-    
-    Args:
-        data (dict): Contiene id_sessione e oggetto_id
-    """
-    # Valida i dati richiesti
-    if not core.validate_request_data(data, ['id_sessione', 'oggetto_id']):
-        return
-        
-    id_sessione = data['id_sessione']
-    oggetto_id = data['oggetto_id']
-    
-    # Crea il room_id per questa sessione
-    room_id = f"session_{id_sessione}"
-    
-    try:
-        # Usa l'endpoint per vendere l'oggetto
-        response = requests.post(
-            "http://localhost:5000/game/mercato/vendi",
-            json={
-                "id_sessione": id_sessione,
-                "oggetto_id": oggetto_id
-            }
-        )
-        
-        if response.status_code == 200:
-            result_data = response.json()
-            
-            # Emetti evento per aggiornare l'interfaccia
-            emit('mercato_vendita_completata', {
-                'oggetto_id': oggetto_id,
-                'messaggio': result_data.get('messaggio'),
-                'monete_totali': result_data.get('monete_totali')
-            })
-            
-            # Emetti anche un evento per tutti i client nella stessa sessione
-            socketio.emit('mercato_vendita_completata', {
-                'oggetto_id': oggetto_id,
-                'messaggio': result_data.get('messaggio'),
-                'monete_totali': result_data.get('monete_totali')
-            }, room=room_id)
-        else:
-            emit('error', {'message': 'Errore nella vendita dell\'oggetto'})
-    except Exception as e:
-        logger.error(f"Errore nella vendita dell'oggetto: {e}")
-        emit('error', {'message': f'Errore interno: {str(e)}'})
-
-def handle_mercato_contratta(data):
-    """
-    Gestisce la contrattazione del prezzo per un articolo
-    
-    Args:
-        data (dict): Contiene id_sessione, articolo_id e offerta
-    """
-    # Valida i dati richiesti
-    if not core.validate_request_data(data, ['id_sessione', 'articolo_id']):
-        return
-        
-    id_sessione = data['id_sessione']
-    articolo_id = data['articolo_id']
-    offerta = data.get('offerta', 0)
-    
-    # Crea il room_id per questa sessione
-    room_id = f"session_{id_sessione}"
-    
-    try:
-        # Usa l'endpoint per gestire la contrattazione
-        response = requests.post(
-            "http://localhost:5000/game/mercato/contratta",
-            json={
-                "id_sessione": id_sessione,
-                "articolo_id": articolo_id,
-                "offerta": offerta
-            }
-        )
-        
-        if response.status_code == 200:
-            result_data = response.json()
-            
-            # Emetti evento per aggiornare l'interfaccia
-            emit('mercato_contrattazione_risultato', {
-                'articolo_id': articolo_id,
-                'esito': result_data.get('esito'),
-                'messaggio': result_data.get('messaggio'),
-                'prezzo_finale': result_data.get('prezzo_finale'),
-                'controproposta': result_data.get('controproposta')
-            })
-            
-            # Emetti anche un evento per tutti i client nella stessa sessione
-            socketio.emit('mercato_contrattazione_risultato', {
-                'articolo_id': articolo_id,
-                'esito': result_data.get('esito'),
-                'messaggio': result_data.get('messaggio'),
-                'prezzo_finale': result_data.get('prezzo_finale'),
-                'controproposta': result_data.get('controproposta')
-            }, room=room_id)
-        else:
-            emit('error', {'message': 'Errore nella contrattazione'})
-    except Exception as e:
-        logger.error(f"Errore nella contrattazione: {e}")
-        emit('error', {'message': f'Errore interno: {str(e)}'})
-
-def handle_mercato_prova_abilita(data):
-    """
-    Gestisce la prova di abilità per la contrattazione
-    
-    Args:
-        data (dict): Contiene id_sessione, articolo_id e tipo_prova
-    """
-    # Valida i dati richiesti
-    if not core.validate_request_data(data, ['id_sessione', 'articolo_id']):
-        return
-        
-    id_sessione = data['id_sessione']
-    articolo_id = data['articolo_id']
-    tipo_prova = data.get('tipo_prova', 'contrattazione')
-    
-    # Crea il room_id per questa sessione
-    room_id = f"session_{id_sessione}"
-    
-    try:
-        # Usa l'endpoint per gestire la prova di abilità
-        response = requests.post(
-            "http://localhost:5000/game/mercato/prova_abilita",
-            json={
-                "id_sessione": id_sessione,
-                "articolo_id": articolo_id,
-                "tipo_prova": tipo_prova
-            }
-        )
-        
-        if response.status_code == 200:
-            result_data = response.json()
-            
-            # Emetti evento per aggiornare l'interfaccia
-            emit('mercato_prova_abilita_risultato', result_data)
-            
-            # Emetti anche un evento per tutti i client nella stessa sessione
-            socketio.emit('mercato_prova_abilita_risultato', result_data, room=room_id)
-        else:
-            emit('error', {'message': 'Errore nella prova di abilità'})
-    except Exception as e:
-        logger.error(f"Errore nella prova di abilità: {e}")
-        emit('error', {'message': f'Errore interno: {str(e)}'})
-
-def handle_mercato_articoli_disponibili(data):
-    """
-    Ottiene la lista degli articoli disponibili nel mercato
-    
-    Args:
-        data (dict): Contiene id_sessione e opzionalmente tipo_articolo
-    """
-    # Valida i dati richiesti
-    if not core.validate_request_data(data, ['id_sessione']):
-        return
-        
-    id_sessione = data['id_sessione']
-    tipo_articolo = data.get('tipo', 'tutti')
-    
-    try:
-        # Usa l'endpoint per ottenere gli articoli disponibili
-        url = f"http://localhost:5000/game/mercato/articoli_disponibili?id_sessione={id_sessione}"
-        if tipo_articolo != 'tutti':
-            url += f"&tipo={tipo_articolo}"
-            
-        response = requests.get(url)
-        
-        if response.status_code == 200:
-            result_data = response.json()
-            
-            # Emetti evento per aggiornare l'interfaccia
-            emit('mercato_articoli_disponibili', {
-                'articoli': result_data.get('articoli')
-            })
-        else:
-            emit('error', {'message': 'Errore nel recupero degli articoli disponibili'})
-    except Exception as e:
-        logger.error(f"Errore nel recupero degli articoli disponibili: {e}")
-        emit('error', {'message': f'Errore interno: {str(e)}'})
-
-def register_handlers(socketio_instance):
-    """
-    Registra gli handler WebSocket per il mercato
-    
-    Args:
-        socketio_instance: Istanza SocketIO
-    """
-    socketio_instance.on_event('mercato_inizializza', handle_mercato_inizializza)
-    socketio_instance.on_event('mercato_interagisci', handle_mercato_interagisci)
-    socketio_instance.on_event('mercato_dialoga', handle_mercato_dialoga)
-    socketio_instance.on_event('mercato_menu', handle_mercato_menu)
-    socketio_instance.on_event('mercato_movimento', handle_mercato_movimento)
-    socketio_instance.on_event('mercato_transizione', handle_mercato_transizione)
-    socketio_instance.on_event('mercato_compra', handle_mercato_compra)
-    socketio_instance.on_event('mercato_vendi', handle_mercato_vendi)
-    socketio_instance.on_event('mercato_contratta', handle_mercato_contratta)
-    socketio_instance.on_event('mercato_prova_abilita', handle_mercato_prova_abilita)
-    socketio_instance.on_event('mercato_articoli_disponibili', handle_mercato_articoli_disponibili)
-    
-    logger.info("Handler WebSocket del mercato registrati") 
+def get_mercato_websocket_service():
+    return WEBSOCKET_MERCATO_SERVICE_INSTANCE
