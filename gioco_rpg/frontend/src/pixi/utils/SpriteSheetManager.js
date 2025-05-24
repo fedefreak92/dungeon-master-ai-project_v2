@@ -1,5 +1,4 @@
 import * as PIXI from 'pixi.js';
-import AssetLoader from './AssetLoader';
 
 const API_URL = 'http://localhost:5000';
 
@@ -9,6 +8,8 @@ const API_URL = 'http://localhost:5000';
 export default class SpriteSheetManager {
   // Cache delle spritesheet caricate
   static spriteSheets = {};
+  // Dimensione predefinita dei tile
+  static TILE_SIZE = 64;
   
   /**
    * Inizializza il sistema di sprite sheet
@@ -17,55 +18,8 @@ export default class SpriteSheetManager {
     try {
       console.log('Inizializzazione SpriteSheetManager...');
       
-      // Verifica la disponibilità del server
-      const serverAvailable = await AssetLoader.checkServerAvailability();
-      
-      // Verifica se ci sono sprite sheet disponibili tramite il nuovo endpoint API
-      if (serverAvailable) {
-        try {
-          const response = await fetch(`${API_URL}/api/diagnostics/assets`);
-          if (response.ok) {
-            const data = await response.json();
-            
-            // Se abbiamo informazioni sugli sprite sheet, li carichiamo
-            if (data.sprite_sheets && data.sprite_sheets.sheets > 0) {
-              console.log(`Trovati ${data.sprite_sheets.sheets} sprite sheet sul server`);
-              
-              // Carica tutti gli sprite sheet disponibili
-              await this.loadAllSpriteSheets();
-              return true;
-            }
-          }
-        } catch (err) {
-          console.warn('Errore nella richiesta delle informazioni sugli sprite sheet:', err);
-        }
-      }
-      
-      // Configurazione delle spritesheet fallback
-      const spriteSheetConfigs = [
-        { 
-          name: 'tiles', 
-          url: serverAvailable 
-            ? `${API_URL}/assets/spritesheets/tiles.json` 
-            : `/assets/fallback/spritesheets/tiles.json`
-        },
-        { 
-          name: 'entities', 
-          url: serverAvailable 
-            ? `${API_URL}/assets/spritesheets/entities.json` 
-            : `/assets/fallback/spritesheets/entities.json`
-        }
-      ];
-      
-      // Tenta di caricare le sprite sheet, con fallback a textures individuali
-      for (const config of spriteSheetConfigs) {
-        try {
-          await this.loadSpriteSheet(config.name, config.url);
-        } catch (err) {
-          console.warn(`Impossibile caricare la spritesheet ${config.name}, uso textures individuali`);
-        }
-      }
-      
+      // Carica tutti gli sprite sheet disponibili
+      await this.loadAllSpriteSheets();
       return true;
     } catch (err) {
       console.error('Errore nell\'inizializzazione del SpriteSheetManager:', err);
@@ -91,7 +45,7 @@ export default class SpriteSheetManager {
         return [];
       }
       
-      console.log(`Trovati ${data.spritesheets.length} sprite sheet:`, data.spritesheets);
+      console.log(`Trovati ${data.spritesheets.length} sprite sheet`);
       
       // Carica tutti gli sprite sheet in parallelo
       const loadPromises = data.spritesheets.map(sheet => {
@@ -119,59 +73,6 @@ export default class SpriteSheetManager {
     } catch (err) {
       console.error('Errore nel caricamento di tutti gli sprite sheet:', err);
       return [];
-    }
-  }
-  
-  /**
-   * Genera sprite sheet sul server
-   * @returns {Promise<boolean>} - true se la generazione è avvenuta con successo
-   */
-  static async generateSpriteSheets() {
-    try {
-      console.log('Richiesta generazione sprite sheet sul server...');
-      
-      // Verifica la disponibilità del server
-      const serverAvailable = await AssetLoader.checkServerAvailability();
-      if (!serverAvailable) {
-        console.warn('Server non disponibile, impossibile generare sprite sheet');
-        return false;
-      }
-      
-      // Richiedi la generazione degli sprite sheet
-      const response = await fetch(`${API_URL}/api/diagnostics/generate-sprite-sheets`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          async: true // Esegui la generazione in modo asincrono sul server
-        })
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Errore nella richiesta di generazione sprite sheet: ${response.status}`);
-      }
-      
-      const result = await response.json();
-      console.log('Risposta generazione sprite sheet:', result);
-      
-      // Se la generazione è stata avviata con successo, attendiamo un po' e poi ricarichiamo gli sprite sheet
-      if (result.status === 'started' || result.status === 'completed') {
-        if (result.status === 'started') {
-          // Se è asincrono, attendiamo qualche secondo per dare tempo al server di generare i primi sprite sheet
-          console.log('Generazione avviata in background, attesa 3 secondi...');
-          await new Promise(resolve => setTimeout(resolve, 3000));
-        }
-        
-        // Ricarichiamo gli sprite sheet
-        await this.loadAllSpriteSheets();
-        return true;
-      }
-      
-      return false;
-    } catch (err) {
-      console.error('Errore nella generazione degli sprite sheet:', err);
-      return false;
     }
   }
   
@@ -207,7 +108,7 @@ export default class SpriteSheetManager {
           });
         
         // Gestione degli errori
-        loader.onError.add((error, loader) => {
+        loader.onError.add((error) => {
           reject(error);
         });
       });
@@ -218,7 +119,7 @@ export default class SpriteSheetManager {
   }
   
   /**
-   * Ottiene una texture dalla spritesheet, con fallback
+   * Ottiene una texture dalla spritesheet
    * @param {string} sheetName - Nome della spritesheet
    * @param {string} textureName - Nome della texture
    * @returns {PIXI.Texture} - La texture richiesta, o una texture di fallback
@@ -231,13 +132,40 @@ export default class SpriteSheetManager {
         return sheet.textures[textureName];
       }
       
-      // Se la texture non è disponibile nella spritesheet, logga e usa fallback
-      console.warn(`Texture '${textureName}' non trovata nella spritesheet '${sheetName}', uso fallback`);
+      // Se non è specificato un nome di spritesheet, cerca in tutte le spritesheet
+      if (!sheetName && textureName) {
+        for (const sheetName in this.spriteSheets) {
+          const sheet = this.spriteSheets[sheetName];
+          if (sheet && sheet.textures[textureName]) {
+            return sheet.textures[textureName];
+          }
+        }
+      }
+      
+      // Se la texture non è disponibile, usa fallback
+      console.warn(`Texture '${textureName}' non trovata${sheetName ? ` nella spritesheet '${sheetName}'` : ''}, uso fallback`);
       return PIXI.Texture.WHITE;
     } catch (err) {
-      console.error(`Errore nel recupero della texture ${textureName} dalla spritesheet ${sheetName}:`, err);
+      console.error(`Errore nel recupero della texture ${textureName}${sheetName ? ` dalla spritesheet ${sheetName}` : ''}:`, err);
       return PIXI.Texture.WHITE;
     }
+  }
+  
+  /**
+   * Ottiene tutte le texture da tutte le spritesheet disponibili
+   * @returns {Object} - Un oggetto con tutte le texture
+   */
+  static getAllTextures() {
+    const allTextures = {};
+    
+    // Combina le texture da tutte le spritesheet
+    Object.values(this.spriteSheets).forEach(sheet => {
+      if (sheet && sheet.textures) {
+        Object.assign(allTextures, sheet.textures);
+      }
+    });
+    
+    return allTextures;
   }
   
   /**
@@ -262,17 +190,16 @@ export default class SpriteSheetManager {
         return null;
       }
       
-      // Crea un oggetto di definizione della spritesheet
-      const data = {
-        meta: {
-          image: `${name}.png`, // Nome file virtuale
-          format: 'RGBA8888',
-          size: { w: 0, h: 0 },
-          scale: '1'
-        },
-        frames: {},
-        animations: {}
-      };
+      if (this.isSpriteSheetLoaded(name)) {
+        console.warn(`Spritesheet "${name}" già esistente. Non verrà sovrascritta.`);
+        return this.spriteSheets[name];
+      }
+
+      console.log(`[SpriteSheetManager] Creazione spritesheet "${name}" con ${Object.keys(textures).length} texture.`);
+      // console.log(`[SpriteSheetManager] Texture fornite per "${name}":`, textures); // Log pesante
+
+      const frames = {};
+      let currentX = 0;
       
       // Aggiungi ogni texture alla definizione della spritesheet
       Object.keys(textures).forEach(key => {
@@ -283,13 +210,16 @@ export default class SpriteSheetManager {
           return;
         }
         
-        data.frames[key] = {
-          frame: {
-            x: 0,
-            y: 0,
-            w: texture.width,
-            h: texture.height
-          },
+        let frameName = key;
+        if (frameName.includes('/')) {
+          frameName = frameName.split('/').pop();
+        }
+
+        // Log per vedere come viene nominata la texture nella spritesheet
+        console.log(`[SpriteSheetManager] Processing for spritesheet "${name}": Original key: "${key}", Effective frameName: "${frameName}"`); 
+
+        frames[frameName] = {
+          frame: { x: currentX, y: 0, w: texture.width, h: texture.height },
           rotated: false,
           trimmed: false,
           spriteSourceSize: {
@@ -303,25 +233,99 @@ export default class SpriteSheetManager {
             h: texture.height
           }
         };
+        
+        currentX += texture.width;
       });
       
+      // Crea un oggetto di definizione della spritesheet
+      const data = {
+        meta: {
+          image: `${name}.png`, // Nome file virtuale
+          format: 'RGBA8888',
+          size: { w: currentX, h: this.TILE_SIZE },
+          scale: '1'
+        },
+        frames: frames,
+        animations: {}
+      };
+      
       // Crea e memorizza la spritesheet
-      const spritesheet = new PIXI.Spritesheet(
+      const spriteSheetInstance = new PIXI.Spritesheet(
         PIXI.BaseTexture.EMPTY,
         data
       );
       
       // Assegna le texture direttamente
-      spritesheet.textures = textures;
+      spriteSheetInstance.textures = textures;
       
-      // Memorizza in cache
-      this.spriteSheets[name] = spritesheet;
+      // Registra la spritesheet
+      this.spriteSheets[name] = spriteSheetInstance;
+      console.log(`[SpriteSheetManager] Spritesheet "${name}" creata e registrata con successo con ${Object.keys(spriteSheetInstance.textures || {}).length} texture finali.`);
       
-      console.log(`Spritesheet virtuale '${name}' creata con ${Object.keys(textures).length} texture`);
-      return spritesheet;
+      return spriteSheetInstance;
     } catch (err) {
       console.error(`Errore nella creazione della spritesheet ${name}:`, err);
       return null;
+    }
+  }
+  
+  /**
+   * Carica una texture singola
+   * @param {string} url - URL della texture
+   * @returns {Promise<PIXI.Texture>} - Texture caricata
+   */
+  static loadTexture(url) {
+    return new Promise((resolve, reject) => {
+      // Controlla se la texture è già in cache
+      if (PIXI.utils.TextureCache[url]) {
+        resolve(PIXI.utils.TextureCache[url]);
+        return;
+      }
+      
+      const loader = new PIXI.Loader();
+      loader.add(url, url)
+        .load((loader, resources) => {
+          if (resources[url] && resources[url].texture) {
+            resolve(resources[url].texture);
+          } else {
+            reject(new Error(`Impossibile caricare la texture: ${url}`));
+          }
+        });
+      
+      loader.onError.add((err) => {
+        reject(err);
+      });
+    });
+  }
+  
+  /**
+   * Aggiunge texture a una spritesheet esistente
+   * @param {string} sheetName - Nome della spritesheet
+   * @param {Object} newTextures - Nuove texture da aggiungere
+   * @returns {boolean} - true se l'operazione è riuscita
+   */
+  static addTexturesToSpriteSheet(sheetName, newTextures) {
+    try {
+      // Verifica che la spritesheet esista
+      if (!this.spriteSheets[sheetName]) {
+        console.warn(`Impossibile aggiungere texture: la spritesheet ${sheetName} non esiste`);
+        return false;
+      }
+      
+      // Aggiungi le nuove texture
+      let count = 0;
+      Object.entries(newTextures).forEach(([key, texture]) => {
+        if (!this.spriteSheets[sheetName].textures[key]) {
+          this.spriteSheets[sheetName].textures[key] = texture;
+          count++;
+        }
+      });
+      
+      console.log(`Aggiunte ${count} texture alla spritesheet ${sheetName}`);
+      return true;
+    } catch (err) {
+      console.error(`Errore nell'aggiunta di texture alla spritesheet ${sheetName}:`, err);
+      return false;
     }
   }
   

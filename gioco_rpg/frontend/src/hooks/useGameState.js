@@ -66,7 +66,15 @@ export const GameStateProvider = ({ children }) => {
     inventory: [],
     quests: [],
     gameStatus: 'disconnected', // disconnected, connecting, connected, error
-    error: null
+    error: null,
+    gameState: 'start-screen', // start-screen, character-select, map-select, map, battle, etc.
+    sessionId: null,
+    playerInfo: null,
+    loading: false,
+    saveSuccess: null,
+    loadedSaveName: null,  // Nome del salvataggio caricato
+    loadingComplete: false,  // Flag che indica se il caricamento è completato
+    loadConfirmed: false    // Flag che indica se il server ha confermato il caricamento
   });
   
   // Inizializza la connessione WebSocket
@@ -90,6 +98,26 @@ export const GameStateProvider = ({ children }) => {
         gameStatus: 'connected',
         error: null
       }));
+
+      // Autenticazione con il server
+      let authToken = localStorage.getItem('authToken'); 
+      
+      if (!authToken) {
+        console.error('[AUTH_FRONTEND] CRITICO: authToken (session_id) non trovato in localStorage. L\'autenticazione WebSocket potrebbe usare un token non valido o fallire. Assicurati che il session_id venga salvato in localStorage con la chiave "authToken" dopo la creazione della sessione HTTP.');
+        // Se authToken non è trovato, impostalo a una stringa che indichi chiaramente l'errore
+        // Questo eviterà di usare il vecchio placeholder "token-fittizio-per-sviluppo"
+        // e renderà più evidente il problema nei log del server se il client tenta comunque di autenticarsi.
+        authToken = 'ERRORE_SESSION_ID_NON_TROVATO_IN_LOCALSTORAGE'; 
+      }
+
+      const clientId = localStorage.getItem('clientId') || `client_${Math.random().toString(36).substr(2, 9)}`;
+      localStorage.setItem('clientId', clientId);
+
+      console.log(`[AUTH_FRONTEND] Tento autenticazione con token: ${authToken} e client_id: ${clientId}`);
+      newSocket.emit('authenticate', { 
+        token: authToken,
+        client_id: clientId 
+      });
     });
     
     newSocket.on('disconnect', () => {
@@ -124,6 +152,190 @@ export const GameStateProvider = ({ children }) => {
       }
     });
     
+    // AGGIUNTA GESTORI AUTENTICAZIONE
+    newSocket.on('authenticated', (authData) => {
+      console.log('[AUTH_FRONTEND] Autenticazione riuscita:', authData);
+      setGameState(prevState => ({
+        ...prevState,
+        sessionId: authData.session_id, // Memorizza il session_id ricevuto dal server
+        error: null,
+      }));
+      // Qui potresti voler fare altre azioni, tipo caricare lo stato iniziale del gioco
+      // se l'autenticazione implica l'inizio di una sessione.
+    });
+
+    newSocket.on('auth_error', (errorData) => {
+      console.error('[AUTH_FRONTEND] Errore di autenticazione:', errorData);
+      setGameState(prevState => ({
+        ...prevState,
+        gameStatus: 'error',
+        error: errorData.message || 'Autenticazione fallita',
+        sessionId: null,
+      }));
+      // Potresti voler disconnettere il socket o mostrare un messaggio all'utente
+    });
+    // FINE AGGIUNTA GESTORI AUTENTICAZIONE
+
+    // Listener per aggiornamento posizione giocatore
+    newSocket.on('player_position_updated', (data) => {
+      console.log('[FRONTEND WS] Ricevuto evento player_position_updated:', data);
+      
+      setGameState(prevState => {
+        console.log('[FRONTEND WS] Verifica aggiornamento posizione:');
+        console.log('  - prevState.player:', prevState.player);
+        console.log('  - data.player_id:', data.player_id);
+        console.log('  - player corrente ID:', prevState.player ? prevState.player.id : 'N/A');
+        
+        // Aggiorna sempre la posizione se abbiamo i dati, indipendentemente dall'ID per debug
+        if (data.x !== undefined && data.y !== undefined) {
+          console.log('[FRONTEND WS] Aggiornamento posizione da:', 
+                      prevState.player ? `(${prevState.player.x}, ${prevState.player.y})` : 'N/A',
+                      'a:', `(${data.x}, ${data.y})`);
+          
+          const updatedPlayer = prevState.player ? {
+            ...prevState.player,
+            x: data.x,
+            y: data.y,
+            mappa_corrente: data.map_id || prevState.player.mappa_corrente,
+          } : {
+            // Se non abbiamo un player, creiamo un oggetto minimo
+            id: data.player_id,
+            x: data.x,
+            y: data.y,
+            mappa_corrente: data.map_id,
+            nome: 'Giocatore'
+          };
+          
+          return {
+            ...prevState,
+            player: updatedPlayer,
+          };
+        } else {
+          console.warn('[FRONTEND WS] Dati posizione incompleti:', data);
+        }
+        
+        return prevState;
+      });
+    });
+
+    // Listener per movimento fallito
+    newSocket.on('player_move_failed', (data) => {
+      console.warn('[FRONTEND WS] Movimento fallito:', data.message);
+      // Mostra una notifica all'utente o aggiorna lo stato con un messaggio di errore
+      setGameState(prevState => ({
+        ...prevState,
+        error: `Movimento fallito: ${data.message}`,
+        // Potresti anche voler aggiungere un flag temporaneo per mostrare l'errore nell'UI
+        movementError: {
+          message: data.message,
+          timestamp: Date.now()
+        }
+      }));
+      
+      // Rimuovi l'errore di movimento dopo alcuni secondi
+      setTimeout(() => {
+        setGameState(prevState => ({
+          ...prevState,
+          error: prevState.error === `Movimento fallito: ${data.message}` ? null : prevState.error,
+          movementError: null
+        }));
+      }, 3000);
+    });
+
+    // Listener per cambio mappa (se necessario)
+    newSocket.on('map_changed', (data) => {
+      console.log('[FRONTEND WS] Ricevuto evento map_changed:', data);
+      setGameState(prevState => ({
+        ...prevState,
+        currentMap: data.new_map_id, // Aggiorna la mappa corrente
+        player: {
+          ...prevState.player,
+          mappa_corrente: data.new_map_id,
+          x: data.player_new_coords ? data.player_new_coords[0] : prevState.player.x, // Aggiorna le coordinate se fornite
+          y: data.player_new_coords ? data.player_new_coords[1] : prevState.player.y,
+        },
+        player_position: data.player_new_coords ? { x: data.player_new_coords[0], y: data.player_new_coords[1] } : prevState.player_position,
+        // Potrebbe essere necessario resettare/ricaricare le entità della mappa, ecc.
+        entities: [], 
+        // Aggiungi un messaggio per informare l'utente del cambio mappa
+        mapChangeMessage: data.message || `Sei entrato in: ${data.new_map_id}`
+      }));
+      
+      // Probabilmente qui dovresti triggerare un ricaricamento dei dati della nuova mappa
+      // loadMap(data.new_map_id); // se hai una funzione loadMap
+      
+      // Rimuovi il messaggio di cambio mappa dopo alcuni secondi
+      setTimeout(() => {
+        setGameState(prevState => ({
+          ...prevState,
+          mapChangeMessage: null
+        }));
+      }, 3000);
+    });
+
+    // Listener migliorato per risultati di interazione
+    newSocket.on('interaction_result', (data) => {
+      console.log('[FRONTEND WS] Ricevuto evento interaction_result:', data);
+      if (data.success) {
+        // Potresti voler aggiornare lo stato con il risultato dell'interazione
+        setGameState(prevState => ({
+          ...prevState,
+          lastInteractionResult: {
+            success: data.success,
+            message: data.message,
+            timestamp: Date.now()
+          }
+        }));
+      } else {
+        // Gestisci errori di interazione
+        setGameState(prevState => ({
+          ...prevState,
+          error: data.message || 'Errore durante l\'interazione',
+          lastInteractionResult: {
+            success: false,
+            message: data.message,
+            timestamp: Date.now()
+          }
+        }));
+      }
+      
+      // Rimuovi il risultato dell'interazione dopo alcuni secondi
+      setTimeout(() => {
+        setGameState(prevState => ({
+          ...prevState,
+          lastInteractionResult: null
+        }));
+      }, 5000);
+    });
+
+    // Listener per aggiornamenti di dialogo
+    newSocket.on('dialog_update', (data) => {
+      console.log('[FRONTEND WS] Ricevuto evento dialog_update:', data);
+      setGameState(prevState => ({
+        ...prevState,
+        dialogState: {
+          active: true,
+          message: data.message,
+          success: data.success,
+          timestamp: Date.now()
+        }
+      }));
+    });
+
+    // Listener per eventi di gioco generici
+    newSocket.on('game_event_response', (data) => {
+      console.log('[FRONTEND WS] Ricevuto evento game_event_response:', data);
+      if (data.event === 'exit_to_menu') {
+        // Gestisci l'uscita al menu
+        setGameState(prevState => ({
+          ...prevState,
+          gameState: 'start-screen', // Torna alla schermata iniziale
+          exitMessage: data.message
+        }));
+      }
+      // Altri eventi possono essere gestiti qui
+    });
+
     // Aggiornamenti specifici della mappa
     newSocket.on('map_update', (mapData) => {
       try {
@@ -192,7 +404,22 @@ export const GameStateProvider = ({ children }) => {
    */
   const sendAction = (action, data = {}) => {
     if (socket && socket.connected) {
-      socket.emit('player_action', { action, data });
+      console.log(`Invio azione ${action} al server con dati:`, data);
+      
+      // Gestione specificamente migliorata per l'azione save_game
+      if (action === 'save_game') {
+        console.log("Invio azione di salvataggio con nome:", data.name);
+        socket.emit('player_action', { 
+          action: 'save_game',
+          data: data  // Invia data come oggetto intero
+        });
+      } else {
+        // Per tutte le altre azioni, usa il formato standard
+        socket.emit('player_action', { 
+          action: action,
+          params: data 
+        });
+      }
     } else {
       console.error('Impossibile inviare azione: socket non connesso');
     }
@@ -247,4 +474,40 @@ export const useGameState = () => {
     throw new Error('useGameState deve essere utilizzato all\'interno di un GameStateProvider');
   }
   return context;
-}; 
+};
+
+function reducer(state, action) {
+  switch (action.type) {
+    case 'SET_LOADED_SAVE':
+      return {
+        ...state,
+        loadedSaveName: action.payload,
+        loadingComplete: false,
+        loadConfirmed: false
+      };
+    
+    case 'SET_LOADING_COMPLETE':
+      return {
+        ...state,
+        loadingComplete: true
+      };
+      
+    case 'SET_LOAD_CONFIRMED':
+      console.log('Reducer: SET_LOAD_CONFIRMED', action.payload);
+      return {
+        ...state,
+        loadConfirmed: action.payload === false ? false : true
+      };
+      
+    case 'RESET_LOAD_STATE':
+      return {
+        ...state,
+        loadedSaveName: null,
+        loadingComplete: false,
+        loadConfirmed: false
+      };
+      
+    default:
+      return state;
+  }
+} 

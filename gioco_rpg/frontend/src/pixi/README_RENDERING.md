@@ -1,134 +1,147 @@
-# Sistema di Rendering Mappe Ottimizzato
+# Sistema di Rendering per RPG a Griglia
 
-Questo documento descrive il sistema di rendering delle mappe ottimizzato per Pixi.js implementato nel gioco RPG.
+Questo documento descrive il sistema di rendering implementato per il gioco RPG, basato su una griglia con immagine di sfondo.
+
+## Panoramica
+
+Il sistema di rendering è stato progettato per essere semplice ed efficiente, perfetto per un gioco RPG a turni basato su griglia. Invece di utilizzare singole texture per ogni tile, il sistema utilizza:
+
+1. **Un'immagine di sfondo per l'intera mappa** - che rappresenta visivamente l'ambiente
+2. **Una griglia logica semplificata** - dove 0 = percorribile, 1 = ostacolo
+3. **Token 2D** - per rappresentare il giocatore, NPC e oggetti interattivi
 
 ## Componenti Principali
 
-Il sistema di rendering delle mappe è composto dai seguenti componenti:
+Il sistema è composto dai seguenti componenti:
 
-1. **TileAtlas**: Gestisce le texture dei tile in un unico atlante per minimizzare i cambi di texture.
-2. **OptimizedMapRenderer**: Renderer per mappe di grandi dimensioni che implementa viewport culling e chunk.
-3. **CachedMapRenderer**: Renderer che utilizza RenderTexture per cachare gli elementi statici della mappa.
-4. **MapRendererFactory**: Factory che seleziona automaticamente il renderer più appropriato.
+### 1. GridMapRenderer
 
-## Quando Usare Ciascun Renderer
+La classe principale che gestisce il rendering della mappa, implementata in `gioco_rpg/frontend/src/pixi/utils/GridMapRenderer.js`. Responsabilità:
 
-- **MapRenderer standard**: Per mappe piccole (<50x50 tile) con pochi oggetti (<100).
-- **OptimizedMapRenderer**: Per mappe grandi con molti oggetti, dove il culling è essenziale.
-- **CachedMapRenderer**: Per mappe con molti elementi statici e pochi elementi dinamici.
+- Caricamento dell'immagine di sfondo
+- Disegno della griglia
+- Gestione delle entità (giocatore, NPC, oggetti)
+- Aggiornamento delle posizioni
+- Gestione della camera
 
-## Come Utilizzare il Sistema
+### 2. PixiManager
 
-### Renderizzazione Automatica Ottimizzata
+Il singleton che orchestra il sistema di rendering, implementato in `gioco_rpg/frontend/src/pixi/PixiManager.js`. Responsabilità:
 
-Il metodo più semplice è utilizzare `pixiManager.renderMapOptimized()` che seleziona automaticamente il renderer più appropriato:
+- Creazione e gestione delle scene
+- Inizializzazione di GridMapRenderer
+- Caricamento delle mappe
+- Aggiunta/gestione delle entità
+- Gestione delle risorse
 
-```javascript
-// In un componente React
-useEffect(() => {
-  if (pixiApp && mapData) {
-    pixiManager.renderMapOptimized(pixiApp, mapData);
-  }
-}, [pixiApp, mapData]);
-```
+### 3. MapContainer
 
-### Configurazione Manuale del Renderer
+Il componente React che interfaccia il sistema di rendering con l'applicazione, implementato in `gioco_rpg/frontend/src/components/MapContainer.jsx`. Responsabilità:
 
-Se hai esigenze specifiche, puoi configurare manualmente il renderer:
+- Caricamento dei dati della mappa dal server
+- Inizializzazione della scena Pixi.js
+- Gestione degli aggiornamenti delle entità
+- Gestione degli eventi di input
 
-```javascript
-import MapRendererFactory from './pixi/utils/MapRendererFactory';
+## Struttura Dati delle Mappe
 
-// In un componente React
-useEffect(() => {
-  if (pixiApp && mapData) {
-    const options = {
-      forceOptimized: true,  // Forza l'uso di OptimizedMapRenderer
-      chunkSize: 8,          // Dimensione dei chunk (default: 16)
-      useCaching: true       // Usa RenderTexture per elementi statici
-    };
-    
-    async function initRenderer() {
-      const renderer = await MapRendererFactory.createRenderer(
-        pixiApp,
-        pixiApp.stage,
-        mapData,
-        options
-      );
-      
-      // Memorizza il renderer per utilizzi futuri
-      setMapRenderer(renderer);
+Le mappe sono definite in formato JSON con la seguente struttura:
+
+```json
+{
+  "nome": "taverna",
+  "larghezza": 15,
+  "altezza": 10,
+  "tipo": "interno",
+  "descrizione": "Una taverna accogliente con un camino e molti avventori.",
+  "backgroundImage": "assets/maps/taverna_background.png",
+  "griglia": [
+    [0, 0, 0, 0, 0],
+    [1, 1, 1, 1, 1]
+  ],
+  "oggetti": {
+    "[3, 2]": {
+      "nome": "Baule",
+      "tipo": "oggetto_interattivo",
+      "sprite": "chest"
     }
-    
-    initRenderer();
-  }
-  
-  // Cleanup
-  return () => {
-    if (mapRenderer) {
-      mapRenderer.destroy();
+  },
+  "npg": {
+    "[8, 4]": {
+      "nome": "Oste",
+      "sprite": "npc_merchant"
     }
-  };
-}, [pixiApp, mapData]);
+  },
+  "porte": {
+    "[12, 5]": ["villaggio", [1, 5]]
+  },
+  "pos_iniziale_giocatore": [7, 5]
+}
 ```
 
-## Ottimizzazioni Implementate
+### Elementi della Mappa
 
-### 1. Texture Atlas
+- **`nome`**: Identificatore unico della mappa
+- **`larghezza`**, **`altezza`**: Dimensioni della mappa in celle
+- **`tipo`**: Categoria della mappa (interno, esterno, dungeon, ecc.)
+- **`descrizione`**: Descrizione testuale della mappa
+- **`backgroundImage`**: Percorso dell'immagine di sfondo
+- **`griglia`**: Matrice 2D che definisce gli ostacoli (0 = percorribile, 1 = ostacolo)
+- **`oggetti`**: Dizionario di oggetti interattivi con posizione come chiave
+- **`npg`**: Dizionario di NPC con posizione come chiave
+- **`porte`**: Collegamenti ad altre mappe
+- **`pos_iniziale_giocatore`**: Posizione iniziale del giocatore sulla mappa
 
-Tutte le texture dei tile sono organizzate in un unico atlante per minimizzare i cambi di contesto grafico:
+## Flusso di Rendering
 
-```javascript
-// Uso dell'atlas
-const tileAtlas = new TileAtlas();
-await tileAtlas.initialize();
-const texture = tileAtlas.getTexture(tileId);
-```
+1. **Caricamento della mappa**:
+   - Il componente `MapContainer` richiede i dati della mappa al server
+   - I dati JSON vengono validati e normalizzati
+   - `PixiManager` inizializza una nuova scena Pixi.js
 
-### 2. Culling del Viewport
+2. **Inizializzazione del renderer**:
+   - `PixiManager` crea un'istanza di `GridMapRenderer`
+   - Il renderer inizializza i layer (sfondo, griglia, entità)
 
-Solo i chunk visibili nel viewport vengono renderizzati:
+3. **Rendering degli elementi**:
+   - L'immagine di sfondo viene caricata e posizionata
+   - La griglia viene disegnata per aiutare la visualizzazione
+   - Gli oggetti e gli NPC vengono posizionati nelle loro celle
+   - Il giocatore viene posizionato nella sua cella iniziale
 
-```javascript
-// Il culling viene gestito automaticamente
-renderer.updateVisibleChunks();
-```
+4. **Aggiornamenti di gioco**:
+   - Quando il giocatore si muove, `updatePlayerPosition` aggiorna la posizione
+   - Quando le entità cambiano, `updateEntities` aggiorna gli NPC e gli oggetti
+   - La camera viene centrata sul giocatore
 
-### 3. Batching per Tipo
+## Gestione delle Risorse
 
-Gli oggetti dello stesso tipo vengono raggruppati insieme per ottimizzare il rendering:
+Le risorse grafiche sono organizzate nelle seguenti cartelle:
 
-```javascript
-// Gli oggetti vengono raggruppati automaticamente per tipo
-renderer.renderObjects();
-```
+- **`assets/maps/`**: Contiene le immagini di sfondo delle mappe
+- **`assets/entities/`**: Contiene gli sprite del giocatore e degli NPC
+- **`assets/objects/`**: Contiene gli sprite degli oggetti interattivi
 
-### 4. Caching degli Elementi Statici
+## Ottimizzazioni
 
-Gli elementi statici della mappa vengono renderizzati una sola volta in una RenderTexture:
+Il sistema è ottimizzato per:
 
-```javascript
-// Invalidazione manuale della cache quando necessario
-cachedRenderer.invalidateCache();
+1. **Minimo uso di memoria** - Solo un'immagine di sfondo per mappa invece di tante texture
+2. **Rendering efficiente** - Meno sprite da gestire e aggiornare
+3. **Velocità di sviluppo** - Più facile creare nuove mappe con una singola immagine
 
-// Aggiorna un tile e rigenera la cache
-cachedRenderer.updateTile(x, y, newTileId);
-```
+## Estensibilità
 
-## Considerazioni sulle Prestazioni
+Il sistema può essere esteso in diversi modi:
 
-- **WebGL vs Canvas**: Il sistema è ottimizzato per WebGL, ma include fallback per Canvas.
-- **Memoria vs CPU**: L'uso delle cache può aumentare il consumo di memoria, ma riduce il carico CPU.
-- **Dispositivi Mobili**: Su dispositivi a basse prestazioni, il sistema abilita automaticamente più ottimizzazioni.
+1. **Animazioni** - Aggiungendo supporto per sprite animati per il giocatore e gli NPC
+2. **Effetti** - Implementando un sistema di particelle o filtri per effetti visivi
+3. **Illuminazione** - Aggiungendo un layer per l'illuminazione dinamica
+4. **Audio spaziale** - Integrando effetti sonori basati sulla posizione
 
-## Estensioni Future
+## Note per gli Sviluppatori
 
-- Supporto per mappe multi-layer con parallasse
-- Implementazione di shader personalizzati per effetti visivi
-- Integrazione con un editor di mappe visuale
-- Supporto per mappe vettoriali per scalabilità infinita
-
-## Riferimenti
-
-- [Pixi.js Performance Tips](https://pixijs.com/8.x/guides/production/performance-tips)
-- [Documentazione Pixi.js](https://pixijs.io/guides) 
+- Quando crei una nuova mappa, assicurati di fornire un'immagine di sfondo di alta qualità
+- La griglia dovrebbe contenere solo valori 0 (percorribile) e 1 (ostacolo)
+- Le posizioni di oggetti e NPC sono nel formato "[x, y]" con coordinate basate sulla griglia
+- Ogni oggetto e NPC dovrebbe avere un nome e un tipo appropriato 

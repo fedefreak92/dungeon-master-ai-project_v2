@@ -56,6 +56,13 @@ export const sessionApi = {
         // Verifica sia success che successo per retrocompatibilità
         if (response.data && (response.data.success || response.data.successo)) {
           console.log('Sessione iniziata con successo:', response.data);
+          const sessionId = response.data.session_id || response.data.id_sessione; // Prendi il session_id
+          if (sessionId) {
+            localStorage.setItem('authToken', sessionId); // SALVA IN localStorage
+            console.log('[gameApi.startNewGame] Session ID salvato in localStorage come authToken:', sessionId);
+          } else {
+            console.error('[gameApi.startNewGame] ERRORE: session_id non trovato nella risposta del server dopo startNewGame.');
+          }
           return response.data;
         } else {
           console.error('Errore nella risposta del server:', response.data);
@@ -88,8 +95,19 @@ export const sessionApi = {
       }
       
       const sessionId = initResponse.data.session_id || initResponse.data.id_sessione;
+      if (!sessionId) {
+        throw new Error('ID sessione non trovato nella risposta');
+      }
+      localStorage.setItem('authToken', sessionId); // SALVA IN localStorage
+      console.log(`[gameApi.loadSavedGame] Session ID (${sessionId}) salvato in localStorage come authToken.`);
+      
+      console.log(`Sessione temporanea creata con ID: ${sessionId}`);
+      
+      // Attesa prima di procedere con il caricamento
+      await new Promise(resolve => setTimeout(resolve, 300));
       
       // Poi carica il salvataggio nella sessione
+      console.log(`Caricamento del salvataggio '${saveFileName}' nella sessione ${sessionId}`);
       const loadResponse = await axios.post(`${API_URL}/game/save/carica`, {
         id_sessione: sessionId,
         nome_salvataggio: saveFileName
@@ -97,16 +115,48 @@ export const sessionApi = {
       
       // Verifica sia success che successo per retrocompatibilità
       if (!loadResponse.data || !(loadResponse.data.success || loadResponse.data.successo)) {
-        throw new Error(loadResponse.data?.error || loadResponse.data?.errore || 'Errore nel caricamento');
+        const errorMsg = loadResponse.data?.error || loadResponse.data?.errore || 'Errore nel caricamento';
+        console.error('Errore durante il caricamento:', errorMsg);
+        throw new Error(errorMsg);
+      }
+      
+      console.log('Salvataggio caricato con successo:', loadResponse.data);
+      
+      // Estrai le informazioni sul giocatore se presenti
+      const playerInfo = loadResponse.data.player_info || {};
+      
+      // Attesa breve per permettere al server di completare le operazioni
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      // Richiedi informazioni aggiornate sul giocatore per verificare il caricamento
+      try {
+        const playerResponse = await axios.get(`${API_URL}/game/entity/player`, {
+          params: { id_sessione: sessionId }
+        });
+        console.log('Informazioni giocatore aggiornate:', playerResponse.data);
+      } catch (playerError) {
+        console.warn('Impossibile ottenere informazioni aggiornate sul giocatore:', playerError);
+        // Continuiamo comunque, potrebbe essere un errore non bloccante
       }
       
       return {
         ...loadResponse.data,
-        session_id: sessionId
+        session_id: sessionId,
+        player_info: playerInfo
       };
     } catch (error) {
       console.error('Errore nel caricamento del salvataggio:', error);
-      throw error;
+      // Rilanciamo l'errore con dettagli
+      if (error.response) {
+        // Errore dal server con risposta
+        throw new Error(`Errore ${error.response.status}: ${error.response.data?.errore || error.message}`);
+      } else if (error.request) {
+        // Nessuna risposta ricevuta
+        throw new Error('Nessuna risposta dal server. Verificare la connessione.');
+      } else {
+        // Errore imprevisto
+        throw error;
+      }
     }
   }
 };
@@ -172,18 +222,46 @@ export const playerApi = {
    */
   getPlayerInfo: async (sessionId) => {
     try {
+      console.log(`[playerApi] Richiesta info giocatore con sessionId: ${sessionId}`);
       const response = await axios.get(`${API_URL}/game/entity/player`, {
         params: { id_sessione: sessionId }
       });
       
+      console.log(`[playerApi] Risposta server completa:`, response.data);
+      
       // Verifica sia success che successo per retrocompatibilità
       if (response.data && (response.data.success || response.data.successo)) {
+        console.log(`[playerApi] Dati giocatore ricevuti dal server:`, response.data.player);
+        
+        // Log specifico per HP
+        if (response.data.player) {
+          const player = response.data.player;
+          console.log(`[playerApi] HP ricevuti dal server: ${player.hp}/${player.hp_max}`);
+          console.log(`[playerApi] Classe giocatore: ${typeof player.classe === 'object' ? player.classe.id : player.classe}`);
+          
+          // Controlla tutti i valori correlati agli HP
+          console.log(`[playerApi] Tutti i valori HP disponibili:`, {
+            hp: player.hp,
+            hp_max: player.hp_max,
+            currentHP: player.currentHP,
+            maxHP: player.maxHP
+          });
+          
+          // Controlla se il formato risponde allo schema aspettato
+          if (player.hp === 100 && player.hp_max === 100) {
+            console.warn(`[playerApi] ATTENZIONE: Il server sta restituendo HP 100/100, che potrebbe essere un valore di default hardcoded!`);
+          } else {
+            console.log(`[playerApi] HP ricevuto correttamente: ${player.hp}/${player.hp_max}`);
+          }
+        }
+        
         return response.data.player;
       } else {
+        console.error(`[playerApi] Errore nella risposta del server:`, response.data);
         throw new Error(response.data?.error || response.data?.errore || 'Impossibile recuperare i dati del giocatore');
       }
     } catch (error) {
-      console.error('Errore nel recupero delle informazioni del giocatore:', error);
+      console.error('[playerApi] Errore nel recupero delle informazioni del giocatore:', error);
       throw error;
     }
   }

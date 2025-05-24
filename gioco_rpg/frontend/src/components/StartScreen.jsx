@@ -93,7 +93,7 @@ const StartScreen = ({ onStartNewGame, onLoadGame }) => {
         return (
           <div className="welcome-screen">
             <div className="welcome-title">
-              <h1>Benvenuto Dungeon Master AI</h1>
+              <h1>Dungeon Master AI</h1>
               <p>L'esperienza definitiva per gli amanti di D&D!</p>
             </div>
             

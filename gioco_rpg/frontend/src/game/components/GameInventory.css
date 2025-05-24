@@ -1,0 +1,224 @@
+.inventory-popup-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.inventory-popup-panel {
+  width: 80%;
+  max-width: 800px;
+  height: 80%;
+  max-height: 600px;
+  background-color: rgba(20, 20, 20, 0.95);
+  border: 2px solid #444;
+  border-radius: 5px;
+  padding: 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.8);
+}
+
+.inventory-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #555;
+}
+
+.inventory-header h3 {
+  margin: 0;
+  color: #ddd;
+  font-size: 1.5rem;
+}
+
+.close-inventory-button {
+  background-color: transparent;
+  color: #ddd;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 0 10px;
+  transition: color 0.2s;
+}
+
+.close-inventory-button:hover {
+  color: #ff5555;
+}
+
+.inventory-button-container {
+  margin: 10px 0;
+  text-align: center;
+}
+
+.open-inventory-button {
+  background-color: #553366;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 16px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.open-inventory-button:hover {
+  background-color: #774488;
+}
+
+.inventory-filters {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.filter-button {
+  background-color: #333;
+  color: #ddd;
+  border: 1px solid #555;
+  padding: 5px 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: background-color 0.2s;
+}
+
+.filter-button:hover {
+  background-color: #444;
+}
+
+.filter-button.active {
+  background-color: #553366;
+  border-color: #774488;
+}
+
+.inventory-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.items-list {
+  flex: 1;
+  overflow-y: auto;
+  margin-bottom: 10px;
+  border: 1px solid #444;
+  padding: 5px;
+  background-color: rgba(40, 40, 40, 0.6);
+}
+
+.inventory-item {
+  display: flex;
+  padding: 8px;
+  border-bottom: 1px solid #444;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.inventory-item:hover {
+  background-color: rgba(50, 50, 50, 0.8);
+}
+
+.inventory-item.selected {
+  background-color: rgba(85, 51, 102, 0.7);
+  border: 1px solid #774488;
+}
+
+.item-icon {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 10px;
+  border-radius: 4px;
+  font-size: 1.3rem;
+}
+
+.item-details {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.item-name {
+  font-weight: bold;
+  color: #ddd;
+}
+
+.item-quantity {
+  font-size: 0.8rem;
+  color: #aaa;
+}
+
+.item-detail-panel {
+  background-color: rgba(40, 40, 40, 0.8);
+  border: 1px solid #555;
+  padding: 15px;
+  margin-top: 10px;
+  border-radius: 4px;
+}
+
+.item-detail-panel h4 {
+  margin-top: 0;
+  color: #ddd;
+  border-bottom: 1px solid #444;
+  padding-bottom: 5px;
+  margin-bottom: 10px;
+}
+
+.item-description {
+  color: #bbb;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  margin-bottom: 15px;
+}
+
+.item-actions {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10px;
+}
+
+.use-button, .drop-button {
+  padding: 8px 20px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: background-color 0.2s;
+}
+
+.use-button {
+  background-color: #2a6e2a;
+  color: white;
+}
+
+.use-button:hover {
+  background-color: #3c8c3c;
+}
+
+.drop-button {
+  background-color: #8c2a2a;
+  color: white;
+}
+
+.drop-button:hover {
+  background-color: #aa3a3a;
+}
+
+.empty-inventory {
+  text-align: center;
+  color: #888;
+  font-style: italic;
+  padding: 20px;
+} 

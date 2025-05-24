@@ -4,6 +4,23 @@
  */
 
 import socketService from './socketService';
+import entityManager from '../pixi/entities/EntityManager'; // Importa l'istanza singleton
+
+// Placeholder per ottenere l'ID del giocatore corrente e la scena
+// Questi dovrebbero essere gestiti da un servizio di stato o contesto più robusto.
+let currentLocalPlayerId = null;
+let currentPixiSceneId = 'default_scene'; // Valore di default usato anche in EntityManager
+
+// Funzione per MapPage (o chi gestisce lo stato del player) per impostare l'ID del giocatore
+export function setLocalPlayerId(id) {
+    currentLocalPlayerId = id;
+    console.log(`[eventBusService] ID giocatore locale impostato a: ${id}`);
+}
+
+export function setCurrentPixiSceneId(id) {
+    currentPixiSceneId = id;
+    console.log(`[eventBusService] ID scena Pixi corrente impostato a: ${id}`);
+}
 
 class EventBusService {
     constructor() {
@@ -126,19 +143,44 @@ class EventBusService {
     _handleEntityMoved(data) {
         // Questo è solo un esempio, l'implementazione reale dipenderà
         // dal sistema di rendering utilizzato (Pixi.js, ecc.)
-        const { entity_id, from, to } = data;
-        console.log(`Animazione movimento: ${entity_id} da ${from} a ${to}`);
-        
-        // Qui ci sarebbe la logica per aggiornare la posizione visiva dell'entità
-        // Potrebbe emettere un altro evento quando l'animazione è completata
-        
-        // Esempio: dopo un delay simuliamo la fine dell'animazione
+        const { entity_id, position, from_position, to_position } = data; 
+
+        // console.log(`Animazione e aggiornamento posizione PixiJS per: ${entity_id} a ${JSON.stringify(position)} (da ${JSON.stringify(from_position)} a ${JSON.stringify(to_position)})`);
+        // console.log(`Confronto con playerId locale: ${currentLocalPlayerId}, scena: ${currentPixiSceneId}`);
+
+        if (!position || typeof position.x === 'undefined' || typeof position.y === 'undefined') {
+            console.error('[eventBusService] _handleEntityMoved: Dati di posizione mancanti o malformati', data);
+            return;
+        }
+
+        if (entityManager) {
+            if (currentLocalPlayerId && entity_id === currentLocalPlayerId) {
+                // console.log(`[eventBusService] Aggiorno posizione GIOCATORE ${entity_id} in Pixi a (${position.x}, ${position.y}) sulla scena ${currentPixiSceneId}`);
+                entityManager.updatePlayerPosition(currentPixiSceneId, position.x, position.y);
+            } else {
+                // Per altre entità, aggiornamento PixiJS:
+                // console.log(`[eventBusService] Aggiorno posizione ENTITA ${entity_id} in Pixi a (${position.x}, ${position.y}) sulla scena ${currentPixiSceneId}`);
+                // Attualmente EntityManager.updateEntities() è distruttivo. 
+                // Per un aggiornamento granulare, EntityManager necessita di un metodo tipo updateSingleEntityPosition(sceneId, entityId, x, y)
+                // o MapPage deve essere notificata per richiedere tutte le entità e fare un re-render.
+                // console.warn(`[eventBusService] Movimento per entità non-giocatore (${entity_id}) in PixiJS: update granulare non implementato. Considerare refresh completo entità se necessario.`);
+                
+                // Soluzione temporanea: se l'entità non è il giocatore, si potrebbe emettere un evento
+                // che MapPage ascolta per poi aggiornare il suo stato 'entities' e far sì che il componente Pixi 
+                // ri-renderizzi le entità. Questo è indiretto.
+                this.emit('NON_PLAYER_ENTITY_MOVED', { entity_id, position });
+            }
+        } else {
+            console.error('[eventBusService] EntityManager non disponibile.');
+        }
+
+        // Il codice di animazione simulata può rimanere o essere rimosso/integrato
         setTimeout(() => {
             this.emit('ANIMATION_COMPLETED', {
                 type: 'movement',
                 entity_id
             });
-        }, 200);
+        }, 50); // Ridotto il timeout per reattività
     }
     
     /**

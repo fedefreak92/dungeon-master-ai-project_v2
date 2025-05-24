@@ -1,0 +1,258 @@
+/* Container principale dei controlli di gioco */
+.game-actions-container {
+  position: absolute;
+  bottom: 80px;
+  left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  z-index: 100;
+}
+
+/* Bussola/Compasso per il movimento */
+.game-actions-compass {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background-color: rgba(30, 30, 35, 0.85);
+  border-radius: 50%;
+  padding: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6), 0 0 6px rgba(255, 185, 56, 0.4);
+  border: 1px solid #ffb938;
+  width: 150px;
+  height: 150px;
+  position: relative;
+}
+
+.compass-middle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.compass-rose {
+  width: 40px;
+  height: 40px;
+  background-image: radial-gradient(
+    circle, 
+    rgba(255, 185, 56, 0.3) 0%, 
+    rgba(255, 185, 56, 0.1) 70%, 
+    transparent 100%
+  );
+  border-radius: 50%;
+  position: relative;
+}
+
+.compass-rose:before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 10px;
+  height: 10px;
+  background-color: #ffb938;
+  border-radius: 50%;
+  box-shadow: 0 0 10px rgba(255, 185, 56, 0.7);
+}
+
+.compass-button {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Times New Roman', serif;
+  font-weight: bold;
+  font-size: 1.2rem;
+  color: #ffcb66;
+  background-color: rgba(50, 50, 60, 0.8);
+  border: 2px solid #555;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
+  position: relative;
+}
+
+.compass-button:hover {
+  background-color: rgba(70, 70, 80, 0.9);
+  border-color: #ffb938;
+  transform: scale(1.1);
+  box-shadow: 0 0 10px rgba(255, 185, 56, 0.4);
+}
+
+.compass-button:active {
+  transform: scale(0.95);
+  box-shadow: 0 0 5px rgba(255, 185, 56, 0.3) inset;
+  background-color: rgba(40, 40, 50, 0.9);
+}
+
+.compass-button:after {
+  content: '';
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.compass-button.north {
+  position: relative;
+  border-bottom-width: 1px;
+}
+
+.compass-button.south {
+  position: relative;
+  border-top-width: 1px;
+}
+
+.compass-button.west {
+  position: relative;
+  border-right-width: 1px;
+}
+
+.compass-button.east {
+  position: relative;
+  border-left-width: 1px;
+}
+
+/* Pulsante di interazione */
+.interact-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background-color: rgba(40, 55, 95, 0.9);
+  color: white;
+  border: none;
+  border-radius: 25px;
+  padding: 10px 20px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(70, 105, 160, 0.7);
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  font-size: 1rem;
+  width: 150px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Stile aggiuntivo per evidenziare il pulsante */
+.highlight-button {
+  background-color: rgba(50, 70, 120, 0.95);
+  border: 2px solid #ffb938;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.5), 0 0 8px rgba(255, 185, 56, 0.5);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.5), 0 0 8px rgba(255, 185, 56, 0.5);
+  }
+  50% {
+    box-shadow: 0 3px 15px rgba(0, 0, 0, 0.6), 0 0 15px rgba(255, 185, 56, 0.7);
+  }
+  100% {
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.5), 0 0 8px rgba(255, 185, 56, 0.5);
+  }
+}
+
+.interact-button:before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  transform: translateX(-100%);
+  transition: transform 0.6s ease;
+}
+
+.interact-button:hover {
+  background-color: rgba(55, 75, 120, 0.95);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(90, 130, 190, 0.8);
+  transform: translateY(-2px);
+}
+
+.interact-button:hover:before {
+  transform: translateX(100%);
+}
+
+.interact-button:active {
+  transform: translateY(1px);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(70, 105, 160, 0.7);
+}
+
+.interact-icon {
+  font-size: 1.2rem;
+  color: #ffb938;
+}
+
+.interact-text {
+  font-size: 0.95rem;
+}
+
+/* Responsività per schermi più piccoli */
+@media (max-width: 768px) {
+  .game-actions-container {
+    bottom: 70px;
+    left: 15px;
+  }
+  
+  .game-actions-compass {
+    width: 120px;
+    height: 120px;
+    padding: 5px;
+  }
+  
+  .compass-button {
+    width: 32px;
+    height: 32px;
+    font-size: 1rem;
+  }
+  
+  .compass-rose {
+    width: 30px;
+    height: 30px;
+  }
+  
+  .interact-button {
+    width: 120px;
+    padding: 8px 15px;
+  }
+  
+  .interact-text {
+    font-size: 0.85rem;
+  }
+}
+
+/* Supporto per dispositivi touch */
+@media (hover: none) {
+  .compass-button {
+    width: 45px;
+    height: 45px;
+    font-size: 1.3rem;
+  }
+  
+  .game-actions-compass {
+    width: 170px;
+    height: 170px;
+  }
+  
+  .interact-button {
+    padding: 12px 20px;
+  }
+} 

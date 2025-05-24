@@ -1,23 +1,61 @@
 import React from 'react';
+import { useGameState } from '../../hooks/useGameState';
+import './GameActions.css';
 
 /**
- * Componente per i controlli delle azioni di gioco
+ * Componente che rappresenta i controlli del gioco
  */
 const GameActions = ({ onMove, onInteract }) => {
+  const { sendAction } = useGameState();
+
   return (
-    <div className="game-controls">
-      <div className="movement-controls">
-        <button onClick={() => onMove('up')}>Su</button>
-        <div className="horizontal-controls">
-          <button onClick={() => onMove('left')}>Sinistra</button>
-          <button onClick={() => onMove('right')}>Destra</button>
+    <div className="game-actions-container">
+      <div className="game-actions-compass">
+        <button 
+          onClick={() => onMove('up')} 
+          className="compass-button north"
+          title="Vai a nord"
+        >
+          N
+        </button>
+        
+        <div className="compass-middle-row">
+          <button 
+            onClick={() => onMove('left')} 
+            className="compass-button west"
+            title="Vai a ovest"
+          >
+            O
+          </button>
+          
+          <div className="compass-rose"></div>
+          
+          <button 
+            onClick={() => onMove('right')} 
+            className="compass-button east"
+            title="Vai a est"
+          >
+            E
+          </button>
         </div>
-        <button onClick={() => onMove('down')}>Giù</button>
+        
+        <button 
+          onClick={() => onMove('down')} 
+          className="compass-button south"
+          title="Vai a sud"
+        >
+          S
+        </button>
       </div>
       
-      <div className="action-controls">
-        <button onClick={onInteract}>Interagisci</button>
-      </div>
+      <button 
+        onClick={onInteract} 
+        className="interact-button highlight-button"
+        title="Interagisci con oggetti o personaggi nelle vicinanze"
+      >
+        <span className="interact-icon">✦</span>
+        <span className="interact-text">Interagisci</span>
+      </button>
     </div>
   );
 };

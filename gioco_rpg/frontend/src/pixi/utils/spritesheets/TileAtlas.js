@@ -1,211 +1,246 @@
 /**
  * TileAtlas.js
- * Sistema di gestione per texture atlas di tile mappe
- * Ottimizzazione per il batching di rendering in Pixi.js
+ * Gestisce l'atlante delle texture dei tile per l'OptimizedMapRenderer
  */
 import * as PIXI from 'pixi.js';
 
-// Dimensione standard di un tile
-const TILE_SIZE = 64;
-
-/**
- * Classe per gestire un atlas di texture per le mappe
- */
 export default class TileAtlas {
   constructor() {
-    this.atlasTexture = null;       // BaseTexture dell'atlas
-    this.tileTextures = {};         // Mappa delle texture dei tile
-    this.isInitialized = false;     // Flag di inizializzazione
-    this.tilesPerRow = 4;           // Numero di tile per riga nell'atlas
-    this.tilesTotal = 16;           // Numero totale di tile nell'atlas
+    this.textures = {}; // Mappa delle texture per tipo di tile
+    this.initialized = false;
+    this.fallbackTexture = null;
+    
+    // Configurazione colori per le texture di fallback
+    this.tileColors = {
+      floor: 0x555555,  // pavimento - grigio
+      1: 0x333333,      // muri - grigio scuro
+      wall: 0x333333,   // muri - grigio scuro
+      2: 0x8B4513,      // porte - marrone
+      door: 0x8B4513,   // porte - marrone
+      3: 0x00FF00,      // erba - verde
+      grass: 0x00FF00,  // erba - verde
+      4: 0x0000FF,      // acqua - blu
+      water: 0x0000FF,  // acqua - blu
+      5: 0xFFD700,      // oggetti - oro
+      item: 0xFFD700,   // oggetti - oro
+      npc: 0x0000FF,    // NPC - blu
+      player: 0xFF0000, // giocatore - rosso
+      default: 0x555555 // default - grigio
+    };
   }
-
+  
   /**
-   * Inizializza l'atlas di texture
-   * @param {Object} options - Opzioni di configurazione
+   * Inizializza l'atlante delle texture
    * @returns {Promise<boolean>} - true se l'inizializzazione è riuscita
    */
-  async initialize(options = {}) {
-    if (this.isInitialized) return true;
-
+  async initialize() {
+    if (this.initialized) return true;
+    
     try {
-      // Configurazione predefinita
-      const config = {
-        tileSize: options.tileSize || TILE_SIZE,
-        tilesPerRow: options.tilesPerRow || 4,
-        tilesTotal: options.tilesTotal || 16,
-        baseColor: options.baseColor || 0x555555
-      };
+      // Crea texture di fallback di base
+      this.fallbackTexture = PIXI.Texture.WHITE;
       
-      this.tilesPerRow = config.tilesPerRow;
-      this.tilesTotal = config.tilesTotal;
-      this.tileSize = config.tileSize;
+      // Cerca di caricare lo spritesheet se esiste
+      const success = await this.loadSpritesheet();
       
-      // Calcola dimensioni dell'atlas
-      const atlasWidth = config.tileSize * config.tilesPerRow;
-      const atlasHeight = config.tileSize * Math.ceil(config.tilesTotal / config.tilesPerRow);
+      // Se non abbiamo caricato correttamente lo spritesheet, crea texture di fallback
+      if (!success || Object.keys(this.textures).length === 0) {
+        console.log("Utilizzo texture di fallback per tutti i tile");
+        this.createFallbackTextures();
+      }
       
-      // Crea l'atlas come una texture unica
-      await this.createAtlasTexture(atlasWidth, atlasHeight, config.baseColor);
+      // Verifica che tutte le texture essenziali siano disponibili
+      this.ensureEssentialTextures();
       
-      // Crea le singole texture per ogni tile
-      this.createTileTextures();
-      
-      this.isInitialized = true;
-      console.log(`TileAtlas inizializzato: ${config.tilesTotal} tile (${atlasWidth}x${atlasHeight}px)`);
-      
+      this.initialized = true;
       return true;
     } catch (error) {
-      console.error("Errore nell'inizializzazione dell'atlas:", error);
+      console.error("Errore nell'inizializzazione del TileAtlas:", error);
+      
+      // In caso di errore, usa texture di fallback
+      this.createFallbackTextures();
+      this.ensureEssentialTextures();
+      this.initialized = true;
       return false;
     }
   }
   
   /**
-   * Crea la texture base dell'atlas
-   * @param {number} width - Larghezza in pixel
-   * @param {number} height - Altezza in pixel
-   * @param {number} baseColor - Colore di base
+   * Assicura che tutte le texture essenziali siano disponibili
    */
-  async createAtlasTexture(width, height, baseColor) {
-    // Crea un canvas per disegnare l'atlas
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
+  ensureEssentialTextures() {
+    const essentialTypes = ['floor', 'wall', 'door', 'grass', 'water', 'default', 0, 1, 2, 3, 4, 5];
     
-    // Riempie con il colore di base
-    ctx.fillStyle = `#${baseColor.toString(16).padStart(6, '0')}`;
-    ctx.fillRect(0, 0, width, height);
-    
-    // Definizione dei colori per diversi tipi di tile
-    const tileColors = [
-      '#555555', // pavimento - grigio (0)
-      '#333333', // muri - grigio scuro (1)
-      '#8B4513', // porte - marrone (2)
-      '#00FF00', // erba - verde (3)
-      '#0000FF', // acqua - blu (4)
-      '#FFD700', // oggetti - oro (5)
-      '#FF00FF', // casella speciale - magenta (6)
-      '#00FFFF', // ghiaccio - ciano (7)
-      '#FF0000', // lava - rosso (8)
-      '#663399', // portale - viola (9)
-      '#A0522D', // ponte - marrone chiaro (10)
-      '#FFFF00', // sabbia - giallo (11)
-      '#708090', // pietra - grigio blu (12)
-      '#2F4F4F', // roccia - grigio scuro verde (13)
-      '#CD853F', // legno - marrone chiaro (14)
-      '#696969'  // metallo - grigio medio (15)
-    ];
-    
-    // Disegna i tile nell'atlas
-    for (let i = 0; i < this.tilesTotal; i++) {
-      const row = Math.floor(i / this.tilesPerRow);
-      const col = i % this.tilesPerRow;
-      
-      const x = col * this.tileSize;
-      const y = row * this.tileSize;
-      
-      // Colore del tile
-      ctx.fillStyle = tileColors[i] || tileColors[0];
-      ctx.fillRect(x, y, this.tileSize, this.tileSize);
-      
-      // Bordo del tile per debugging
-      ctx.strokeStyle = '#FFFFFF';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(x, y, this.tileSize, this.tileSize);
-      
-      // Numero del tile per debugging
-      ctx.fillStyle = '#FFFFFF';
-      ctx.font = `${Math.floor(this.tileSize/3)}px Arial`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(i.toString(), x + this.tileSize/2, y + this.tileSize/2);
-    }
-    
-    // Crea una texture dal canvas
-    this.atlasTexture = PIXI.BaseTexture.from(canvas);
-    
-    return this.atlasTexture;
+    essentialTypes.forEach(type => {
+      if (!this.textures[type]) {
+        // Se manca una texture essenziale, crea una texture di fallback
+        const color = this.tileColors[type] || this.tileColors.default;
+        this.textures[type] = this.createColorTexture(color);
+        console.log(`Creata texture di fallback per tipo '${type}'`);
+      }
+    });
   }
   
   /**
-   * Crea le singole texture per ogni tile a partire dall'atlas
+   * Carica lo spritesheet dei tile
+   * @returns {Promise<boolean>} - true se il caricamento è riuscito
    */
-  createTileTextures() {
-    // Verifica che l'atlas sia stato creato
-    if (!this.atlasTexture) {
-      console.error("Atlas texture non inizializzata");
-      return;
-    }
+  async loadSpritesheet() {
+    return new Promise((resolve) => {
+      try {
+        // Percorso dello spritesheet (senza slash finale)
+        const basePath = '/assets/fallback/spritesheets';
+        const spritesheetPath = `tiles.json`;
+        
+        // Prova a caricare direttamente lo spritesheet JSON, senza controllo preventivo dell'immagine
+        const loader = new PIXI.Loader();
+        
+        // Imposta il percorso base per le risorse
+        loader.baseUrl = basePath;
+        
+        loader
+          .add('tiles', spritesheetPath)
+          .load((loader, resources) => {
+            if (resources.tiles && resources.tiles.spritesheet && 
+                resources.tiles.spritesheet.textures && 
+                Object.keys(resources.tiles.spritesheet.textures).length > 0) {
+              
+              // Estrai le texture dallo spritesheet
+              const spritesheet = resources.tiles.spritesheet;
+              this.textures = { ...spritesheet.textures };
+              
+              // Configura le texture per i tipi di tile numerici
+              this.textures[0] = this.textures['floor.png'] || this.fallbackTexture;
+              this.textures[1] = this.textures['wall.png'] || this.fallbackTexture;
+              this.textures[2] = this.textures['door.png'] || this.fallbackTexture;
+              this.textures[3] = this.textures['grass.png'] || this.fallbackTexture;
+              this.textures[4] = this.textures['water.png'] || this.fallbackTexture;
+              this.textures[5] = this.textures['item.png'] || this.fallbackTexture;
+              
+              console.log("Spritesheet dei tile caricato con successo");
+              resolve(true);
+            } else {
+              console.warn("Spritesheet dei tile non trovato o non valido, utilizzo texture di fallback");
+              // Se non riusciamo a caricare lo spritesheet o le sue texture, passiamo alle texture di fallback
+              this.createFallbackTextures();
+              resolve(false);
+            }
+          })
+          .onError.add(() => {
+            console.warn("Errore nel caricamento dello spritesheet dei tile, utilizzo texture di fallback");
+            this.createFallbackTextures();
+            resolve(false);
+          });
+      } catch (error) {
+        console.error("Errore critico nel caricamento dello spritesheet:", error);
+        this.createFallbackTextures();
+        resolve(false);
+      }
+    });
+  }
+  
+  /**
+   * Crea texture colorate di fallback per ogni tipo di tile
+   */
+  createFallbackTextures() {
+    console.log("Creazione texture di fallback per i tile");
     
-    // Crea una texture per ogni tile
-    for (let i = 0; i < this.tilesTotal; i++) {
-      const row = Math.floor(i / this.tilesPerRow);
-      const col = i % this.tilesPerRow;
-      
-      const x = col * this.tileSize;
-      const y = row * this.tileSize;
-      
-      // Crea un frame per questa texture
-      const rect = new PIXI.Rectangle(x, y, this.tileSize, this.tileSize);
-      
-      // Crea la texture dal frame
-      const texture = new PIXI.Texture(this.atlasTexture, rect);
-      
-      // Memorizza la texture
-      this.tileTextures[i] = texture;
-      
-      // Aggiunge anche mappature per nomi comuni
-      if (i === 0) this.tileTextures['floor'] = texture;
-      if (i === 1) this.tileTextures['wall'] = texture;
-      if (i === 2) this.tileTextures['door'] = texture;
-      if (i === 3) this.tileTextures['grass'] = texture;
-      if (i === 4) this.tileTextures['water'] = texture;
-      if (i === 5) this.tileTextures['item'] = texture;
+    // Crea texture per ogni tipo di tile
+    for (const [key, color] of Object.entries(this.tileColors)) {
+      this.textures[key] = this.createColorTexture(color);
     }
   }
   
   /**
-   * Ottiene una texture per un tipo di tile
-   * @param {number|string} tileType - Tipo di tile (indice o nome)
-   * @returns {PIXI.Texture} - La texture richiesta o una texture di fallback
+   * Crea una texture colorata
+   * @param {number} color - Colore della texture in formato esadecimale
+   * @returns {PIXI.Texture} - La texture creata
    */
-  getTexture(tileType) {
-    // Se è una stringa, cerca la texture per nome
-    if (typeof tileType === 'string') {
-      return this.tileTextures[tileType] || this.tileTextures[0] || PIXI.Texture.WHITE;
-    }
-    
-    // Se è un numero, cerca la texture per indice
-    return this.tileTextures[tileType] || this.tileTextures[0] || PIXI.Texture.WHITE;
-  }
-  
-  /**
-   * Pulisce le risorse allocate dall'atlas
-   */
-  dispose() {
+  createColorTexture(color) {
     try {
-      // Distrugge le texture dei singoli tile
-      Object.values(this.tileTextures).forEach(texture => {
-        if (texture && texture !== PIXI.Texture.WHITE && texture.destroy) {
-          texture.destroy(false); // Non distruggere la base texture
-        }
-      });
+      // Approccio semplificato: crea una texture base e assegna il colore
+      const canvas = document.createElement('canvas');
+      canvas.width = 64;
+      canvas.height = 64;
       
-      // Reset dell'array delle texture
-      this.tileTextures = {};
-      
-      // Distrugge la texture dell'atlas
-      if (this.atlasTexture && this.atlasTexture.destroy) {
-        this.atlasTexture.destroy(true);
-        this.atlasTexture = null;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        console.warn("Impossibile ottenere il contesto 2D del canvas, utilizzo texture bianca");
+        return PIXI.Texture.WHITE;
       }
       
-      this.isInitialized = false;
-      console.log("TileAtlas distrutto con successo");
+      // Converti il colore esadecimale in RGB
+      const r = (color >> 16) & 0xFF;
+      const g = (color >> 8) & 0xFF;
+      const b = color & 0xFF;
+      
+      // Riempi il canvas con il colore
+      ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+      ctx.fillRect(0, 0, 64, 64);
+      
+      // Crea la texture dal canvas
+      return PIXI.Texture.from(canvas);
     } catch (error) {
-      console.error("Errore nella pulizia del TileAtlas:", error);
+      console.error("Errore critico nella creazione della texture colorata:", error);
+      return PIXI.Texture.WHITE;
     }
   }
-} 
+  
+  /**
+   * Ottiene la texture per un tipo di tile
+   * @param {string|number} tileType - Tipo di tile
+   * @returns {PIXI.Texture} - La texture corrispondente o una texture di fallback
+   */
+  getTexture(tileType) {
+    // Se la texture è disponibile, restituiscila
+    if (this.textures[tileType]) {
+      return this.textures[tileType];
+    }
+    
+    // Se tileType è numerico, prova a interpretarlo
+    if (typeof tileType === 'number' || !isNaN(parseInt(tileType))) {
+      const tileId = parseInt(tileType);
+      if (this.textures[tileId]) {
+        return this.textures[tileId];
+      }
+      
+      // Mappa i tipi numerici alle texture appropriate
+      switch (tileId) {
+        case 0: return this.textures.floor || this.fallbackTexture;
+        case 1: return this.textures.wall || this.fallbackTexture;
+        case 2: return this.textures.door || this.fallbackTexture;
+        case 3: return this.textures.grass || this.fallbackTexture;
+        case 4: return this.textures.water || this.fallbackTexture;
+        case 5: return this.textures.item || this.fallbackTexture;
+        default: return this.textures.default || this.fallbackTexture;
+      }
+    }
+    
+    // Usa una texture di fallback generica
+    return this.textures.default || this.fallbackTexture;
+  }
+  
+  /**
+   * Ottiene tutte le texture disponibili
+   * @returns {Object} - Mappa di tutte le texture
+   */
+  getAllTextures() {
+    return this.textures;
+  }
+  
+  /**
+   * Distrugge e libera le risorse
+   */
+  dispose() {
+    // Distruggi tutte le texture create (solo quelle che non fanno parte di uno spritesheet)
+    for (const key in this.textures) {
+      // Solo le texture create manualmente dovrebbero essere distrutte
+      if (this.textures[key] !== this.fallbackTexture && this.textures[key].destroy) {
+        this.textures[key].destroy(true);
+      }
+    }
+    
+    this.textures = {};
+    this.initialized = false;
+  }
+}

@@ -20,12 +20,15 @@ function GameContent() {
   } = state;
   
   // Accesso al contesto del socket
-  const { connectSocket, socketReady, connectionState, on, off } = useSocket();
+  const { connectSocket, socketReady, connectionState, on, off, emit } = useSocket();
   
   // Stato per il debug tool
   const [showDebugTool, setShowDebugTool] = useState(false);
   // Stato per indicare che la mappa è pronta e può essere visualizzata
   const [mappaPronta, setMappaPronta] = useState(false);
+  
+  // Stato per tracciare quando dobbiamo emettere game_loaded
+  const [pendingGameLoaded, setPendingGameLoaded] = useState(null);
   
   // Attiva il debug tool con combinazione di tasti (Ctrl + Alt + D)
   useEffect(() => {
@@ -131,6 +134,12 @@ function GameContent() {
       // Resetta lo stato di caricamento globale usando dispatch
       console.log('handleMapChangeComplete: Resetto lo stato di loading globale');
       dispatch({ type: 'SET_LOADING', payload: false });
+      
+      // Se l'evento proviene da un salvataggio caricato, conferma che il caricamento è avvenuto
+      if (data.fromSave) {
+        console.log('handleMapChangeComplete: Caricamento da salvataggio completato');
+        dispatch({ type: 'SET_LOAD_CONFIRMED', payload: true });
+      }
     }
     
     // Registra direttamente il listener sull'evento
@@ -143,41 +152,102 @@ function GameContent() {
     };
   }, [socketReady, dispatch, on, off]);
   
-  // Carica le informazioni sul giocatore quando cambia la sessione
+  // Carica le informazioni sul giocatore quando cambia la sessione o lo stato del gioco
   useEffect(() => {
+    let isMounted = true;
+    let isLoading = false;
+    
     async function fetchPlayerInfo() {
-      if (!sessionId) return;
+      if (!sessionId || isLoading) return;
       
       try {
+        isLoading = true;
         console.log('Caricamento informazioni giocatore per sessione:', sessionId);
         const playerData = await playerApi.getPlayerInfo(sessionId);
-        console.log('Dati giocatore ricevuti:', playerData);
+        
+        // Se il componente è stato smontato nel frattempo, interrompi
+        if (!isMounted) return;
+        
+        console.log('Dati giocatore RICEVUTI dal server:', playerData);
+        console.log('HP ORIGINALE RICEVUTO DAL SERVER:', playerData.hp, '/', playerData.hp_max);
+        
+        // Correggi i dati HP se sono zero o non definiti
+        if (playerData) {
+          // Otteniamo la classe del giocatore per determinare valori appropriati
+          const classeGiocatore = typeof playerData.classe === 'object' ? 
+            playerData.classe.id : 
+            (typeof playerData.classe === 'string' ? playerData.classe : 'guerriero').toLowerCase();
+          
+          // Valori di HP base per classe come fallback, allineati con il backend
+          const hpBaseFallback = {
+            'guerriero': 12,
+            'mago': 6, 
+            'ladro': 8,
+            'chierico': 10
+          }[classeGiocatore] || 10; // 10 è un valore ragionevole come ultimo fallback
+          
+          // Utilizziamo hp_max dal backend o un valore appropriato per la classe
+          const maxHP = playerData.hp_max || playerData.maxHP || hpBaseFallback;
+          console.log('HP MAX CALCOLATO:', maxHP, 'per classe:', classeGiocatore);
+          
+          // Se l'HP è zero ma maxHP è valido, imposta HP a maxHP
+          if ((playerData.hp === 0 || playerData.hp === undefined || playerData.hp === null) && maxHP > 0) {
+            console.log(`Correzione HP: impostato da ${playerData.hp} a ${maxHP}`);
+            playerData.hp = maxHP;
+            playerData.currentHP = maxHP;
+          }
+          
+          console.log('HP FINALE PRIMA DEL DISPATCH:', playerData.hp, '/', playerData.hp_max || maxHP);
+        }
         
         dispatch({ 
           type: 'SET_PLAYER', 
           payload: playerData 
         });
       } catch (err) {
+        if (!isMounted) return;
+        
         console.error('Errore nel caricamento delle informazioni del giocatore:', err);
         dispatch({ 
           type: 'SET_ERROR', 
           payload: 'Impossibile caricare i dati del giocatore: ' + (err.message || 'Errore sconosciuto')
         });
+      } finally {
+        isLoading = false;
       }
     }
     
-    if (sessionId) {
+    // Carica le informazioni del giocatore sia al cambio di sessione che quando lo stato cambia a "map"
+    if (sessionId && (gameState === 'map' || !gameState)) {
+      console.log(`Caricamento dati giocatore per gameState=${gameState}`);
       fetchPlayerInfo();
     }
-  }, [sessionId, dispatch]);
-
+    
+    // Cleanup per evitare aggiornamenti di stato dopo lo smontaggio
+    return () => {
+      isMounted = false;
+    };
+  }, [sessionId, dispatch, gameState]); // Aggiunto gameState alle dipendenze per ricaricare quando cambia lo stato
+  
+  // Aggiungi una funzione per pulire localStorage
+  const clearLocalStorageData = () => {
+    console.log('Pulizia localStorage...');
+    localStorage.clear();
+    sessionStorage.clear();
+    console.log('localStorage e sessionStorage puliti!');
+    alert('Cache del browser pulita. Ricarica la pagina per vedere le modifiche.');
+  };
+  
   // Monitoraggio dello stato del gioco
   useEffect(() => {
     console.log('Stato corrente del gioco:', gameState);
     console.log('Session ID:', sessionId);
     console.log('Socket pronto:', socketReady);
     console.log('Stato connessione:', connectionState);
-  }, [gameState, sessionId, socketReady, connectionState]);
+    if (state.player) {
+      console.log('STATO PLAYER HP:', state.player.hp, '/', state.player.hp_max);
+    }
+  }, [gameState, sessionId, socketReady, connectionState, state.player]);
   
   // Gestisce l'avvio di una nuova partita
   const handleStartNewGame = async (playerName, playerClass) => {
@@ -213,19 +283,42 @@ function GameContent() {
     try {
       dispatch({ type: 'SET_LOADING', payload: true });
       dispatch({ type: 'CLEAR_ERROR' });
+      dispatch({ type: 'RESET_LOAD_STATE' });
       
       console.log(`Caricamento partita salvata: ${saveFileName}`);
+      dispatch({ type: 'SET_LOADED_SAVE', payload: saveFileName });
+      
       const response = await sessionApi.loadSavedGame(saveFileName);
       console.log('Risposta server per caricamento partita:', response);
       
       // Prima imposta l'ID sessione
       dispatch({ type: 'SET_SESSION', payload: response.session_id });
       
+      // Se abbiamo info sul giocatore, aggiorniamo anche quelle
+      if (response.player_info && Object.keys(response.player_info).length > 0) {
+        dispatch({ type: 'SET_PLAYER_INFO', payload: response.player_info });
+      }
+      
+      // Segnala che il caricamento è completato a livello di operazioni API
+      dispatch({ type: 'SET_LOADING_COMPLETE' });
+      
       // Attendi che lo stato sia aggiornato prima di cambiare lo stato del gioco
       setTimeout(() => {
         dispatch({ type: 'SET_GAME_STATE', payload: 'map' });
         dispatch({ type: 'SET_LOADING', payload: false });
-      }, 100);
+        
+        // Prepara l'evento game_loaded da emettere quando il socket sarà pronto
+        if (socketReady && emit) {
+          console.log('Socket già pronto, emissione immediata evento game_loaded');
+          emit('game_loaded', {
+            sessionId: response.session_id,
+            saveName: saveFileName
+          });
+        } else {
+          console.log('Socket non ancora pronto, evento game_loaded sarà emesso quando il socket sarà pronto');
+          setPendingGameLoaded({ sessionId: response.session_id, saveName: saveFileName });
+        }
+      }, 300);
     } catch (err) {
       console.error('Errore nel caricamento della partita:', err);
       
@@ -233,6 +326,7 @@ function GameContent() {
         type: 'SET_ERROR', 
         payload: 'Impossibile caricare la partita: ' + (err.message || 'Errore sconosciuto') 
       });
+      dispatch({ type: 'RESET_LOAD_STATE' });
       dispatch({ type: 'SET_LOADING', payload: false });
     }
   };
@@ -276,6 +370,41 @@ function GameContent() {
     dispatch({ type: 'CLEAR_ERROR' });
     setMappaPronta(false);
   };
+  
+  // Aggiungiamo pulsante di debug per pulire localStorage
+  const debugButton = (
+    <div 
+      className="debug-clear-storage" 
+      style={{ 
+        position: 'fixed', 
+        bottom: '10px', 
+        right: '10px', 
+        zIndex: 9999,
+        padding: '8px',
+        background: 'red',
+        color: 'white',
+        cursor: 'pointer',
+        borderRadius: '5px'
+      }}
+      onClick={clearLocalStorageData}
+    >
+      Pulisci Cache
+    </div>
+  );
+  
+  // Emette game_loaded quando il socket diventa pronto
+  useEffect(() => {
+    if (socketReady && emit && pendingGameLoaded) {
+      console.log('Socket ora pronto, emissione evento game_loaded per notificare il server del caricamento completato');
+      emit('game_loaded', {
+        sessionId: pendingGameLoaded.sessionId,
+        saveName: pendingGameLoaded.saveName
+      });
+      
+      // Reset dello stato pending
+      setPendingGameLoaded(null);
+    }
+  }, [socketReady, emit, pendingGameLoaded]);
   
   // Rendering condizionale in base allo stato del gioco
   return (
@@ -346,6 +475,9 @@ function GameContent() {
           🧰
         </button>
       )}
+      
+      {/* Aggiungiamo pulsante di debug per pulire localStorage */}
+      {debugButton}
     </>
   );
 }

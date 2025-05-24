@@ -181,7 +181,7 @@ const MapSelectState = ({ socketReady }) => {
             <div 
               key={mapId}
               className={`map-item ${isCurrentMap ? 'current-map' : ''} ${isLocked ? 'locked-map' : ''} ${changingMap ? 'disabled' : ''}`}
-              onClick={() => !isLocked && !isCurrentMap && !changingMap && handleMapSelect(mapId)}
+              onClick={() => !isLocked && !changingMap && handleMapSelect(mapId)}
             >
               <div className="map-item-content">
                 <h3>{mapInfo.nome || mapId}</h3>
