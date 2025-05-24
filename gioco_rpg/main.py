@@ -35,15 +35,13 @@ except ImportError:
 
 # Importa le componenti necessarie
 try:
-    # Importiamo il modulo server usando get_* functions
-    from server import get_app, get_run_server
+    # Importiamo il modulo server direttamente come in server.py
+    from server import app, socketio, run_server
     
-    # Otteniamo le istanze effettive solo quando necessario
     # Avvia il server
     if __name__ == "__main__":
         print("Avvio del server in corso...")
-        # Ottieni la funzione run_server e chiamala
-        run_server = get_run_server()
+        # Chiamiamo direttamente run_server
         run_server(debug=True, host="0.0.0.0", port=5000)
 except ImportError as e:
     if "circular import" in str(e).lower():

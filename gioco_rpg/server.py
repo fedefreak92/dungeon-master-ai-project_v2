@@ -17,7 +17,7 @@ import sys
 import os
 
 # Aggiungi la directory radice al path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Inizializza il sistema di logging migliorato
 from util.logging_config import configurazione_logging
